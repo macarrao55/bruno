@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+
+# Local database
+/data/*.db
+
+# Build artifacts
+*.zip
