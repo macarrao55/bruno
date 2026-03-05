@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+dist/
+build/
+*.spec
+boldrini.db
+backups/*.db
+receipts/
+exports/
