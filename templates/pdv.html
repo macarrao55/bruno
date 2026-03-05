@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="grid-2">
+  <div class="card">
+    <h3>Catálogo (F2 buscar)</h3>
+    <input id="productSearch" placeholder="Buscar produto...">
+    <div class="product-list">
+      {% for p in products %}
+      <button class="product-btn" onclick="addToCart({{p['id']}}, '{{p['name']}}', {{p['price']}})">{{ p['name'] }} - R$ {{ '%.2f'|format(p['price']) }}</button>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card" id="cartCard">
+    <h3>Carrinho (F3 foco)</h3>
+    <ul id="cartItems"></ul>
+    <div>Total: <strong id="total">R$ 0.00</strong></div>
+    <select id="payment_method"><option>Dinheiro</option><option>Pix</option><option>Débito</option><option>Crédito</option><option>Fiado</option></select>
+    <select id="client_id"><option value="">Cliente (obrigatório fiado)</option>{% for c in clients %}<option value="{{c['id']}}">{{c['name']}}</option>{% endfor %}</select>
+    <input id="discount_value" type="number" step="0.01" placeholder="Desconto">
+    <select id="discount_type"><option>R$</option><option>%</option></select>
+    <input id="service_fee" type="number" step="0.01" placeholder="Taxa serviço">
+    <button class="btn" onclick="submitOrder()">Finalizar (F4)</button>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/pdv.js') }}"></script>{% endblock %}

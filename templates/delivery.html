@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Delivery</h2>
+<div class="card table-wrap"><table><tr><th>Pedido</th><th>Cliente</th><th>Bairro</th><th>Taxa</th><th>Status</th><th>Entregador</th><th>Ação</th></tr>
+{% for o in orders %}
+<tr><td>#{{o['id']}}</td><td>{{o['client_name']}}</td><td>{{o['neighborhood_name'] or '-'}}</td><td>R$ {{'%.2f'|format(o['delivery_fee'])}}</td><td>{{o['delivery_status']}}</td><td>{{o['rider_name'] or '-'}}</td>
+<td><form method="post" action="{{ url_for('delivery_status', order_id=o['id']) }}"><select name="delivery_status"><option>aguardando</option><option>em_rota</option><option>entregue</option></select><select name="rider_id"><option value="">entregador</option>{% for r in riders %}<option value="{{r['id']}}">{{r['name']}}</option>{% endfor %}</select><button class="btn">Salvar</button></form></td></tr>
+{% endfor %}
+</table></div>
+{% endblock %}

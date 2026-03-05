@@ -1,0 +1,4 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card table-wrap"><h3>Logs de Auditoria</h3><table><tr><th>Quando</th><th>Usuário</th><th>Módulo</th><th>Ação</th><th>Detalhes</th></tr>{% for l in logs %}<tr><td>{{l['created_at']}}</td><td>{{l['username']}}</td><td>{{l['module']}}</td><td>{{l['action']}}</td><td>{{l['details']}}</td></tr>{% endfor %}</table></div>
+{% endblock %}

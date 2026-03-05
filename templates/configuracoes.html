@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+<h3>Configurações gerais</h3>
+<form method="post">
+  <input name="store_name" value="{{settings.get('store_name','')}}" placeholder="Nome">
+  <input name="city" value="{{settings.get('city','')}}" placeholder="Cidade/UF">
+  <input name="whatsapp" value="{{settings.get('whatsapp','')}}" placeholder="WhatsApp">
+  <input name="theme_primary" value="{{settings.get('theme_primary','')}}" placeholder="Cor primária">
+  <input name="theme_secondary" value="{{settings.get('theme_secondary','')}}" placeholder="Cor secundária">
+  <input name="theme_light" value="{{settings.get('theme_light','')}}" placeholder="Cor clara">
+  <input name="printer_type" value="{{settings.get('printer_type','')}}" placeholder="Impressora">
+  <button class="btn">Salvar</button>
+</form>
+</div>
+{% endblock %}
