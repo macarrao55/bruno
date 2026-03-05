@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="grid-3">
+<div class="card"><h3>Ticket Médio</h3><p>R$ {{ '%.2f'|format(avg_ticket['t']) }}</p></div>
+<div class="card"><a class="btn" href="{{ url_for('export_csv', report='vendas') }}">Exportar vendas CSV</a></div>
+<div class="card"><a class="btn" href="{{ url_for('export_csv', report='estoque') }}">Exportar estoque CSV</a></div>
+</div>
+<div class="card table-wrap"><h3>Vendas por período</h3><table><tr><th>Data</th><th>Total</th><th>Pedidos</th></tr>{% for s in sales %}<tr><td>{{s['d']}}</td><td>{{s['total']}}</td><td>{{s['pedidos']}}</td></tr>{% endfor %}</table></div>
+<div class="card table-wrap"><h3>Produtos mais vendidos</h3><table><tr><th>Produto</th><th>Qtd</th></tr>{% for p in top_products %}<tr><td>{{p['product_name']}}</td><td>{{p['q']}}</td></tr>{% endfor %}</table></div>
+{% endblock %}

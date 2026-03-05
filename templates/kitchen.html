@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>KDS Cozinha</h2>
+<div class="grid-4">
+  {% for col, label in [('novo','Novos'),('preparo','Em preparo'),('pronto','Pronto'),('entregue','Entregue/Retirado')] %}
+  <div class="card"><h3>{{label}}</h3>
+    {% for o in orders if o['kitchen_status']==col %}
+    <div class="order-card highlight-new">
+      <strong>#{{o['id']}}</strong> {{o['created_at']}}<br>{{o['origin']}} | {{o['order_type']}}
+      <ul>{% for item in grouped_items[o['id']] %}<li>{{item['qty']}}x {{item['product_name']}} ({{item['notes']}})</li>{% endfor %}</ul>
+      <form method="post" action="{{ url_for('update_kitchen_status', order_id=o['id']) }}">
+        <select name="status"><option value="novo">Novo</option><option value="preparo">Preparo</option><option value="pronto">Pronto</option><option value="entregue">Entregue</option></select>
+        <button class="btn">Atualizar</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+<audio id="beep" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+{% endblock %}
+{% block scripts %}<script>if(document.querySelectorAll('.highlight-new').length){document.getElementById('beep').play().catch(()=>{});}</script>{% endblock %}

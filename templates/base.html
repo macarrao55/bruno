@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ settings.get('store_name','Mega Lanches') }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  {% if session.user_id %}
+  <aside class="sidebar">
+    <h2>🍔 Mega</h2>
+    <a href="{{ url_for('dashboard') }}">📊 Dashboard</a>
+    <a href="{{ url_for('pdv') }}">💳 PDV</a>
+    <a href="{{ url_for('kitchen') }}">👨‍🍳 Cozinha</a>
+    <a href="{{ url_for('delivery') }}">🛵 Delivery</a>
+    <a href="{{ url_for('cadastros') }}">📁 Cadastros</a>
+    <a href="{{ url_for('estoque') }}">📦 Estoque</a>
+    <a href="{{ url_for('financeiro') }}">💰 Financeiro</a>
+    <a href="{{ url_for('relatorios') }}">📄 Relatórios</a>
+    <a href="{{ url_for('configuracoes') }}">⚙️ Configurações</a>
+    <a href="{{ url_for('auditoria') }}">🕵️ Auditoria</a>
+    <a href="{{ url_for('logout') }}">🚪 Sair</a>
+  </aside>
+  {% endif %}
+  <main class="content {% if not session.user_id %}no-sidebar{% endif %}">
+    <header class="topbar">
+      <h1>{{ settings.get('store_name','Mega Lanches') }}</h1>
+      <div>{{ current_user }} | {{ current_role }}</div>
+    </header>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, msg in messages %}
+        <div class="toast {{ category }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

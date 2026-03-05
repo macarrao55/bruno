@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="grid-2">
+<div class="card"><h3>Categoria</h3><form method="post" action="{{url_for('save_entity',entity='categoria')}}"><input name="name" required><button class="btn">Salvar</button></form></div>
+<div class="card"><h3>Produto</h3><form method="post" action="{{url_for('save_entity',entity='produto')}}"><input name="name" placeholder="Nome" required><select name="category_id">{% for c in categories %}<option value="{{c['id']}}">{{c['name']}}</option>{% endfor %}</select><input name="price" type="number" step="0.01" placeholder="Preço" required><input name="cost" type="number" step="0.01" placeholder="Custo" required><input name="prep_time" type="number" placeholder="Tempo"><label><input type="checkbox" name="active" checked> Ativo</label><button class="btn">Salvar</button></form></div>
+<div class="card"><h3>Cliente</h3><form method="post" action="{{url_for('save_entity',entity='cliente')}}"><input name="name" required><input name="phone"><input name="address"><input name="credit_limit" type="number" step="0.01" placeholder="Limite"><button class="btn">Salvar</button></form></div>
+<div class="card"><h3>Entregador</h3><form method="post" action="{{url_for('save_entity',entity='entregador')}}"><input name="name" required><input name="phone"><button class="btn">Salvar</button></form></div>
+<div class="card"><h3>Usuário</h3><form method="post" action="{{url_for('save_entity',entity='usuario')}}"><input name="name" required><input name="username" required><input name="password" type="password" required><select name="role"><option>Admin</option><option>Caixa</option><option>Cozinha</option><option>Entregador</option></select><button class="btn">Salvar</button></form></div>
+</div>
+{% endblock %}

@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}"><title>Login</title></head>
+<body class="login-page">
+  <form method="post" class="card login-card">
+    <h2>Entrar - Mega Lanches</h2>
+    <input name="username" placeholder="Usuário" required>
+    <input name="password" type="password" placeholder="Senha" required>
+    <button class="btn">Entrar</button>
+    <small>Usuário padrão: admin / senha: admin123</small>
+    {% with messages = get_flashed_messages(with_categories=true) %}{% for _, msg in messages %}<div class="toast error">{{ msg }}</div>{% endfor %}{% endwith %}
+  </form>
+</body>
+</html>

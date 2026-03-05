@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="grid-4">
+  <div class="card"><h3>Vendas Hoje</h3><p>R$ {{ '%.2f'|format(daily_sales['t']) }}</p></div>
+  <div class="card"><h3>Pedidos Hoje</h3><p>{{ daily_sales['c'] }}</p></div>
+  <div class="card"><h3>Vendas Mês</h3><p>R$ {{ '%.2f'|format(month_sales['t']) }}</p></div>
+  <div class="card"><h3>Estoque Baixo</h3><p>{{ low_stock['c'] }}</p></div>
+</div>
+<div class="card"><canvas id="salesChart"></canvas></div>
+<div class="grid-2">
+  <a class="btn" href="{{ url_for('pdv') }}">Ir para PDV</a>
+  <a class="btn" href="{{ url_for('kitchen') }}">Ir para Cozinha</a>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const labels=[{% for r in chart_rows %}'{{r['d']}}',{% endfor %}];
+const values=[{% for r in chart_rows %}{{r['t']}},{% endfor %}];
+new Chart(document.getElementById('salesChart'),{type:'line',data:{labels,datasets:[{label:'Vendas',data:values,borderColor:'#c1121f'}]}})
+</script>
+{% endblock %}
