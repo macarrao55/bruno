@@ -1,0 +1,77 @@
+<?php
+require_once __DIR__ . '/../includes/layout.php';
+requireLogin();
+
+$clientes = db()->query('SELECT id,nome FROM clientes ORDER BY nome')->fetchAll();
+$produtos = db()->query('SELECT * FROM produtos ORDER BY nome')->fetchAll();
+renderHeader('PDV Moderno');
+?>
+<div class="row">
+  <div class="col-md-8">
+    <form method="post" action="<?= BASE_URL ?>/actions/finalizar_venda.php" id="pdvForm">
+      <div class="card mb-3"><div class="card-body">
+        <div class="row g-2 align-items-end">
+          <div class="col-md-4"><label>Cliente</label><select name="cliente_id" class="form-select"><option value="">Não cadastrado</option><?php foreach($clientes as $c): ?><option value="<?= $c['id'] ?>"><?= e($c['nome']) ?></option><?php endforeach; ?></select></div>
+          <div class="col-md-3"><label>Pagamento</label><select name="forma_pagamento" class="form-select"><option>Dinheiro</option><option>Pix</option><option>Cartão</option><option>Crediário</option><option>Cheque</option></select></div>
+          <div class="col-md-2"><label>Valor pago</label><input type="number" step="0.01" name="valor_pago" id="valorPago" class="form-control" value="0"></div>
+          <div class="col-md-2"><label>Troco</label><input readonly id="troco" class="form-control" value="0,00"></div>
+        </div>
+      </div></div>
+
+      <div class="card"><div class="card-body">
+        <h6>Buscar produto por código de barras, código interno ou nome</h6>
+        <input type="text" id="buscaProduto" class="form-control mb-2" placeholder="Digite para filtrar produtos...">
+        <div class="table-responsive" style="max-height:300px;overflow:auto">
+          <table class="table table-sm" id="tabelaProdutos"><thead><tr><th>Produto</th><th>Preço</th><th></th></tr></thead><tbody>
+          <?php foreach($produtos as $p): ?>
+            <tr data-text="<?= e(strtolower($p['nome'].' '.$p['codigo_barras'].' '.$p['codigo_interno'])) ?>">
+              <td><?= e($p['nome']) ?></td><td><?= money((float)$p['preco_venda']) ?></td>
+              <td><button type="button" class="btn btn-sm btn-outline-primary" onclick='addItem(<?= json_encode($p) ?>)'>Adicionar</button></td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody></table>
+        </div>
+      </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card sticky-top" style="top:12px"><div class="card-body">
+      <h5>Carrinho</h5>
+      <div id="cartList" class="small"></div>
+      <input type="hidden" name="itens_json" id="itensJson">
+      <div class="mt-3"><label>Desconto total</label><input type="number" step="0.01" name="desconto_total" id="descontoTotal" class="form-control" value="0"></div>
+      <h4 class="mt-3">Total: <span id="totalVenda">R$ 0,00</span></h4>
+      <button class="btn btn-success w-100 mt-2">Finalizar venda</button>
+      <a class="btn btn-outline-danger w-100 mt-2" href="<?= BASE_URL ?>/pages/pdv.php">Cancelar venda</a>
+      <a class="btn btn-outline-secondary w-100 mt-2" href="<?= BASE_URL ?>/pages/relatorios.php?tipo=vendas">Reimprimir venda (relatório)</a>
+    </div></div>
+    </form>
+  </div>
+</div>
+<script>
+let cart = [];
+const money = v => `R$ ${Number(v).toFixed(2).replace('.',',')}`;
+function addItem(p){
+  const i = cart.findIndex(x=>x.id===p.id);
+  if(i>=0){cart[i].quantidade+=1;} else {cart.push({id:p.id,nome:p.nome,preco:Number(p.preco_venda),custo:Number(p.custo),quantidade:1,desconto:0});}
+  renderCart();
+}
+function renderCart(){
+  const list = document.getElementById('cartList');
+  list.innerHTML = cart.map((i,idx)=>`<div class='border rounded p-2 mb-2'>${i.nome}<br>Qtd <input type='number' min='1' value='${i.quantidade}' onchange='upd(${idx},"q",this.value)'> Preço <input type='number' step='0.01' value='${i.preco}' onchange='upd(${idx},"p",this.value)'> Desc <input type='number' step='0.01' value='${i.desconto}' onchange='upd(${idx},"d",this.value)'></div>`).join('');
+  const subtotal = cart.reduce((s,i)=>s + (i.preco*i.quantidade)-Number(i.desconto||0),0);
+  const total = subtotal - Number(document.getElementById('descontoTotal').value || 0);
+  document.getElementById('totalVenda').innerText = money(total);
+  document.getElementById('itensJson').value = JSON.stringify(cart);
+  const pago = Number(document.getElementById('valorPago').value || 0);
+  document.getElementById('troco').value = (pago-total).toFixed(2).replace('.',',');
+}
+function upd(idx,t,v){ v=Number(v); if(t==='q')cart[idx].quantidade=v; if(t==='p')cart[idx].preco=v; if(t==='d')cart[idx].desconto=v; renderCart(); }
+
+document.getElementById('descontoTotal').addEventListener('input', renderCart);
+document.getElementById('valorPago').addEventListener('input', renderCart);
+document.getElementById('buscaProduto').addEventListener('input', function(){
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('#tabelaProdutos tbody tr').forEach(tr=>{tr.style.display = tr.dataset.text.includes(q)?'':'none';});
+});
+</script>
+<?php renderFooter(); ?>
