@@ -6,6 +6,22 @@ $clientes = db()->query('SELECT id,nome FROM clientes ORDER BY nome')->fetchAll(
 $produtos = db()->query('SELECT * FROM produtos ORDER BY nome')->fetchAll();
 renderHeader('PDV Moderno');
 ?>
+<div class="card mb-3"><div class="card-body bg-light">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h6 class="mb-0">Cadastro rápido de cliente (sem sair do PDV)</h6>
+    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#quickClient">+ Cliente rápido</button>
+  </div>
+  <div class="collapse" id="quickClient">
+    <form method="post" action="<?= BASE_URL ?>/actions/save_cliente.php" class="row g-2">
+      <input type="hidden" name="redirect_to" value="pages/pdv.php">
+      <div class="col-md-4"><input name="nome" class="form-control" placeholder="Nome" required></div>
+      <div class="col-md-3"><input name="telefone" class="form-control" placeholder="Telefone"></div>
+      <div class="col-md-3"><input name="bairro" class="form-control" placeholder="Bairro"></div>
+      <div class="col-md-2"><button class="btn btn-primary w-100">Salvar</button></div>
+    </form>
+  </div>
+</div></div>
+
 <div class="row">
   <div class="col-md-8">
     <form method="post" action="<?= BASE_URL ?>/actions/finalizar_venda.php" id="pdvForm">
@@ -13,6 +29,7 @@ renderHeader('PDV Moderno');
         <div class="row g-2 align-items-end">
           <div class="col-md-4"><label>Cliente</label><select name="cliente_id" class="form-select"><option value="">Não cadastrado</option><?php foreach($clientes as $c): ?><option value="<?= $c['id'] ?>"><?= e($c['nome']) ?></option><?php endforeach; ?></select></div>
           <div class="col-md-3"><label>Pagamento</label><select name="forma_pagamento" class="form-select"><option>Dinheiro</option><option>Pix</option><option>Cartão</option><option>Crediário</option><option>Cheque</option></select></div>
+          <div class="col-md-3"><label>Recebimento</label><select name="recebimento_status" class="form-select"><option value="recebido">Já recebeu</option><option value="na_entrega">Vai receber na entrega</option></select></div>
           <div class="col-md-2"><label>Valor pago</label><input type="number" step="0.01" name="valor_pago" id="valorPago" class="form-control" value="0"></div>
           <div class="col-md-2"><label>Troco</label><input readonly id="troco" class="form-control" value="0,00"></div>
         </div>
@@ -42,7 +59,7 @@ renderHeader('PDV Moderno');
       <h4 class="mt-3">Total: <span id="totalVenda">R$ 0,00</span></h4>
       <button class="btn btn-success w-100 mt-2">Finalizar venda</button>
       <a class="btn btn-outline-danger w-100 mt-2" href="<?= BASE_URL ?>/pages/pdv.php">Cancelar venda</a>
-      <a class="btn btn-outline-secondary w-100 mt-2" href="<?= BASE_URL ?>/pages/relatorios.php?tipo=vendas">Reimprimir venda (relatório)</a>
+      <a class="btn btn-outline-secondary w-100 mt-2" href="<?= BASE_URL ?>/pages/vendas.php">Ver/reimprimir vendas</a>
     </div></div>
     </form>
   </div>

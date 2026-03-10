@@ -7,4 +7,6 @@ $stmt->execute([
     $_POST['nome'] ?? '', $_POST['telefone'] ?? '', $_POST['rua'] ?? '', $_POST['numero'] ?? '',
     $_POST['bairro'] ?? '', $_POST['referencia'] ?? '', $_POST['cpf'] ?? '', $_POST['tipo_cliente'] ?? 'comum'
 ]);
-redirect('pages/clientes.php');
+
+$redirectTo = $_POST['redirect_to'] ?? 'pages/clientes.php';
+redirect($redirectTo);

@@ -28,6 +28,7 @@ function renderHeader(string $title): void
           <h5 class="text-white mb-3">Sistema</h5>
           <a href="<?= BASE_URL ?>/index.php">Dashboard</a>
           <a href="<?= BASE_URL ?>/pages/pdv.php">PDV</a>
+          <a href="<?= BASE_URL ?>/pages/vendas.php">Vendas</a>
           <a href="<?= BASE_URL ?>/pages/clientes.php">Clientes</a>
           <a href="<?= BASE_URL ?>/pages/produtos.php">Produtos</a>
           <a href="<?= BASE_URL ?>/pages/compras.php">Compras</a>

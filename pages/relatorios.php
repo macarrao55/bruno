@@ -4,7 +4,7 @@ requireLogin();
 renderHeader('Relatórios');
 ?>
 <div class="card"><div class="card-body">
-  <p>Gerar relatórios de vendas, estoque, financeiro, clientes, produtos e entregas.</p>
+  <p>Gerar relatórios de vendas, estoque, financeiro, clientes, produtos e entregas (com opção de reimpressão na tela de vendas).</p>
   <div class="d-flex gap-2 flex-wrap">
     <a class="btn btn-outline-primary" href="<?= BASE_URL ?>/exports/export.php?tipo=vendas">Vendas (Excel/CSV)</a>
     <a class="btn btn-outline-primary" href="<?= BASE_URL ?>/exports/export.php?tipo=estoque">Estoque (Excel/CSV)</a>

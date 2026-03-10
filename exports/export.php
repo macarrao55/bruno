@@ -4,7 +4,7 @@ requireLogin();
 
 $tipo = $_GET['tipo'] ?? 'vendas';
 $queries = [
-    'vendas' => 'SELECT id, cliente_id, total, forma_pagamento, created_at FROM vendas ORDER BY id DESC',
+    'vendas' => 'SELECT id, cliente_id, total, forma_pagamento, recebimento_status, created_at FROM vendas ORDER BY id DESC',
     'estoque' => 'SELECT nome, estoque_atual, estoque_minimo FROM produtos ORDER BY nome',
     'financeiro' => "SELECT 'receber' tipo, valor, vencimento, status FROM contas_receber UNION ALL SELECT 'pagar' tipo, valor, vencimento, status FROM contas_pagar",
     'clientes' => 'SELECT nome, telefone, bairro, cpf, tipo_cliente FROM clientes ORDER BY nome',

@@ -55,6 +55,7 @@ CREATE TABLE vendas (
   cliente_id INT NULL,
   usuario_id INT NOT NULL,
   forma_pagamento VARCHAR(20) NOT NULL,
+  recebimento_status ENUM('recebido','na_entrega') DEFAULT 'recebido',
   subtotal DECIMAL(10,2) DEFAULT 0,
   desconto_total DECIMAL(10,2) DEFAULT 0,
   total DECIMAL(10,2) DEFAULT 0,

@@ -30,7 +30,7 @@ Sistema completo (base funcional) para distribuidora/comércio, pronto para roda
 - Login por e-mail e senha com hash
 - Controle de permissões por nível
 - Dashboard com indicadores + gráficos (Chart.js)
-- PDV com carrinho lateral, desconto, formas de pagamento e troco
+- PDV com carrinho lateral, desconto, formas de pagamento, status de recebimento e troco
 - Cadastros: clientes e produtos
 - Compras com atualização de estoque
 - Estoque com alerta de reposição e dias para acabar
@@ -38,7 +38,7 @@ Sistema completo (base funcional) para distribuidora/comércio, pronto para roda
 - Entregas com status e comissões
 - Controle de galões e botijões
 - DRE automático
-- Relatórios com exportação CSV (Excel)
+- Relatórios com exportação CSV (Excel) e tela de vendas para reimpressão
 
 ## Segurança
 - PDO + prepared statements

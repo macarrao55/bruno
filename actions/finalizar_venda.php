@@ -5,6 +5,7 @@ requireRole(['administrador', 'gerente', 'caixa', 'vendedor']);
 
 $clienteId = !empty($_POST['cliente_id']) ? (int) $_POST['cliente_id'] : null;
 $forma = $_POST['forma_pagamento'] ?? 'Dinheiro';
+$recebimentoStatus = $_POST['recebimento_status'] ?? 'recebido';
 $descontoTotal = (float) ($_POST['desconto_total'] ?? 0);
 $itens = json_decode($_POST['itens_json'] ?? '[]', true);
 
@@ -24,8 +25,8 @@ try {
     }
 
     $total = $subtotal - $descontoTotal;
-    $stmt = $pdo->prepare('INSERT INTO vendas (cliente_id, usuario_id, forma_pagamento, subtotal, desconto_total, total, lucro) VALUES (?,?,?,?,?,?,?)');
-    $stmt->execute([$clienteId, currentUser()['id'], $forma, $subtotal, $descontoTotal, $total, $lucro]);
+    $stmt = $pdo->prepare('INSERT INTO vendas (cliente_id, usuario_id, forma_pagamento, recebimento_status, subtotal, desconto_total, total, lucro) VALUES (?,?,?,?,?,?,?,?)');
+    $stmt->execute([$clienteId, currentUser()['id'], $forma, $recebimentoStatus, $subtotal, $descontoTotal, $total, $lucro]);
     $vendaId = (int) $pdo->lastInsertId();
 
     $itemStmt = $pdo->prepare('INSERT INTO itens_venda (venda_id, produto_id, quantidade, preco_unitario, desconto, custo_unitario) VALUES (?,?,?,?,?,?)');
@@ -36,7 +37,7 @@ try {
         $stockStmt->execute([$item['quantidade'], $item['id']]);
     }
 
-    if ($forma === 'Crediário' && $clienteId) {
+    if (($forma === 'Crediário' || $recebimentoStatus === 'na_entrega') && $clienteId) {
         $rec = $pdo->prepare("INSERT INTO contas_receber (cliente_id, valor, vencimento, status) VALUES (?,?,DATE_ADD(CURDATE(), INTERVAL 30 DAY),'aberto')");
         $rec->execute([$clienteId, $total]);
     }
