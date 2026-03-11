@@ -20,6 +20,7 @@ CREATE TABLE clientes (
   referencia VARCHAR(120),
   cpf VARCHAR(20),
   tipo_cliente ENUM('comum','revendedor') DEFAULT 'comum',
+  bloqueado TINYINT(1) DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

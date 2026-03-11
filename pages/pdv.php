@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../includes/layout.php';
 requireLogin();
 
-$clientes = db()->query('SELECT id,nome FROM clientes ORDER BY nome')->fetchAll();
+$clientes = db()->query('SELECT id,nome FROM clientes WHERE bloqueado = 0 ORDER BY nome')->fetchAll();
 $produtos = db()->query('SELECT * FROM produtos ORDER BY nome')->fetchAll();
 renderHeader('PDV Moderno');
 ?>
@@ -14,9 +14,13 @@ renderHeader('PDV Moderno');
   <div class="collapse" id="quickClient">
     <form method="post" action="<?= BASE_URL ?>/actions/save_cliente.php" class="row g-2">
       <input type="hidden" name="redirect_to" value="pages/pdv.php">
-      <div class="col-md-4"><input name="nome" class="form-control" placeholder="Nome" required></div>
-      <div class="col-md-3"><input name="telefone" class="form-control" placeholder="Telefone"></div>
-      <div class="col-md-3"><input name="bairro" class="form-control" placeholder="Bairro"></div>
+      <div class="col-md-3"><input name="nome" class="form-control" placeholder="Nome" required></div>
+      <div class="col-md-2"><input name="telefone" class="form-control" placeholder="Telefone"></div>
+      <div class="col-md-2"><input name="rua" class="form-control" placeholder="Rua"></div>
+      <div class="col-md-1"><input name="numero" class="form-control" placeholder="Nº"></div>
+      <div class="col-md-2"><input name="bairro" class="form-control" placeholder="Bairro"></div>
+      <div class="col-md-2"><input name="referencia" class="form-control" placeholder="Referência"></div>
+      <div class="col-md-2"><input name="cpf" class="form-control" placeholder="CPF"></div>
       <div class="col-md-2"><button class="btn btn-primary w-100">Salvar</button></div>
     </form>
   </div>

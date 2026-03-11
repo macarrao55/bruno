@@ -5,8 +5,9 @@ requireLogin();
 $clientes = db()->query('SELECT * FROM clientes ORDER BY id DESC')->fetchAll();
 renderHeader('Clientes');
 ?>
-<div class="card"><div class="card-body">
-  <form class="row g-2 mb-3" method="post" action="<?= BASE_URL ?>/actions/save_cliente.php">
+<div class="card mb-3"><div class="card-body">
+  <h6>Novo cliente</h6>
+  <form class="row g-2 mb-2" method="post" action="<?= BASE_URL ?>/actions/save_cliente.php">
     <div class="col-md-3"><input name="nome" class="form-control" placeholder="Nome" required></div>
     <div class="col-md-2"><input name="telefone" class="form-control" placeholder="Telefone"></div>
     <div class="col-md-2"><input name="rua" class="form-control" placeholder="Rua"></div>
@@ -19,8 +20,52 @@ renderHeader('Clientes');
     </div>
     <div class="col-md-2"><button class="btn btn-primary">Salvar cliente</button></div>
   </form>
-  <div class="table-responsive"><table class="table table-striped"><thead><tr><th>Nome</th><th>Telefone</th><th>Bairro</th><th>CPF</th><th>Tipo</th></tr></thead><tbody>
-  <?php foreach ($clientes as $c): ?><tr><td><?= e($c['nome']) ?></td><td><?= e($c['telefone']) ?></td><td><?= e($c['bairro']) ?></td><td><?= e($c['cpf']) ?></td><td><?= e($c['tipo_cliente']) ?></td></tr><?php endforeach; ?>
-  </tbody></table></div>
+</div></div>
+
+<div class="card"><div class="card-body">
+  <h6>Gerenciar clientes (editar, bloquear/desbloquear, excluir)</h6>
+  <div class="table-responsive">
+    <table class="table table-striped align-middle">
+      <thead>
+        <tr>
+          <th>Nome</th><th>Telefone</th><th>Rua</th><th>Nº</th><th>Bairro</th><th>Referência</th><th>CPF</th><th>Tipo</th><th>Status</th><th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach ($clientes as $c): ?>
+        <tr class="<?= (int)$c['bloqueado'] === 1 ? 'table-warning' : '' ?>">
+          <form method="post" action="<?= BASE_URL ?>/actions/update_cliente.php">
+            <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
+            <td><input name="nome" class="form-control form-control-sm" value="<?= e($c['nome']) ?>" required></td>
+            <td><input name="telefone" class="form-control form-control-sm" value="<?= e($c['telefone']) ?>"></td>
+            <td><input name="rua" class="form-control form-control-sm" value="<?= e($c['rua']) ?>"></td>
+            <td><input name="numero" class="form-control form-control-sm" value="<?= e($c['numero']) ?>"></td>
+            <td><input name="bairro" class="form-control form-control-sm" value="<?= e($c['bairro']) ?>"></td>
+            <td><input name="referencia" class="form-control form-control-sm" value="<?= e($c['referencia']) ?>"></td>
+            <td><input name="cpf" class="form-control form-control-sm" value="<?= e($c['cpf']) ?>"></td>
+            <td>
+              <select name="tipo_cliente" class="form-select form-select-sm">
+                <option value="comum" <?= $c['tipo_cliente'] === 'comum' ? 'selected' : '' ?>>Comum</option>
+                <option value="revendedor" <?= $c['tipo_cliente'] === 'revendedor' ? 'selected' : '' ?>>Revendedor</option>
+              </select>
+            </td>
+            <td><?= (int)$c['bloqueado'] === 1 ? '<span class="badge bg-warning text-dark">Bloqueado</span>' : '<span class="badge bg-success">Ativo</span>' ?></td>
+            <td class="d-flex gap-1">
+              <button class="btn btn-sm btn-primary" type="submit">Editar</button>
+          </form>
+              <form method="post" action="<?= BASE_URL ?>/actions/toggle_block_cliente.php" onsubmit="return confirm('Alterar status de bloqueio deste cliente?');">
+                <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
+                <button class="btn btn-sm btn-outline-warning" type="submit"><?= (int)$c['bloqueado'] === 1 ? 'Desbloquear' : 'Bloquear' ?></button>
+              </form>
+              <form method="post" action="<?= BASE_URL ?>/actions/delete_cliente.php" onsubmit="return confirm('Excluir cliente? Essa ação não pode ser desfeita.');">
+                <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Excluir</button>
+              </form>
+            </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
 </div></div>
 <?php renderFooter(); ?>

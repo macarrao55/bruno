@@ -31,7 +31,7 @@ Sistema completo (base funcional) para distribuidora/comércio, pronto para roda
 - Controle de permissões por nível
 - Dashboard com indicadores + gráficos (Chart.js)
 - PDV com carrinho lateral, desconto, formas de pagamento, status de recebimento e troco
-- Cadastros: clientes e produtos
+- Cadastros: clientes e produtos (clientes com editar/excluir/bloquear)
 - Compras com atualização de estoque
 - Estoque com alerta de reposição e dias para acabar
 - Financeiro (receber, pagar, despesas)
