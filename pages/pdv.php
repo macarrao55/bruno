@@ -83,7 +83,7 @@ function addItem(p){
 }
 function renderCart(){
   const list = document.getElementById('cartList');
-  list.innerHTML = cart.map((i,idx)=>`<div class='border rounded p-2 mb-2'>${i.nome}<br>Qtd <input type='number' min='1' value='${i.quantidade}' onchange='upd(${idx},"q",this.value)'> Preço <input type='number' step='0.01' value='${i.preco}' onchange='upd(${idx},"p",this.value)'> Desc <input type='number' step='0.01' value='${i.desconto}' onchange='upd(${idx},"d",this.value)'></div>`).join('');
+  list.innerHTML = cart.map((i,idx)=>`<div class='border rounded p-2 mb-2'>${i.nome}<br>Qtd <input type='number' min='1' value='${i.quantidade}' onchange='upd(${idx},"q",this.value)'> Preço <input type='number' step='0.01' value='${i.preco}' onchange='upd(${idx},"p",this.value)'> Desc <input type='number' step='0.01' value='${i.desconto}' onchange='upd(${idx},"d",this.value)'> <button type='button' class='btn btn-sm btn-outline-danger mt-1' onclick='removeItem(${idx})'>Excluir</button></div>`).join('');
   const subtotal = cart.reduce((s,i)=>s + (i.preco*i.quantidade)-Number(i.desconto||0),0);
   const total = subtotal - Number(document.getElementById('descontoTotal').value || 0);
   document.getElementById('totalVenda').innerText = money(total);
@@ -91,7 +91,8 @@ function renderCart(){
   const pago = Number(document.getElementById('valorPago').value || 0);
   document.getElementById('troco').value = (pago-total).toFixed(2).replace('.',',');
 }
-function upd(idx,t,v){ v=Number(v); if(t==='q')cart[idx].quantidade=v; if(t==='p')cart[idx].preco=v; if(t==='d')cart[idx].desconto=v; renderCart(); }
+function upd(idx,t,v){ v=Number(v); if(t==='q')cart[idx].quantidade=v; if(t==='p')cart[idx].preco=v; if(t==='d')cart[idx].desconto=v; if(cart[idx] && cart[idx].quantidade<=0){ removeItem(idx); return; } renderCart(); }
+function removeItem(idx){ cart.splice(idx,1); renderCart(); }
 
 document.getElementById('descontoTotal').addEventListener('input', renderCart);
 document.getElementById('valorPago').addEventListener('input', renderCart);
