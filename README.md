@@ -13,6 +13,14 @@ Sistema completo (base funcional) para distribuidora/comércio, pronto para roda
 3. Ajuste as credenciais em `config/config.php` se necessário.
 4. Abra `http://localhost/bruno`.
 
+
+## Atualização de banco (quem já tinha instalado antes)
+Se seu banco foi criado antes da funcionalidade de bloqueio de clientes, execute:
+
+```sql
+ALTER TABLE clientes ADD COLUMN bloqueado TINYINT(1) DEFAULT 0;
+```
+
 ## Usuário inicial
 - **Email:** `admin@sistema.local`
 - **Senha:** `123456`

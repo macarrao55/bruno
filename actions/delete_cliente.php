@@ -21,10 +21,10 @@ foreach ($checks as $sql) {
     }
 }
 
-if ($temVinculo) {
+if ($temVinculo && tableHasColumn('clientes', 'bloqueado')) {
     $blk = db()->prepare('UPDATE clientes SET bloqueado = 1 WHERE id = ?');
     $blk->execute([$id]);
-} else {
+} elseif (!$temVinculo) {
     $del = db()->prepare('DELETE FROM clientes WHERE id = ?');
     $del->execute([$id]);
 }

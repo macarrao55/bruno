@@ -36,3 +36,23 @@ function roleLabel(string $nivel): string
     ];
     return $map[$nivel] ?? ucfirst($nivel);
 }
+
+/**
+ * Verifica se uma coluna existe em uma tabela (cache em memória por request).
+ */
+function tableHasColumn(string $table, string $column): bool
+{
+    static $cache = [];
+    $key = $table . '.' . $column;
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+
+    $sql = 'SELECT COUNT(*) c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?';
+    $stmt = db()->prepare($sql);
+    $stmt->execute([$table, $column]);
+    $exists = ((int) ($stmt->fetch()['c'] ?? 0)) > 0;
+    $cache[$key] = $exists;
+
+    return $exists;
+}
