@@ -8,8 +8,12 @@ $clientesSql = $hasBloqueado
     : 'SELECT id,nome FROM clientes ORDER BY nome';
 $clientes = db()->query($clientesSql)->fetchAll();
 $produtos = db()->query('SELECT * FROM produtos ORDER BY nome')->fetchAll();
+$msgOk = $_GET['ok'] ?? '';
+$msgErro = $_GET['erro'] ?? '';
 renderHeader('PDV Moderno');
 ?>
+<?php if ($msgOk): ?><div class="alert alert-success"><?= e($msgOk) ?></div><?php endif; ?>
+<?php if ($msgErro): ?><div class="alert alert-danger"><?= e($msgErro) ?></div><?php endif; ?>
 <div class="card mb-3"><div class="card-body bg-light">
   <div class="d-flex justify-content-between align-items-center mb-2">
     <h6 class="mb-0">Cadastro rápido de cliente (sem sair do PDV)</h6>
