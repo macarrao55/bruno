@@ -16,7 +16,12 @@ if (!$venda) {
     exit('Venda não encontrada.');
 }
 
-$it = db()->prepare('SELECT iv.*, p.nome produto, p.categoria FROM itens_venda iv JOIN produtos p ON p.id=iv.produto_id WHERE iv.venda_id = ?');
+$hasValidadeGalao = tableHasColumn('itens_venda', 'validade_galao');
+$itensSql = $hasValidadeGalao
+    ? 'SELECT iv.*, p.nome produto, p.categoria FROM itens_venda iv JOIN produtos p ON p.id=iv.produto_id WHERE iv.venda_id = ?'
+    : 'SELECT iv.*, NULL AS validade_galao, p.nome produto, p.categoria FROM itens_venda iv JOIN produtos p ON p.id=iv.produto_id WHERE iv.venda_id = ?';
+
+$it = db()->prepare($itensSql);
 $it->execute([$id]);
 $itens = $it->fetchAll();
 ?>
@@ -47,7 +52,7 @@ $itens = $it->fetchAll();
       <tr>
         <td><?= e($item['produto']) ?></td>
         <td><?= e($item['categoria']) ?></td>
-        <td><?= e($item['validade_galao'] ?: '-') ?></td>
+        <td><?= e(($item['validade_galao'] ?? '') ?: '-') ?></td>
         <td><?= (int) $item['quantidade'] ?></td>
         <td><?= money((float) $item['preco_unitario']) ?></td>
         <td><?= money(((float) $item['preco_unitario'] * (int) $item['quantidade']) - (float) $item['desconto']) ?></td>
