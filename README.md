@@ -43,3 +43,13 @@ Sistema completo (base funcional) para distribuidora/comércio, pronto para roda
 - PDO + prepared statements
 - Sessão protegida e validação de login
 - Escape de saída com `htmlspecialchars`
+
+## Impressão térmica 80 mm
+- O comprovante em `pages/reimprimir_venda.php` foi otimizado para bobina 80mm.
+- Configure os dados em `config/config.php`:
+  - `PRINT_EMPRESA_NOME`
+  - `PRINT_EMPRESA_TELEFONE`
+  - `PRINT_EMPRESA_INSTAGRAM`
+  - `PRINT_CREDIARIO_SEGUNDA_VIA`
+  - `PRINT_RODAPE_TEXTO`
+- Em vendas no crediário, o sistema imprime 2 vias (empresa + cliente com assinatura), quando habilitado.
