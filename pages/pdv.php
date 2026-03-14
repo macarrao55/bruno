@@ -2,7 +2,11 @@
 require_once __DIR__ . '/../includes/layout.php';
 requireLogin();
 
-$clientes = db()->query('SELECT id,nome FROM clientes WHERE bloqueado = 0 ORDER BY nome')->fetchAll();
+$hasBloqueado = tableHasColumn('clientes', 'bloqueado');
+$clientesSql = $hasBloqueado
+    ? 'SELECT id,nome FROM clientes WHERE bloqueado = 0 ORDER BY nome'
+    : 'SELECT id,nome FROM clientes ORDER BY nome';
+$clientes = db()->query($clientesSql)->fetchAll();
 $produtos = db()->query('SELECT * FROM produtos ORDER BY nome')->fetchAll();
 renderHeader('PDV Moderno');
 ?>

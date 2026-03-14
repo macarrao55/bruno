@@ -2,7 +2,12 @@
 require_once __DIR__ . '/../includes/layout.php';
 requireLogin();
 
-$clientes = db()->query('SELECT * FROM clientes ORDER BY id DESC')->fetchAll();
+$hasBloqueado = tableHasColumn('clientes', 'bloqueado');
+$clientesSql = $hasBloqueado
+    ? 'SELECT * FROM clientes ORDER BY id DESC'
+    : 'SELECT *, 0 AS bloqueado FROM clientes ORDER BY id DESC';
+$clientes = db()->query($clientesSql)->fetchAll();
+
 renderHeader('Clientes');
 ?>
 <div class="card mb-3"><div class="card-body">
@@ -24,6 +29,14 @@ renderHeader('Clientes');
 
 <div class="card"><div class="card-body">
   <h6>Gerenciar clientes (editar, bloquear/desbloquear, excluir)</h6>
+
+  <?php if (!$hasBloqueado): ?>
+    <div class="alert alert-warning">
+      Seu banco está sem a coluna <code>clientes.bloqueado</code>. O botão de bloqueio fica desabilitado até executar:
+      <code>ALTER TABLE clientes ADD COLUMN bloqueado TINYINT(1) DEFAULT 0;</code>
+    </div>
+  <?php endif; ?>
+
   <div class="table-responsive">
     <table class="table table-striped align-middle">
       <thead>
@@ -55,7 +68,7 @@ renderHeader('Clientes');
           </form>
               <form method="post" action="<?= BASE_URL ?>/actions/toggle_block_cliente.php" onsubmit="return confirm('Alterar status de bloqueio deste cliente?');">
                 <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
-                <button class="btn btn-sm btn-outline-warning" type="submit"><?= (int)$c['bloqueado'] === 1 ? 'Desbloquear' : 'Bloquear' ?></button>
+                <button class="btn btn-sm btn-outline-warning" type="submit" <?= $hasBloqueado ? '' : 'disabled' ?>><?= (int)$c['bloqueado'] === 1 ? 'Desbloquear' : 'Bloquear' ?></button>
               </form>
               <form method="post" action="<?= BASE_URL ?>/actions/delete_cliente.php" onsubmit="return confirm('Excluir cliente? Essa ação não pode ser desfeita.');">
                 <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">

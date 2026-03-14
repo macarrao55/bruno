@@ -2,8 +2,12 @@
 require_once __DIR__ . '/../includes/auth.php';
 requireLogin();
 
+if (!tableHasColumn('clientes', 'bloqueado')) {
+    redirect('pages/clientes.php');
+}
+
 $id = (int) ($_POST['id'] ?? 0);
-$sel = db()->prepare('SELECT bloqueado FROM clientes WHERE id=?');
+$sel = db()->prepare('SELECT bloqueado FROM clientes WHERE id = ?');
 $sel->execute([$id]);
 $row = $sel->fetch();
 

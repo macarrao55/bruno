@@ -36,3 +36,26 @@ function roleLabel(string $nivel): string
     ];
     return $map[$nivel] ?? ucfirst($nivel);
 }
+
+/**
+ * Verifica se a coluna existe na tabela (compatibilidade com bancos antigos).
+ */
+function tableHasColumn(string $table, string $column): bool
+{
+    static $cache = [];
+    $key = $table . '.' . $column;
+
+    if (isset($cache[$key])) {
+        return $cache[$key];
+    }
+
+    try {
+        $stmt = db()->prepare('SELECT COUNT(*) c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?');
+        $stmt->execute([DB_NAME, $table, $column]);
+        $cache[$key] = ((int) ($stmt->fetch()['c'] ?? 0)) > 0;
+    } catch (Throwable $e) {
+        $cache[$key] = false;
+    }
+
+    return $cache[$key];
+}
