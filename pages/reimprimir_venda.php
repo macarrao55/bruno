@@ -4,13 +4,16 @@ requireLogin();
 
 $id = (int) ($_GET['id'] ?? 0);
 $hasReceb = tableHasColumn('vendas', 'recebimento_status');
+$hasCepCliente = tableHasColumn('clientes', 'cep');
+$cepField = $hasCepCliente ? 'c.cep' : 'NULL AS cep';
+
 $sql = $hasReceb
-    ? "SELECT v.*, c.nome cliente, c.telefone, c.cep, c.rua, c.numero, c.bairro, c.referencia, u.nome usuario
+    ? "SELECT v.*, c.nome cliente, c.telefone, {$cepField}, c.rua, c.numero, c.bairro, c.referencia, u.nome usuario
        FROM vendas v
        LEFT JOIN clientes c ON c.id = v.cliente_id
        LEFT JOIN usuarios u ON u.id = v.usuario_id
        WHERE v.id = ?"
-    : "SELECT v.*, 'recebido' AS recebimento_status, c.nome cliente, c.telefone, c.cep, c.rua, c.numero, c.bairro, c.referencia, u.nome usuario
+    : "SELECT v.*, 'recebido' AS recebimento_status, c.nome cliente, c.telefone, {$cepField}, c.rua, c.numero, c.bairro, c.referencia, u.nome usuario
        FROM vendas v
        LEFT JOIN clientes c ON c.id = v.cliente_id
        LEFT JOIN usuarios u ON u.id = v.usuario_id
