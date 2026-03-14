@@ -7,7 +7,6 @@ $clientes = db()->query('SELECT id,nome,bairro FROM clientes ORDER BY nome')->fe
 $entregas = db()->query('SELECT e.*, c.nome cliente, c.bairro, u.nome entregador FROM entregas e LEFT JOIN clientes c ON c.id=e.cliente_id LEFT JOIN usuarios u ON u.id=e.entregador_id ORDER BY e.id DESC')->fetchAll();
 renderHeader('Entregas');
 ?>
-<div class="mb-3"><a class="btn btn-outline-primary" href="<?= BASE_URL ?>/pages/mapa_entregas.php">Abrir Mapa de Entregas</a></div>
 <div class="card"><div class="card-body">
 <form class="row g-2 mb-3" method="post" action="<?= BASE_URL ?>/actions/save_entrega.php">
   <div class="col-md-2"><input name="pedido" class="form-control" placeholder="Pedido" required></div>

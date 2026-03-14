@@ -39,20 +39,8 @@ Sistema completo (base funcional) para distribuidora/comércio, pronto para roda
 - Controle de galões e botijões
 - DRE automático
 - Relatórios com exportação CSV (Excel) e tela de vendas para reimpressão
-- Mapa de Entregas com filtros, lista operacional, atualização de status e rota no Google Maps
 
 ## Segurança
 - PDO + prepared statements
 - Sessão protegida e validação de login
 - Escape de saída com `htmlspecialchars`
-
-
-
-## Módulo Mapa de Entregas
-- Acesse em **Menu > Mapa de Entregas**.
-- Filtros por data, entregador, bairro e status.
-- Atualiza status para: preparando, em rota, entregue, cancelado e atrasado.
-- Para instalações antigas, rode também: `database/migrations/20260314_mapa_entregas.sql`.
-- O mapa usa **Leaflet + OpenStreetMap** (gratuito).
-
-- Para bancos antigos com cadastro de cliente sem CEP, rode: `database/migrations/20260314_clientes_cep.sql`.
