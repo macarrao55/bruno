@@ -134,7 +134,7 @@ if ($isCrediario && PRINT_CREDIARIO_SEGUNDA_VIA) {
               <td class="col-prod">
                 <?= e($item['produto']) ?>
                 <?php if (!empty($item['observacao'])): ?><div class="obs">Obs: <?= e($item['observacao']) ?></div><?php endif; ?>
-                <?php if (!empty($item['validade_galao'])): ?><div class="obs">Validade: <?= e(date('m/Y', strtotime($item['validade_galao']))) ?></div><?php endif; ?>
+                <?php if (!empty($item['validade_galao'])): ?><div class="obs">Validade: <strong><?= e(date('m/Y', strtotime($item['validade_galao']))) ?></strong></div><?php endif; ?>
               </td>
               <td class="col-qtd"><?= (int) $item['quantidade'] ?></td>
               <td class="col-vu"><?= money((float) $item['preco_unitario']) ?></td>
