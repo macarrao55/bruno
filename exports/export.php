@@ -9,7 +9,6 @@ $queries = [
     'financeiro' => "SELECT 'receber' tipo, valor, vencimento, status FROM contas_receber UNION ALL SELECT 'pagar' tipo, valor, vencimento, status FROM contas_pagar",
     'clientes' => 'SELECT nome, telefone, bairro, cpf, tipo_cliente FROM clientes ORDER BY nome',
     'produtos' => 'SELECT nome, categoria, preco_venda, estoque_atual FROM produtos ORDER BY nome',
-    'entregas' => 'SELECT pedido, cliente_id, entregador_id, status, valor_pedido, comissao FROM entregas ORDER BY id DESC',
 ];
 
 if (!isset($queries[$tipo])) {

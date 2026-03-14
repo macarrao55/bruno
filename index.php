@@ -11,7 +11,6 @@ $ticketMedio = (float) (db()->query("SELECT COALESCE(AVG(total),0) AS v FROM ven
 $lucro = (float) (db()->query("SELECT COALESCE(SUM(lucro),0) AS v FROM vendas WHERE DATE_FORMAT(created_at, '%Y-%m') = '$month'")->fetch()['v'] ?? 0);
 $estoqueBaixo = (int) (db()->query('SELECT COUNT(*) c FROM produtos WHERE estoque_atual <= estoque_minimo')->fetch()['c'] ?? 0);
 $clientesDevendo = (int) (db()->query("SELECT COUNT(*) c FROM contas_receber WHERE status = 'aberto'")->fetch()['c'] ?? 0);
-$entregasRota = (int) (db()->query("SELECT COUNT(*) c FROM entregas WHERE status = 'em rota'")->fetch()['c'] ?? 0);
 
 $salesByDay = db()->query("SELECT DATE(created_at) dia, SUM(total) total FROM vendas WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) GROUP BY DATE(created_at) ORDER BY dia")->fetchAll();
 $salesByProduct = db()->query("SELECT p.nome, COALESCE(SUM(iv.quantidade),0) qtd FROM itens_venda iv JOIN produtos p ON p.id = iv.produto_id GROUP BY p.nome ORDER BY qtd DESC LIMIT 5")->fetchAll();
@@ -28,7 +27,6 @@ renderHeader('Dashboard');
     ['Lucro', money($lucro), 'warning'],
     ['Estoque Baixo', (string) $estoqueBaixo, 'danger'],
     ['Clientes Devendo', (string) $clientesDevendo, 'secondary'],
-    ['Entregas em Rota', (string) $entregasRota, 'dark'],
   ];
   foreach ($kpis as [$label, $value, $color]): ?>
     <div class="col-md-3">

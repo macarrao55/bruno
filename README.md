@@ -35,7 +35,6 @@ Sistema completo (base funcional) para distribuidora/comércio, pronto para roda
 - Compras com atualização de estoque
 - Estoque com alerta de reposição e dias para acabar
 - Financeiro (receber, pagar, despesas)
-- Entregas com status e comissões
 - Controle de galões e botijões
 - DRE automático
 - Relatórios com exportação CSV (Excel) e tela de vendas para reimpressão

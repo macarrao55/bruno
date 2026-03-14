@@ -34,7 +34,6 @@ function renderHeader(string $title): void
           <a href="<?= BASE_URL ?>/pages/compras.php">Compras</a>
           <a href="<?= BASE_URL ?>/pages/estoque.php">Estoque</a>
           <a href="<?= BASE_URL ?>/pages/financeiro.php">Financeiro</a>
-          <a href="<?= BASE_URL ?>/pages/entregas.php">Entregas</a>
           <a href="<?= BASE_URL ?>/pages/vasilhames.php">Galões/Botijões</a>
           <a href="<?= BASE_URL ?>/pages/dre.php">DRE</a>
           <a href="<?= BASE_URL ?>/pages/relatorios.php">Relatórios</a>
