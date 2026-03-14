@@ -41,8 +41,8 @@ renderHeader('PDV Moderno');
       <div class="card mb-3"><div class="card-body">
         <div class="row g-2 align-items-end">
           <div class="col-md-4"><label>Cliente</label><select name="cliente_id" class="form-select"><option value="">Não cadastrado</option><?php foreach($clientes as $c): ?><option value="<?= $c['id'] ?>"><?= e($c['nome']) ?></option><?php endforeach; ?></select></div>
-          <div class="col-md-3"><label>Pagamento</label><select name="forma_pagamento" class="form-select"><option>Dinheiro</option><option>Pix</option><option>Cartão</option><option>Crediário</option><option>Cheque</option></select></div>
-          <div class="col-md-3"><label>Recebimento</label><select name="recebimento_status" class="form-select"><option value="recebido">Já recebeu</option><option value="na_entrega">Vai receber na entrega</option></select></div>
+          <div class="col-md-3"><label>Pagamento</label><select name="forma_pagamento" id="formaPagamento" class="form-select"><option>Dinheiro</option><option>Pix</option><option>Cartão</option><option>Crediário</option><option>Cheque</option></select></div>
+          <div class="col-md-3"><label>Recebimento</label><select name="recebimento_status" id="recebimentoStatus" class="form-select"><option value="recebido">Já recebeu</option><option value="na_entrega">Vai receber na entrega</option></select></div>
           <div class="col-md-2"><label>Valor pago</label><input type="number" step="0.01" name="valor_pago" id="valorPago" class="form-control" value="0"></div>
           <div class="col-md-2"><label>Troco</label><input readonly id="troco" class="form-control" value="0,00"></div>
         </div>
@@ -90,7 +90,7 @@ function renderCart(){
   const list = document.getElementById('cartList');
   list.innerHTML = cart.map((i,idx)=>{
     const validadeField = isGalao(i.categoria)
-      ? `<br>Validade galão <input type='date' value='${i.validade_galao || ''}' onchange='upd(${idx},"v",this.value)' required>`
+      ? `<br>Validade galão (mês/ano) <input type='month' value='${i.validade_galao || ''}' onchange='upd(${idx},"v",this.value)' required>`
       : '';
     return `<div class='border rounded p-2 mb-2'>${i.nome} <span class='text-muted'>(${i.categoria || 'Geral'})</span><br>Qtd <input type='number' min='1' value='${i.quantidade}' onchange='upd(${idx},"q",this.value)'> Preço <input type='number' step='0.01' value='${i.preco}' onchange='upd(${idx},"p",this.value)'> Desc <input type='number' step='0.01' value='${i.desconto}' onchange='upd(${idx},"d",this.value)'>${validadeField}</div>`;
   }).join('');
@@ -115,6 +115,23 @@ document.getElementById('buscaProduto').addEventListener('input', function(){
   const q = this.value.toLowerCase();
   document.querySelectorAll('#tabelaProdutos tbody tr').forEach(tr=>{tr.style.display = tr.dataset.text.includes(q)?'':'none';});
 });
+
+
+function syncRecebimentoComPagamento(){
+  const forma = document.getElementById('formaPagamento').value.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const receb = document.getElementById('recebimentoStatus');
+  if (forma === 'crediario') {
+    receb.value = 'na_entrega';
+    receb.setAttribute('disabled','disabled');
+    receb.title = 'No crediário o recebimento é tratado automaticamente como crediário.';
+  } else {
+    receb.removeAttribute('disabled');
+    receb.title = '';
+  }
+}
+
+document.getElementById('formaPagamento').addEventListener('change', syncRecebimentoComPagamento);
+syncRecebimentoComPagamento();
 
 document.getElementById('pdvForm').addEventListener('submit', function(e){
   const faltando = cart.find(i => isGalao(i.categoria) && !i.validade_galao);

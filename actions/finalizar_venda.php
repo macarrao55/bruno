@@ -5,7 +5,12 @@ requireRole(['administrador', 'gerente', 'caixa', 'vendedor']);
 
 $clienteId = !empty($_POST['cliente_id']) ? (int) $_POST['cliente_id'] : null;
 $forma = $_POST['forma_pagamento'] ?? 'Dinheiro';
+$formaNorm = strtolower(strtr((string) $forma, ['Á'=>'A','À'=>'A','Â'=>'A','Ã'=>'A','á'=>'a','à'=>'a','â'=>'a','ã'=>'a','Í'=>'I','í'=>'i']));
 $recebimentoStatus = $_POST['recebimento_status'] ?? 'recebido';
+if ($formaNorm === 'crediario') {
+    // Regra de negócio: no crediário, recebimento também é crediário (tratado como pendente/na_entrega).
+    $recebimentoStatus = 'na_entrega';
+}
 $descontoTotal = (float) ($_POST['desconto_total'] ?? 0);
 $itens = json_decode($_POST['itens_json'] ?? '[]', true);
 
@@ -63,6 +68,10 @@ try {
         $categoria = str_replace(['ã', 'á', 'â', 'à'], ['a', 'a', 'a', 'a'], $categoria);
         $isGalao = str_contains($categoria, 'galao');
         $validade = ($isGalao && $hasValidadeGalao) ? ($item['validade_galao'] ?? null) : null;
+        if ($validade && preg_match('/^\d{4}-\d{2}$/', $validade) === 1) {
+            // input month (YYYY-MM) para coluna DATE
+            $validade .= '-01';
+        }
 
         if ($hasValidadeGalao) {
             $itemStmt->execute([$vendaId, $item['id'], $item['quantidade'], $item['preco'], $item['desconto'], $item['custo'], $validade]);
@@ -72,7 +81,7 @@ try {
         $stockStmt->execute([$item['quantidade'], $item['id']]);
     }
 
-    if (($forma === 'Crediário' || $forma === 'Crediario' || $recebimentoStatus === 'na_entrega') && $clienteId) {
+    if (($formaNorm === 'crediario' || $recebimentoStatus === 'na_entrega') && $clienteId) {
         $rec = $pdo->prepare("INSERT INTO contas_receber (cliente_id, valor, vencimento, status) VALUES (?,?,DATE_ADD(CURDATE(), INTERVAL 30 DAY),'aberto')");
         $rec->execute([$clienteId, $total]);
     }

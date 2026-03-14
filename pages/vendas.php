@@ -25,7 +25,7 @@ renderHeader('Todas as Vendas');
           <td><?= e($v['cliente'] ?? 'Não cadastrado') ?></td>
           <td><?= e($v['usuario'] ?? '-') ?></td>
           <td><?= e($v['forma_pagamento']) ?></td>
-          <td><?= e(($v['recebimento_status'] ?? 'recebido') === 'na_entrega' ? 'Receber na entrega' : 'Já recebeu') ?></td>
+          <td><?= e((strtolower((string)($v['forma_pagamento'] ?? '')) === 'crediário' || strtolower((string)($v['forma_pagamento'] ?? '')) === 'crediario') ? 'Crediário' : (($v['recebimento_status'] ?? 'recebido') === 'na_entrega' ? 'Receber na entrega' : 'Já recebeu')) ?></td>
           <td><?= money((float) $v['total']) ?></td>
           <td>
             <a class="btn btn-sm btn-outline-secondary" target="_blank" href="<?= BASE_URL ?>/pages/reimprimir_venda.php?id=<?= (int) $v['id'] ?>">Reimprimir</a>
