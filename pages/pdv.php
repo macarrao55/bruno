@@ -78,8 +78,8 @@ let cart = [];
 const money = v => `R$ ${Number(v).toFixed(2).replace('.',',')}`;
 function isGalao(c){ return String(c || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'') === 'galao'; }
 function addItem(p){
-  const i = cart.findIndex(x=>x.id===p.id);
-  if(i>=0){cart[i].quantidade+=1;} else {cart.push({id:p.id,nome:p.nome,categoria:p.categoria,preco:Number(p.preco_venda),custo:Number(p.custo),quantidade:1,desconto:0,validade_galao:''});}
+  // Regra solicitada: não acumular produtos iguais; cada clique vira uma linha separada no carrinho.
+  cart.push({id:p.id,nome:p.nome,categoria:p.categoria,preco:Number(p.preco_venda),custo:Number(p.custo),quantidade:1,desconto:0,validade_galao:''});
   renderCart();
 }
 function renderCart(){
