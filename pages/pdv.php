@@ -20,6 +20,7 @@ renderHeader('PDV Moderno');
       <input type="hidden" name="redirect_to" value="pages/pdv.php">
       <div class="col-md-3"><input name="nome" class="form-control" placeholder="Nome" required></div>
       <div class="col-md-2"><input name="telefone" class="form-control" placeholder="Telefone"></div>
+      <div class="col-md-2"><input name="cep" class="form-control" placeholder="CEP"></div>
       <div class="col-md-2"><input name="rua" class="form-control" placeholder="Rua"></div>
       <div class="col-md-1"><input name="numero" class="form-control" placeholder="Nº"></div>
       <div class="col-md-2"><input name="bairro" class="form-control" placeholder="Bairro"></div>

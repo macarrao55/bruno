@@ -3,9 +3,10 @@ require_once __DIR__ . '/../includes/layout.php';
 requireLogin();
 
 $hasBloqueado = tableHasColumn('clientes', 'bloqueado');
+$hasCep = tableHasColumn('clientes', 'cep');
 $clientesSql = $hasBloqueado
-    ? 'SELECT * FROM clientes ORDER BY id DESC'
-    : 'SELECT *, 0 AS bloqueado FROM clientes ORDER BY id DESC';
+    ? ($hasCep ? 'SELECT * FROM clientes ORDER BY id DESC' : 'SELECT *, NULL AS cep FROM clientes ORDER BY id DESC')
+    : ($hasCep ? 'SELECT *, 0 AS bloqueado FROM clientes ORDER BY id DESC' : 'SELECT *, 0 AS bloqueado, NULL AS cep FROM clientes ORDER BY id DESC');
 $clientes = db()->query($clientesSql)->fetchAll();
 
 renderHeader('Clientes');
@@ -15,6 +16,7 @@ renderHeader('Clientes');
   <form class="row g-2 mb-2" method="post" action="<?= BASE_URL ?>/actions/save_cliente.php">
     <div class="col-md-3"><input name="nome" class="form-control" placeholder="Nome" required></div>
     <div class="col-md-2"><input name="telefone" class="form-control" placeholder="Telefone"></div>
+    <div class="col-md-2"><input name="cep" class="form-control" placeholder="CEP"></div>
     <div class="col-md-2"><input name="rua" class="form-control" placeholder="Rua"></div>
     <div class="col-md-1"><input name="numero" class="form-control" placeholder="Nº"></div>
     <div class="col-md-2"><input name="bairro" class="form-control" placeholder="Bairro"></div>
@@ -30,10 +32,16 @@ renderHeader('Clientes');
 <div class="card"><div class="card-body">
   <h6>Gerenciar clientes (editar, bloquear/desbloquear, excluir)</h6>
 
-  <?php if (!$hasBloqueado): ?>
+  <?php if (!$hasBloqueado || !$hasCep): ?>
     <div class="alert alert-warning">
+      <?php if (!$hasBloqueado): ?>
       Seu banco está sem a coluna <code>clientes.bloqueado</code>. O botão de bloqueio fica desabilitado até executar:
-      <code>ALTER TABLE clientes ADD COLUMN bloqueado TINYINT(1) DEFAULT 0;</code>
+      <code>ALTER TABLE clientes ADD COLUMN bloqueado TINYINT(1) DEFAULT 0;</code><br>
+      <?php endif; ?>
+      <?php if (!$hasCep): ?>
+      Seu banco está sem a coluna <code>clientes.cep</code>. O campo CEP não será salvo até executar:
+      <code>ALTER TABLE clientes ADD COLUMN cep VARCHAR(15) NULL;</code>
+      <?php endif; ?>
     </div>
   <?php endif; ?>
 
@@ -41,7 +49,7 @@ renderHeader('Clientes');
     <table class="table table-striped align-middle">
       <thead>
         <tr>
-          <th>Nome</th><th>Telefone</th><th>Rua</th><th>Nº</th><th>Bairro</th><th>Referência</th><th>CPF</th><th>Tipo</th><th>Status</th><th>Ações</th>
+          <th>Nome</th><th>Telefone</th><th>CEP</th><th>Rua</th><th>Nº</th><th>Bairro</th><th>Referência</th><th>CPF</th><th>Tipo</th><th>Status</th><th>Ações</th>
         </tr>
       </thead>
       <tbody>
@@ -51,6 +59,7 @@ renderHeader('Clientes');
             <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
             <td><input name="nome" class="form-control form-control-sm" value="<?= e($c['nome']) ?>" required></td>
             <td><input name="telefone" class="form-control form-control-sm" value="<?= e($c['telefone']) ?>"></td>
+            <td><input name="cep" class="form-control form-control-sm" value="<?= e($c['cep']) ?>"></td>
             <td><input name="rua" class="form-control form-control-sm" value="<?= e($c['rua']) ?>"></td>
             <td><input name="numero" class="form-control form-control-sm" value="<?= e($c['numero']) ?>"></td>
             <td><input name="bairro" class="form-control form-control-sm" value="<?= e($c['bairro']) ?>"></td>

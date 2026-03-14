@@ -54,3 +54,5 @@ Sistema completo (base funcional) para distribuidora/comércio, pronto para roda
 - Atualiza status para: preparando, em rota, entregue, cancelado e atrasado.
 - Para instalações antigas, rode também: `database/migrations/20260314_mapa_entregas.sql`.
 - O mapa usa **Leaflet + OpenStreetMap** (gratuito).
+
+- Para bancos antigos com cadastro de cliente sem CEP, rode: `database/migrations/20260314_clientes_cep.sql`.

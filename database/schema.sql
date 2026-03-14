@@ -14,6 +14,7 @@ CREATE TABLE clientes (
   id INT AUTO_INCREMENT PRIMARY KEY,
   nome VARCHAR(120) NOT NULL,
   telefone VARCHAR(30),
+  cep VARCHAR(15),
   rua VARCHAR(120),
   numero VARCHAR(20),
   bairro VARCHAR(100),
