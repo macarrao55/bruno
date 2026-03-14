@@ -3,7 +3,12 @@ require_once __DIR__ . '/../includes/auth.php';
 requireLogin();
 
 $id = (int) ($_GET['id'] ?? 0);
-$stmt = db()->prepare("SELECT v.*, c.nome cliente, u.nome usuario FROM vendas v LEFT JOIN clientes c ON c.id=v.cliente_id LEFT JOIN usuarios u ON u.id=v.usuario_id WHERE v.id = ?");
+$hasReceb = tableHasColumn('vendas', 'recebimento_status');
+$sql = $hasReceb
+    ? "SELECT v.*, c.nome cliente, u.nome usuario FROM vendas v LEFT JOIN clientes c ON c.id=v.cliente_id LEFT JOIN usuarios u ON u.id=v.usuario_id WHERE v.id = ?"
+    : "SELECT v.*, 'recebido' AS recebimento_status, c.nome cliente, u.nome usuario FROM vendas v LEFT JOIN clientes c ON c.id=v.cliente_id LEFT JOIN usuarios u ON u.id=v.usuario_id WHERE v.id = ?";
+
+$stmt = db()->prepare($sql);
 $stmt->execute([$id]);
 $venda = $stmt->fetch();
 
@@ -33,7 +38,7 @@ $itens = $it->fetchAll();
   <p><strong>Cliente:</strong> <?= e($venda['cliente'] ?? 'Não cadastrado') ?></p>
   <p><strong>Vendedor:</strong> <?= e($venda['usuario']) ?></p>
   <p><strong>Pagamento:</strong> <?= e($venda['forma_pagamento']) ?></p>
-  <p><strong>Recebimento:</strong> <?= e($venda['recebimento_status'] === 'na_entrega' ? 'Receber na entrega' : 'Já recebeu') ?></p>
+  <p><strong>Recebimento:</strong> <?= e(($venda['recebimento_status'] ?? 'recebido') === 'na_entrega' ? 'Receber na entrega' : 'Já recebeu') ?></p>
 
   <table>
     <thead><tr><th>Produto</th><th>Categoria</th><th>Validade galão</th><th>Qtd</th><th>Preço</th><th>Subtotal</th></tr></thead>

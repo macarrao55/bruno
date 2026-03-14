@@ -2,7 +2,12 @@
 require_once __DIR__ . '/../includes/layout.php';
 requireLogin();
 
-$vendas = db()->query("SELECT v.*, c.nome cliente, u.nome usuario FROM vendas v LEFT JOIN clientes c ON c.id=v.cliente_id LEFT JOIN usuarios u ON u.id=v.usuario_id ORDER BY v.id DESC")->fetchAll();
+$hasReceb = tableHasColumn('vendas', 'recebimento_status');
+$sql = $hasReceb
+    ? "SELECT v.*, c.nome cliente, u.nome usuario FROM vendas v LEFT JOIN clientes c ON c.id=v.cliente_id LEFT JOIN usuarios u ON u.id=v.usuario_id ORDER BY v.id DESC"
+    : "SELECT v.*, 'recebido' AS recebimento_status, c.nome cliente, u.nome usuario FROM vendas v LEFT JOIN clientes c ON c.id=v.cliente_id LEFT JOIN usuarios u ON u.id=v.usuario_id ORDER BY v.id DESC";
+
+$vendas = db()->query($sql)->fetchAll();
 renderHeader('Todas as Vendas');
 ?>
 <div class="card"><div class="card-body table-responsive">
@@ -20,7 +25,7 @@ renderHeader('Todas as Vendas');
           <td><?= e($v['cliente'] ?? 'Não cadastrado') ?></td>
           <td><?= e($v['usuario'] ?? '-') ?></td>
           <td><?= e($v['forma_pagamento']) ?></td>
-          <td><?= e($v['recebimento_status'] === 'na_entrega' ? 'Receber na entrega' : 'Já recebeu') ?></td>
+          <td><?= e(($v['recebimento_status'] ?? 'recebido') === 'na_entrega' ? 'Receber na entrega' : 'Já recebeu') ?></td>
           <td><?= money((float) $v['total']) ?></td>
           <td>
             <a class="btn btn-sm btn-outline-secondary" target="_blank" href="<?= BASE_URL ?>/pages/reimprimir_venda.php?id=<?= (int) $v['id'] ?>">Reimprimir</a>
