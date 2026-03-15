@@ -1,0 +1,10 @@
+:root { --sidebar-width: 250px; }
+body { font-size: .95rem; background: #f5f7fb; }
+.sidebar { width: var(--sidebar-width); min-height: 100vh; position: sticky; top: 0; }
+.main-content { min-height: 100vh; }
+.stat-card { border: none; box-shadow: 0 4px 18px rgba(12, 23, 56, .07); }
+.nav-link:hover { background: rgba(255,255,255,.08); border-radius: .5rem; }
+.pdv-product { min-height: 84px; border-radius: 12px; }
+#cartItems .cart-line { border-bottom: 1px dashed #ddd; padding: 4px 0; }
+[data-bs-theme='dark'] body { background: #0f172a; }
+[data-bs-theme='dark'] .card { background: #1e293b; color: #e2e8f0; }
