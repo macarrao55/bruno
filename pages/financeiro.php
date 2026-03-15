@@ -8,8 +8,9 @@ $despesas = db()->query('SELECT * FROM despesas ORDER BY data DESC')->fetchAll()
 $clientes = db()->query('SELECT id,nome FROM clientes ORDER BY nome')->fetchAll();
 renderHeader('Financeiro');
 ?>
-<div class="mb-3">
+<div class="mb-3 d-flex gap-2">
   <a class="btn btn-outline-primary" href="<?= BASE_URL ?>/pages/contas_receber.php">Abrir módulo de Contas a Receber</a>
+  <a class="btn btn-outline-secondary" href="<?= BASE_URL ?>/pages/fluxo_caixa.php">Abrir Fluxo de Caixa</a>
 </div>
 <div class="row g-3">
   <div class="col-md-4"><div class="card"><div class="card-body">
