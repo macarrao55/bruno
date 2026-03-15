@@ -9,6 +9,11 @@ $clientesSql = $hasBloqueado
 $clientes = db()->query($clientesSql)->fetchAll();
 $produtos = db()->query('SELECT * FROM produtos ORDER BY nome')->fetchAll();
 $formasPagamento = getPaymentMethods();
+$recebimentoOpcoes = getReceivingOptions();
+$recebimentoPadrao = normalizeTextSimple((string) getSetting('recebimento_padrao', 'recebido'));
+if (!array_key_exists($recebimentoPadrao, $recebimentoOpcoes)) {
+    $recebimentoPadrao = array_key_first($recebimentoOpcoes) ?? 'recebido';
+}
 $msgOk = $_GET['ok'] ?? '';
 $msgErro = $_GET['erro'] ?? '';
 renderHeader('PDV Moderno');
@@ -43,7 +48,7 @@ renderHeader('PDV Moderno');
         <div class="row g-2 align-items-end">
           <div class="col-md-4"><label>Cliente</label><select name="cliente_id" class="form-select"><option value="">Não cadastrado</option><?php foreach($clientes as $c): ?><option value="<?= $c['id'] ?>"><?= e($c['nome']) ?></option><?php endforeach; ?></select></div>
           <div class="col-md-3"><label>Pagamento</label><select name="forma_pagamento" id="formaPagamento" class="form-select"><?php foreach($formasPagamento as $fp): ?><option><?= e($fp) ?></option><?php endforeach; ?></select></div>
-          <div class="col-md-3"><label>Recebimento</label><select name="recebimento_status" id="recebimentoStatus" class="form-select"><option value="recebido">Já recebeu</option><option value="na_entrega">Vai receber na entrega</option></select></div>
+          <div class="col-md-3"><label>Recebimento</label><select name="recebimento_status" id="recebimentoStatus" class="form-select"><?php foreach($recebimentoOpcoes as $valor => $label): ?><option value="<?= e($valor) ?>" <?= $valor === $recebimentoPadrao ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?></select></div>
           <div class="col-md-2"><label>Valor pago</label><input type="number" step="0.01" name="valor_pago" id="valorPago" class="form-control" value="0"></div>
           <div class="col-md-2"><label>Troco</label><input readonly id="troco" class="form-control" value="0,00"></div>
         </div>

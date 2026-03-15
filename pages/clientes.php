@@ -4,10 +4,38 @@ requireLogin();
 
 $hasBloqueado = tableHasColumn('clientes', 'bloqueado');
 $hasCep = tableHasColumn('clientes', 'cep');
-$clientesSql = $hasBloqueado
-    ? ($hasCep ? 'SELECT * FROM clientes ORDER BY id DESC' : 'SELECT *, NULL AS cep FROM clientes ORDER BY id DESC')
-    : ($hasCep ? 'SELECT *, 0 AS bloqueado FROM clientes ORDER BY id DESC' : 'SELECT *, 0 AS bloqueado, NULL AS cep FROM clientes ORDER BY id DESC');
-$clientes = db()->query($clientesSql)->fetchAll();
+
+$fNome = trim((string) ($_GET['nome'] ?? ''));
+$fBairro = trim((string) ($_GET['bairro'] ?? ''));
+$fCpf = trim((string) ($_GET['cpf'] ?? ''));
+$fTelefone = trim((string) ($_GET['telefone'] ?? ''));
+
+$cepExpr = $hasCep ? 'cep' : 'NULL AS cep';
+$bloqExpr = $hasBloqueado ? 'bloqueado' : '0 AS bloqueado';
+$sql = "SELECT id, nome, telefone, {$cepExpr}, rua, numero, bairro, referencia, cpf, tipo_cliente, {$bloqExpr} FROM clientes WHERE 1=1";
+$params = [];
+
+if ($fNome !== '') {
+    $sql .= ' AND nome LIKE ?';
+    $params[] = '%' . $fNome . '%';
+}
+if ($fBairro !== '') {
+    $sql .= ' AND bairro LIKE ?';
+    $params[] = '%' . $fBairro . '%';
+}
+if ($fCpf !== '') {
+    $sql .= ' AND cpf LIKE ?';
+    $params[] = '%' . $fCpf . '%';
+}
+if ($fTelefone !== '') {
+    $sql .= ' AND telefone LIKE ?';
+    $params[] = '%' . $fTelefone . '%';
+}
+
+$sql .= ' ORDER BY id DESC';
+$stmt = db()->prepare($sql);
+$stmt->execute($params);
+$clientes = $stmt->fetchAll();
 
 renderHeader('Clientes');
 ?>
@@ -31,6 +59,17 @@ renderHeader('Clientes');
 
 <div class="card"><div class="card-body">
   <h6>Gerenciar clientes (editar, bloquear/desbloquear, excluir)</h6>
+
+  <form class="row g-2 mb-3" method="get">
+    <div class="col-md-3"><label class="form-label">Nome</label><input type="text" name="nome" class="form-control" value="<?= e($fNome) ?>"></div>
+    <div class="col-md-3"><label class="form-label">Bairro</label><input type="text" name="bairro" class="form-control" value="<?= e($fBairro) ?>"></div>
+    <div class="col-md-2"><label class="form-label">CPF</label><input type="text" name="cpf" class="form-control" value="<?= e($fCpf) ?>"></div>
+    <div class="col-md-2"><label class="form-label">Telefone</label><input type="text" name="telefone" class="form-control" value="<?= e($fTelefone) ?>"></div>
+    <div class="col-md-2 d-flex align-items-end gap-2">
+      <button class="btn btn-primary" type="submit">Pesquisar</button>
+      <a class="btn btn-outline-secondary" href="<?= BASE_URL ?>/pages/clientes.php">Limpar</a>
+    </div>
+  </form>
 
   <?php if (!$hasBloqueado || !$hasCep): ?>
     <div class="alert alert-warning">

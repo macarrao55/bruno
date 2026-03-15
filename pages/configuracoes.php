@@ -12,6 +12,8 @@ $defaults = [
     'print_rodape_texto' => PRINT_RODAPE_TEXTO,
     'crediario_dias_vencimento' => '30',
     'formas_pagamento' => 'Dinheiro, Pix, Cartão, Crediário, Cheque',
+    'recebimento_opcoes' => 'recebido,na_entrega',
+    'recebimento_padrao' => 'recebido',
 ];
 
 $config = [];
@@ -46,6 +48,18 @@ renderHeader('Configurações do Sistema');
           <label class="form-label">Formas de pagamento (separadas por vírgula)</label>
           <input type="text" class="form-control" name="formas_pagamento" value="<?= e($config['formas_pagamento']) ?>" required>
           <small class="text-muted">Exemplo: Dinheiro, Pix, Cartão, Crediário, Cheque</small>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Opções de recebimento (separadas por vírgula)</label>
+          <input type="text" class="form-control" name="recebimento_opcoes" value="<?= e($config['recebimento_opcoes']) ?>" required>
+          <small class="text-muted">Use apenas: recebido, na_entrega</small>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Recebimento padrão</label>
+          <select class="form-select" name="recebimento_padrao">
+            <option value="recebido" <?= normalizeTextSimple((string) $config['recebimento_padrao']) === 'recebido' ? 'selected' : '' ?>>Já recebeu</option>
+            <option value="na_entrega" <?= normalizeTextSimple((string) $config['recebimento_padrao']) === 'na_entrega' ? 'selected' : '' ?>>Vai receber na entrega</option>
+          </select>
         </div>
       </div>
 

@@ -23,6 +23,27 @@ try {
         $formasPagamento = 'Dinheiro, Pix, Cartão, Crediário, Cheque';
     }
 
+    $recebimentoOpcoesRaw = trim((string) ($_POST['recebimento_opcoes'] ?? 'recebido,na_entrega'));
+    $recebimentoTokens = array_values(array_filter(array_map('trim', explode(',', $recebimentoOpcoesRaw))));
+    $recebimentoSanitizado = [];
+    foreach ($recebimentoTokens as $token) {
+        $norm = normalizeTextSimple($token);
+        if ($norm === 'recebido' && !in_array('recebido', $recebimentoSanitizado, true)) {
+            $recebimentoSanitizado[] = 'recebido';
+        }
+        if ($norm === 'na_entrega' && !in_array('na_entrega', $recebimentoSanitizado, true)) {
+            $recebimentoSanitizado[] = 'na_entrega';
+        }
+    }
+    if (!$recebimentoSanitizado) {
+        $recebimentoSanitizado = ['recebido', 'na_entrega'];
+    }
+
+    $recebimentoPadrao = normalizeTextSimple((string) ($_POST['recebimento_padrao'] ?? 'recebido'));
+    if (!in_array($recebimentoPadrao, $recebimentoSanitizado, true)) {
+        $recebimentoPadrao = $recebimentoSanitizado[0];
+    }
+
     $values = [
         'app_nome' => trim((string) ($_POST['app_nome'] ?? APP_NAME)),
         'print_empresa_nome' => trim((string) ($_POST['print_empresa_nome'] ?? PRINT_EMPRESA_NOME)),
@@ -32,6 +53,8 @@ try {
         'print_crediario_segunda_via' => !empty($_POST['print_crediario_segunda_via']) ? '1' : '0',
         'crediario_dias_vencimento' => (string) $dias,
         'formas_pagamento' => $formasPagamento,
+        'recebimento_opcoes' => implode(',', $recebimentoSanitizado),
+        'recebimento_padrao' => $recebimentoPadrao,
     ];
 
     $stmt = $pdo->prepare('INSERT INTO configuracoes (chave, valor) VALUES (?, ?) ON DUPLICATE KEY UPDATE valor = VALUES(valor)');

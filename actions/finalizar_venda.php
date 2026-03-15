@@ -8,6 +8,12 @@ $forma = $_POST['forma_pagamento'] ?? 'Dinheiro';
 $formaNorm = normalizeTextSimple((string) $forma);
 $recebimentoStatus = $_POST['recebimento_status'] ?? 'recebido';
 $formasPermitidasNorm = array_map(static fn ($f) => normalizeTextSimple((string) $f), getPaymentMethods());
+$recebimentoPermitidos = array_keys(getReceivingOptions());
+$recebimentoNorm = normalizeTextSimple((string) $recebimentoStatus);
+if (!in_array($recebimentoNorm, $recebimentoPermitidos, true)) {
+    $recebimentoNorm = normalizeTextSimple((string) getSetting('recebimento_padrao', 'recebido'));
+}
+$recebimentoStatus = in_array($recebimentoNorm, ['recebido', 'na_entrega'], true) ? $recebimentoNorm : 'recebido';
 if (!in_array($formaNorm, $formasPermitidasNorm, true)) {
     redirect('pages/pdv.php?erro=Forma%20de%20pagamento%20inválida');
 }

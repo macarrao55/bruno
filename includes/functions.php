@@ -147,3 +147,35 @@ function normalizeTextSimple(string $value): string
 
     return strtolower($value);
 }
+
+
+/**
+ * Opções de recebimento configuráveis (compatíveis com ENUM da base padrão).
+ */
+function getReceivingOptions(): array
+{
+    $defaults = [
+        'recebido' => 'Já recebeu',
+        'na_entrega' => 'Vai receber na entrega',
+    ];
+
+    $raw = getSetting('recebimento_opcoes', implode(',', array_keys($defaults)));
+    $tokens = array_values(array_filter(array_map('trim', explode(',', (string) $raw))));
+    $allowed = [];
+
+    foreach ($tokens as $token) {
+        $norm = normalizeTextSimple($token);
+        if ($norm === 'recebido') {
+            $allowed['recebido'] = $defaults['recebido'];
+        }
+        if ($norm === 'na_entrega') {
+            $allowed['na_entrega'] = $defaults['na_entrega'];
+        }
+    }
+
+    if (!$allowed) {
+        return $defaults;
+    }
+
+    return $allowed;
+}
