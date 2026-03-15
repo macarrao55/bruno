@@ -3,6 +3,7 @@ require_once __DIR__ . '/../includes/layout.php';
 requireLogin();
 
 $db = db();
+$formasPagamento = getPaymentMethods();
 // Atualiza automaticamente títulos vencidos em aberto para status atrasado.
 $db->exec("UPDATE contas_receber SET status = 'atrasado' WHERE status = 'aberto' AND vencimento < CURDATE()");
 
@@ -137,10 +138,14 @@ renderHeader('Contas a Receber');
           <td><span class="badge <?= $badge ?>"><?= e($label) ?></span></td>
           <td>
             <?php if ($situacao !== 'pago'): ?>
-              <form method="post" action="<?= BASE_URL ?>/actions/baixar_receber.php" onsubmit="return confirm('Confirmar baixa desta conta?');" class="d-inline">
-                <input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
-                <button class="btn btn-sm btn-success" type="submit">Dar baixa</button>
-              </form>
+              <button
+                class="btn btn-sm btn-success btn-baixar"
+                type="button"
+                data-id="<?= (int) $c['id'] ?>"
+                data-saldo="<?= e(number_format((float) $c['valor'], 2, '.', '')) ?>"
+                data-bs-toggle="modal"
+                data-bs-target="#modalBaixa"
+              >Dar baixa</button>
             <?php else: ?>
               <span class="text-muted small">Baixado</span>
             <?php endif; ?>
@@ -150,5 +155,64 @@ renderHeader('Contas a Receber');
     </tbody>
   </table>
 </div></div>
+
+
+
+<div class="modal fade" id="modalBaixa" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content" method="post" action="<?= BASE_URL ?>/actions/baixar_receber.php">
+      <div class="modal-header">
+        <h5 class="modal-title">Baixar conta a receber</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" name="id" id="baixaContaId">
+        <div class="mb-2">
+          <label class="form-label">Saldo atual</label>
+          <input class="form-control" id="baixaSaldoAtual" readonly>
+        </div>
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label">Juros</label>
+            <input type="number" min="0" step="0.01" class="form-control" name="juros" value="0">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Desconto</label>
+            <input type="number" min="0" step="0.01" class="form-control" name="desconto" value="0">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Pagamento parcial (valor pago)</label>
+            <input type="number" min="0.01" step="0.01" class="form-control" name="valor_pago" id="baixaValorPago" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Forma de pagamento</label>
+            <select class="form-select" name="forma_pagamento" required>
+              <option value="">Selecione</option>
+              <?php foreach ($formasPagamento as $fp): ?>
+                <option value="<?= e($fp) ?>"><?= e($fp) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-success">Confirmar baixa</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.btn-baixar').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    const id = this.dataset.id || '';
+    const saldo = Number(this.dataset.saldo || 0);
+    document.getElementById('baixaContaId').value = id;
+    document.getElementById('baixaSaldoAtual').value = 'R$ ' + saldo.toFixed(2).replace('.', ',');
+    document.getElementById('baixaValorPago').value = saldo.toFixed(2);
+  });
+});
+</script>
 
 <?php renderFooter(); ?>
