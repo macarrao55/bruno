@@ -8,6 +8,9 @@ $despesas = db()->query('SELECT * FROM despesas ORDER BY data DESC')->fetchAll()
 $clientes = db()->query('SELECT id,nome FROM clientes ORDER BY nome')->fetchAll();
 renderHeader('Financeiro');
 ?>
+<div class="mb-3">
+  <a class="btn btn-outline-primary" href="<?= BASE_URL ?>/pages/contas_receber.php">Abrir módulo de Contas a Receber</a>
+</div>
 <div class="row g-3">
   <div class="col-md-4"><div class="card"><div class="card-body">
     <h6>Contas a Receber</h6>
