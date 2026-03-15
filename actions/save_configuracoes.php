@@ -18,6 +18,11 @@ try {
         throw new RuntimeException('Dias de vencimento do crediário deve estar entre 1 e 365.');
     }
 
+    $formasPagamento = trim((string) ($_POST['formas_pagamento'] ?? ''));
+    if ($formasPagamento === '') {
+        $formasPagamento = 'Dinheiro, Pix, Cartão, Crediário, Cheque';
+    }
+
     $values = [
         'app_nome' => trim((string) ($_POST['app_nome'] ?? APP_NAME)),
         'print_empresa_nome' => trim((string) ($_POST['print_empresa_nome'] ?? PRINT_EMPRESA_NOME)),
@@ -26,6 +31,7 @@ try {
         'print_rodape_texto' => trim((string) ($_POST['print_rodape_texto'] ?? PRINT_RODAPE_TEXTO)),
         'print_crediario_segunda_via' => !empty($_POST['print_crediario_segunda_via']) ? '1' : '0',
         'crediario_dias_vencimento' => (string) $dias,
+        'formas_pagamento' => $formasPagamento,
     ];
 
     $stmt = $pdo->prepare('INSERT INTO configuracoes (chave, valor) VALUES (?, ?) ON DUPLICATE KEY UPDATE valor = VALUES(valor)');

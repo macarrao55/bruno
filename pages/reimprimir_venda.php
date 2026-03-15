@@ -149,7 +149,7 @@ if ($isCrediario && $printCrediarioSegundaVia) {
               <td class="col-prod">
                 <?= e($item['produto']) ?>
                 <?php if (!empty($item['observacao'])): ?><div class="obs">Obs: <?= e($item['observacao']) ?></div><?php endif; ?>
-                <?php if (!empty($item['validade_galao'])): ?><div class="obs">Validade: <strong><?= e(date('m/Y', strtotime($item['validade_galao']))) ?></strong></div><?php endif; ?>
+                <?php if (str_contains(normalizeTextSimple((string) ($item['categoria'] ?? '')), 'galao') && !empty($item['validade_galao'])): ?><div class="obs">Validade do galão: <strong><?= e(date('m/Y', strtotime($item['validade_galao']))) ?></strong></div><?php endif; ?>
               </td>
               <td class="col-qtd"><?= (int) $item['quantidade'] ?></td>
               <td class="col-vu"><?= money((float) $item['preco_unitario']) ?></td>

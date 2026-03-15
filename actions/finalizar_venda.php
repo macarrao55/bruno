@@ -5,8 +5,12 @@ requireRole(['administrador', 'gerente', 'caixa', 'vendedor']);
 
 $clienteId = !empty($_POST['cliente_id']) ? (int) $_POST['cliente_id'] : null;
 $forma = $_POST['forma_pagamento'] ?? 'Dinheiro';
-$formaNorm = strtolower(strtr((string) $forma, ['Á'=>'A','À'=>'A','Â'=>'A','Ã'=>'A','á'=>'a','à'=>'a','â'=>'a','ã'=>'a','Í'=>'I','í'=>'i']));
+$formaNorm = normalizeTextSimple((string) $forma);
 $recebimentoStatus = $_POST['recebimento_status'] ?? 'recebido';
+$formasPermitidasNorm = array_map(static fn ($f) => normalizeTextSimple((string) $f), getPaymentMethods());
+if (!in_array($formaNorm, $formasPermitidasNorm, true)) {
+    redirect('pages/pdv.php?erro=Forma%20de%20pagamento%20inválida');
+}
 if ($formaNorm === 'crediario') {
     // Regra de negócio: no crediário, recebimento também é crediário (tratado como pendente/na_entrega).
     $recebimentoStatus = 'na_entrega';

@@ -11,6 +11,7 @@ $defaults = [
     'print_crediario_segunda_via' => PRINT_CREDIARIO_SEGUNDA_VIA ? '1' : '0',
     'print_rodape_texto' => PRINT_RODAPE_TEXTO,
     'crediario_dias_vencimento' => '30',
+    'formas_pagamento' => 'Dinheiro, Pix, Cartão, Crediário, Cheque',
 ];
 
 $config = [];
@@ -40,6 +41,11 @@ renderHeader('Configurações do Sistema');
         <div class="col-md-6">
           <label class="form-label">Dias para vencimento no crediário</label>
           <input type="number" min="1" max="365" class="form-control" name="crediario_dias_vencimento" value="<?= e($config['crediario_dias_vencimento']) ?>" required>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Formas de pagamento (separadas por vírgula)</label>
+          <input type="text" class="form-control" name="formas_pagamento" value="<?= e($config['formas_pagamento']) ?>" required>
+          <small class="text-muted">Exemplo: Dinheiro, Pix, Cartão, Crediário, Cheque</small>
         </div>
       </div>
 

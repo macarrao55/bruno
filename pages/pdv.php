@@ -8,6 +8,7 @@ $clientesSql = $hasBloqueado
     : 'SELECT id,nome FROM clientes ORDER BY nome';
 $clientes = db()->query($clientesSql)->fetchAll();
 $produtos = db()->query('SELECT * FROM produtos ORDER BY nome')->fetchAll();
+$formasPagamento = getPaymentMethods();
 $msgOk = $_GET['ok'] ?? '';
 $msgErro = $_GET['erro'] ?? '';
 renderHeader('PDV Moderno');
@@ -41,7 +42,7 @@ renderHeader('PDV Moderno');
       <div class="card mb-3"><div class="card-body">
         <div class="row g-2 align-items-end">
           <div class="col-md-4"><label>Cliente</label><select name="cliente_id" class="form-select"><option value="">Não cadastrado</option><?php foreach($clientes as $c): ?><option value="<?= $c['id'] ?>"><?= e($c['nome']) ?></option><?php endforeach; ?></select></div>
-          <div class="col-md-3"><label>Pagamento</label><select name="forma_pagamento" id="formaPagamento" class="form-select"><option>Dinheiro</option><option>Pix</option><option>Cartão</option><option>Crediário</option><option>Cheque</option></select></div>
+          <div class="col-md-3"><label>Pagamento</label><select name="forma_pagamento" id="formaPagamento" class="form-select"><?php foreach($formasPagamento as $fp): ?><option><?= e($fp) ?></option><?php endforeach; ?></select></div>
           <div class="col-md-3"><label>Recebimento</label><select name="recebimento_status" id="recebimentoStatus" class="form-select"><option value="recebido">Já recebeu</option><option value="na_entrega">Vai receber na entrega</option></select></div>
           <div class="col-md-2"><label>Valor pago</label><input type="number" step="0.01" name="valor_pago" id="valorPago" class="form-control" value="0"></div>
           <div class="col-md-2"><label>Troco</label><input readonly id="troco" class="form-control" value="0,00"></div>

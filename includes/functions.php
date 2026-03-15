@@ -113,3 +113,37 @@ function tableExists(string $table): bool
 
     return $cache[$table];
 }
+
+
+/**
+ * Formas de pagamento configuráveis no sistema.
+ */
+function getPaymentMethods(): array
+{
+    $default = ['Dinheiro', 'Pix', 'Cartão', 'Crediário', 'Cheque'];
+    $raw = getSetting('formas_pagamento', implode(',', $default));
+
+    if (!$raw) {
+        return $default;
+    }
+
+    $parts = array_map('trim', explode(',', (string) $raw));
+    $parts = array_values(array_filter($parts, static fn ($item) => $item !== ''));
+
+    return $parts ?: $default;
+}
+
+function normalizeTextSimple(string $value): string
+{
+    $value = strtr($value, [
+        'Á' => 'A', 'À' => 'A', 'Â' => 'A', 'Ã' => 'A',
+        'á' => 'a', 'à' => 'a', 'â' => 'a', 'ã' => 'a',
+        'É' => 'E', 'Ê' => 'E', 'é' => 'e', 'ê' => 'e',
+        'Í' => 'I', 'í' => 'i',
+        'Ó' => 'O', 'Ô' => 'O', 'Õ' => 'O', 'ó' => 'o', 'ô' => 'o', 'õ' => 'o',
+        'Ú' => 'U', 'ú' => 'u',
+        'Ç' => 'C', 'ç' => 'c',
+    ]);
+
+    return strtolower($value);
+}
