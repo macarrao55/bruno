@@ -3,6 +3,7 @@ require_once __DIR__ . '/../includes/layout.php';
 requireLogin();
 
 $db = db();
+$formasPagamento = getPaymentMethods();
 
 // Atualiza automaticamente títulos vencidos em aberto para status atrasado.
 $db->exec("UPDATE contas_receber SET status = 'atrasado' WHERE status = 'aberto' AND vencimento < CURDATE()");
@@ -44,19 +45,8 @@ $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $contas = $stmt->fetchAll();
 
-$resumo = [
-    'deve' => 0,
-    'atrasado' => 0,
-    'a_vencer' => 0,
-    'pago' => 0,
-];
-
-$totais = [
-    'deve' => 0.0,
-    'atrasado' => 0.0,
-    'a_vencer' => 0.0,
-    'pago' => 0.0,
-];
+$resumo = ['deve' => 0, 'atrasado' => 0, 'a_vencer' => 0, 'pago' => 0];
+$totais = ['deve' => 0.0, 'atrasado' => 0.0, 'a_vencer' => 0.0, 'pago' => 0.0];
 
 foreach ($contas as $conta) {
     $valor = (float) $conta['valor'];
@@ -125,10 +115,10 @@ renderHeader('Contas a Receber');
       <tr>
         <th>Cliente</th>
         <th>Telefone</th>
-        <th>Valor</th>
+        <th>Saldo</th>
         <th>Vencimento</th>
         <th>Status</th>
-        <th>Ações</th>
+        <th>Baixa / Pagamento</th>
       </tr>
     </thead>
     <tbody>
@@ -149,9 +139,20 @@ renderHeader('Contas a Receber');
           <td><span class="badge <?= $badge ?>"><?= e($label) ?></span></td>
           <td>
             <?php if ($situacao !== 'pago'): ?>
-              <form method="post" action="<?= BASE_URL ?>/actions/baixar_receber.php" onsubmit="return confirm('Confirmar baixa desta conta?');" class="d-inline">
+              <form method="post" action="<?= BASE_URL ?>/actions/baixar_receber.php" onsubmit="return confirm('Confirmar registro de pagamento desta conta?');" class="row g-1">
                 <input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
-                <button class="btn btn-sm btn-success" type="submit">Dar baixa</button>
+                <div class="col-md-3"><input class="form-control form-control-sm" type="number" step="0.01" min="0" name="juros" placeholder="Juros" value="0"></div>
+                <div class="col-md-3"><input class="form-control form-control-sm" type="number" step="0.01" min="0" name="desconto" placeholder="Desconto" value="0"></div>
+                <div class="col-md-3"><input class="form-control form-control-sm" type="number" step="0.01" min="0.01" name="valor_pago" placeholder="Valor pago" value="<?= e((string) $c['valor']) ?>" required></div>
+                <div class="col-md-3">
+                  <select name="forma_pagamento" class="form-select form-select-sm" required>
+                    <option value="">Forma pgto</option>
+                    <?php foreach ($formasPagamento as $fp): ?>
+                      <option value="<?= e($fp) ?>"><?= e($fp) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+                <div class="col-md-12"><button class="btn btn-sm btn-success" type="submit">Registrar pagamento / Dar baixa</button></div>
               </form>
             <?php else: ?>
               <span class="text-muted small">Baixado</span>
