@@ -59,8 +59,23 @@ $recebimentoLabel = ($formaNorm === 'crediário' || $formaNorm === 'crediario')
 $isCrediario = mb_strtolower((string) ($venda['forma_pagamento'] ?? ''), 'UTF-8') === 'crediário'
     || mb_strtolower((string) ($venda['forma_pagamento'] ?? ''), 'UTF-8') === 'crediario';
 
+$printEmpresaNome = getSetting('print_empresa_nome', PRINT_EMPRESA_NOME);
+$printEmpresaTelefone = getSetting('print_empresa_telefone', PRINT_EMPRESA_TELEFONE);
+$printEmpresaInstagram = getSetting('print_empresa_instagram', PRINT_EMPRESA_INSTAGRAM);
+$printRodapeTexto = getSetting('print_rodape_texto', PRINT_RODAPE_TEXTO);
+$printCrediarioSegundaVia = getSettingBool('print_crediario_segunda_via', PRINT_CREDIARIO_SEGUNDA_VIA);
+$crediarioDiasVencimento = max(1, (int) getSetting('crediario_dias_vencimento', '30'));
+$credVencimento = '';
+if ($isCrediario) {
+    $baseDate = date_create((string) ($venda['created_at'] ?? 'now'));
+    if ($baseDate !== false) {
+        $baseDate->modify('+' . $crediarioDiasVencimento . ' day');
+        $credVencimento = $baseDate->format('d/m/Y');
+    }
+}
+
 $vias = [['titulo' => 'Via da empresa', 'assinatura' => false]];
-if ($isCrediario && PRINT_CREDIARIO_SEGUNDA_VIA) {
+if ($isCrediario && $printCrediarioSegundaVia) {
     $vias[] = ['titulo' => 'Via do cliente', 'assinatura' => true];
 }
 ?>
@@ -105,9 +120,9 @@ if ($isCrediario && PRINT_CREDIARIO_SEGUNDA_VIA) {
 
   <?php foreach ($vias as $idx => $via): ?>
     <section class="cupom <?= $idx < count($vias) - 1 ? 'quebra' : '' ?>">
-      <div class="center empresa"><?= e(PRINT_EMPRESA_NOME) ?></div>
-      <div class="center">Tel: <?= e(PRINT_EMPRESA_TELEFONE) ?></div>
-      <div class="center">Instagram: <?= e(PRINT_EMPRESA_INSTAGRAM) ?></div>
+      <div class="center empresa"><?= e($printEmpresaNome) ?></div>
+      <div class="center">Tel: <?= e($printEmpresaTelefone) ?></div>
+      <div class="center">Instagram: <?= e($printEmpresaInstagram) ?></div>
       <div class="hr"></div>
 
       <div class="row"><div>Data/Hora:</div><div><?= e($venda['created_at']) ?></div></div>
@@ -148,6 +163,9 @@ if ($isCrediario && PRINT_CREDIARIO_SEGUNDA_VIA) {
       <div class="row"><div><strong>Pagamento:</strong></div><div><?= e($venda['forma_pagamento']) ?></div></div>
       <div class="row"><div><strong>Recebimento:</strong></div><div><?= e($recebimentoLabel) ?></div></div>
       <div class="row" style="font-size:14px;font-weight:700"><div>TOTAL:</div><div><?= money((float) $venda['total']) ?></div></div>
+      <?php if ($isCrediario && !$via['assinatura'] && $credVencimento !== ''): ?>
+        <div class="row"><div><strong>Vencimento:</strong></div><div><strong><?= e($credVencimento) ?></strong></div></div>
+      <?php endif; ?>
 
       <?php if ($via['assinatura']): ?>
         <div class="assinatura">Assinatura do Cliente: __________________________</div>
@@ -155,7 +173,7 @@ if ($isCrediario && PRINT_CREDIARIO_SEGUNDA_VIA) {
 
       <div class="hr"></div>
       <div class="center muted"><?= e($via['titulo']) ?></div>
-      <div class="center muted"><?= e(PRINT_RODAPE_TEXTO) ?></div>
+      <div class="center muted"><?= e($printRodapeTexto) ?></div>
     </section>
   <?php endforeach; ?>
 </body>

@@ -4,13 +4,14 @@ require_once __DIR__ . '/auth.php';
 function renderHeader(string $title): void
 {
     $user = currentUser();
+    $appNome = getSetting('app_nome', APP_NAME);
     ?>
     <!DOCTYPE html>
     <html lang="pt-BR">
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title><?= e($title) ?> - <?= APP_NAME ?></title>
+      <title><?= e($title) ?> - <?= e($appNome) ?></title>
       <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
       <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
       <style>
@@ -25,7 +26,7 @@ function renderHeader(string $title): void
     <div class="container-fluid">
       <div class="row">
         <aside class="col-md-2 sidebar p-3">
-          <h5 class="text-white mb-3">Sistema</h5>
+          <h5 class="text-white mb-3"><?= e($appNome) ?></h5>
           <a href="<?= BASE_URL ?>/index.php">Dashboard</a>
           <a href="<?= BASE_URL ?>/pages/pdv.php">PDV</a>
           <a href="<?= BASE_URL ?>/pages/vendas.php">Vendas</a>
@@ -37,6 +38,9 @@ function renderHeader(string $title): void
           <a href="<?= BASE_URL ?>/pages/vasilhames.php">Galões/Botijões</a>
           <a href="<?= BASE_URL ?>/pages/dre.php">DRE</a>
           <a href="<?= BASE_URL ?>/pages/relatorios.php">Relatórios</a>
+          <?php if (hasRole(['administrador', 'gerente'])): ?>
+            <a href="<?= BASE_URL ?>/pages/configuracoes.php">Configurações</a>
+          <?php endif; ?>
         </aside>
         <main class="col-md-10 p-4">
           <nav class="navbar navbar-light bg-white shadow-sm rounded-3 px-3 mb-4">

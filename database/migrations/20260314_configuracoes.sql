@@ -1,0 +1,7 @@
+-- Módulo de configurações gerais do sistema
+CREATE TABLE IF NOT EXISTS configuracoes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  chave VARCHAR(100) NOT NULL UNIQUE,
+  valor TEXT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

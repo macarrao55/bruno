@@ -59,3 +59,57 @@ function tableHasColumn(string $table, string $column): bool
 
     return $cache[$key];
 }
+
+
+/**
+ * Recupera configuração dinâmica salva no banco.
+ */
+function getSetting(string $key, ?string $default = null): ?string
+{
+    static $cache = [];
+
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+
+    if (!tableExists('configuracoes')) {
+        $cache[$key] = $default;
+        return $cache[$key];
+    }
+
+    try {
+        $stmt = db()->prepare('SELECT valor FROM configuracoes WHERE chave = ? LIMIT 1');
+        $stmt->execute([$key]);
+        $row = $stmt->fetch();
+        $cache[$key] = $row['valor'] ?? $default;
+    } catch (Throwable $e) {
+        $cache[$key] = $default;
+    }
+
+    return $cache[$key];
+}
+
+function getSettingBool(string $key, bool $default = false): bool
+{
+    $value = getSetting($key, $default ? '1' : '0');
+    return in_array(strtolower((string) $value), ['1', 'true', 'sim', 'yes', 'on'], true);
+}
+
+function tableExists(string $table): bool
+{
+    static $cache = [];
+
+    if (isset($cache[$table])) {
+        return $cache[$table];
+    }
+
+    try {
+        $stmt = db()->prepare('SELECT COUNT(*) c FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?');
+        $stmt->execute([DB_NAME, $table]);
+        $cache[$table] = ((int) ($stmt->fetch()['c'] ?? 0)) > 0;
+    } catch (Throwable $e) {
+        $cache[$table] = false;
+    }
+
+    return $cache[$table];
+}

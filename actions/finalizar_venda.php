@@ -82,7 +82,8 @@ try {
     }
 
     if (($formaNorm === 'crediario' || $recebimentoStatus === 'na_entrega') && $clienteId) {
-        $rec = $pdo->prepare("INSERT INTO contas_receber (cliente_id, valor, vencimento, status) VALUES (?,?,DATE_ADD(CURDATE(), INTERVAL 30 DAY),'aberto')");
+        $diasVencimento = max(1, min(365, (int) getSetting('crediario_dias_vencimento', '30')));
+        $rec = $pdo->prepare("INSERT INTO contas_receber (cliente_id, valor, vencimento, status) VALUES (?,?,DATE_ADD(CURDATE(), INTERVAL {$diasVencimento} DAY),'aberto')");
         $rec->execute([$clienteId, $total]);
     }
 
