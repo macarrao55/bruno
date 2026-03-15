@@ -6,15 +6,8 @@ namespace App\Core;
 
 class Auth
 {
-    public static function check(): bool
-    {
-        return isset($_SESSION['user']);
-    }
-
-    public static function user(): ?array
-    {
-        return $_SESSION['user'] ?? null;
-    }
+    public static function check(): bool { return isset($_SESSION['user']); }
+    public static function user(): ?array { return $_SESSION['user'] ?? null; }
 
     public static function login(array $user): void
     {
@@ -27,7 +20,7 @@ class Auth
         $_SESSION = [];
         if (ini_get('session.use_cookies')) {
             $params = session_get_cookie_params();
-            setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+            setcookie(session_name(), '', time() - 3600, $params['path'], $params['domain'], (bool)$params['secure'], (bool)$params['httponly']);
         }
         session_destroy();
     }
@@ -40,21 +33,19 @@ class Auth
         }
     }
 
-    public static function can(string $permission): bool
+    public static function hasRole(string|array $roles): bool
     {
-        if (!self::check()) {
-            return false;
-        }
-
-        $userPermissions = $_SESSION['user']['permissions'] ?? [];
-        return in_array('*', $userPermissions, true) || in_array($permission, $userPermissions, true);
+        $user = self::user();
+        if (!$user) return false;
+        $roles = (array)$roles;
+        return in_array($user['role'], $roles, true);
     }
 
-    public static function requirePermission(string $permission): void
+    public static function requireRole(string|array $roles): void
     {
-        if (!self::can($permission)) {
+        if (!self::hasRole($roles)) {
             http_response_code(403);
-            exit('Acesso negado.');
+            exit('Permissão insuficiente.');
         }
     }
 }

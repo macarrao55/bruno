@@ -11,23 +11,21 @@ class CustomersController extends Controller
 {
     public function index(): void
     {
-        $m = new Customer();
-        $this->view('customers/index', ['title' => 'Clientes', 'customers' => $m->all()]);
+        $this->view('customers/index', ['title' => 'Clientes', 'customers' => (new Customer())->all()]);
     }
 
     public function store(): void
     {
         validate_csrf();
-        $m = new Customer();
-        $ok = $m->create([
-            'name' => trim($_POST['name'] ?? ''),
-            'phone_main' => trim($_POST['phone_main'] ?? ''),
-            'phone_secondary' => trim($_POST['phone_secondary'] ?? ''),
+        $ok = (new Customer())->create([
+            'name' => trim($_POST['name']),
+            'phone' => trim($_POST['phone']),
+            'neighborhood' => trim($_POST['neighborhood'] ?? ''),
+            'address' => trim($_POST['address'] ?? ''),
             'birth_date' => $_POST['birth_date'] ?: null,
             'notes' => trim($_POST['notes'] ?? ''),
-            'active' => 1,
         ]);
-        flash($ok ? 'success' : 'danger', $ok ? 'Cliente cadastrado.' : 'Erro ao cadastrar cliente.');
+        flash($ok ? 'success' : 'danger', $ok ? 'Cliente cadastrado' : 'Erro ao cadastrar cliente');
         $this->redirect('/customers');
     }
 }

@@ -14,28 +14,23 @@ class OrdersController extends Controller
         $this->view('orders/index', ['title' => 'Pedidos', 'orders' => (new Order())->all()]);
     }
 
-    public function updateStatus(): void
+    public function status(): void
     {
         validate_csrf();
-        $id = (int) ($_POST['id'] ?? 0);
-        $status = $_POST['status'] ?? 'novo';
-        $ok = (new Order())->updateStatus($id, $status);
-        flash($ok ? 'success' : 'danger', $ok ? 'Status atualizado.' : 'Erro ao atualizar.');
+        $ok = (new Order())->changeStatus((int)$_POST['id'], $_POST['status']);
+        flash($ok ? 'success' : 'danger', $ok ? 'Status alterado' : 'Erro ao alterar status');
         $this->redirect('/orders');
     }
 
-    public function print80mm(): void
+    public function printClient(): void
     {
-        $id = (int) ($_GET['id'] ?? 0);
-        $orders = (new Order())->all();
-        $order = null;
-        foreach ($orders as $o) {
-            if ((int) $o['id'] === $id) {
-                $order = $o;
-                break;
-            }
-        }
+        $order = (new Order())->findWithItems((int)($_GET['id'] ?? 0));
+        $this->view('orders/print80mm', ['order' => $order, 'title' => 'Impressão cliente', 'mode' => 'cliente'], 'layouts/print');
+    }
 
-        $this->view('orders/print80mm', ['title' => 'Impressão', 'order' => $order], 'layouts/print');
+    public function printKitchen(): void
+    {
+        $order = (new Order())->findWithItems((int)($_GET['id'] ?? 0));
+        $this->view('orders/print80mm', ['order' => $order, 'title' => 'Impressão cozinha', 'mode' => 'cozinha'], 'layouts/print');
     }
 }

@@ -10,17 +10,17 @@ class Dashboard extends Model
 {
     public function stats(): array
     {
-        $result = [];
-        $result['sales_today'] = (float) ($this->db->query("SELECT COALESCE(SUM(total_amount),0) AS v FROM orders WHERE DATE(created_at)=CURDATE() AND status<>'cancelado'")->fetch()['v'] ?? 0);
-        $result['sales_month'] = (float) ($this->db->query("SELECT COALESCE(SUM(total_amount),0) AS v FROM orders WHERE YEAR(created_at)=YEAR(CURDATE()) AND MONTH(created_at)=MONTH(CURDATE()) AND status<>'cancelado'")->fetch()['v'] ?? 0);
-        $result['orders_today'] = (int) ($this->db->query("SELECT COUNT(*) AS q FROM orders WHERE DATE(created_at)=CURDATE()") ->fetch()['q'] ?? 0);
-        $result['avg_ticket'] = (float) ($this->db->query("SELECT COALESCE(AVG(total_amount),0) AS v FROM orders WHERE DATE(created_at)=CURDATE() AND status<>'cancelado'")->fetch()['v'] ?? 0);
-        $result['cash_balance'] = (float) ($this->db->query("SELECT COALESCE(SUM(CASE WHEN type='entrada' THEN amount ELSE -amount END),0) AS v FROM cash_movements WHERE DATE(created_at)=CURDATE()") ->fetch()['v'] ?? 0);
-        return $result;
-    }
+        $today = (float)$this->db->query("SELECT COALESCE(SUM(total_amount),0) FROM orders WHERE DATE(created_at)=CURDATE() AND status<>'cancelado'")->fetchColumn();
+        $orders = (int)$this->db->query("SELECT COUNT(*) FROM orders WHERE DATE(created_at)=CURDATE() AND status<>'cancelado'")->fetchColumn();
+        $ticket = $orders > 0 ? $today / $orders : 0;
+        $receivable = (float)$this->db->query("SELECT COALESCE(SUM(total_amount-paid_amount),0) FROM accounts_receivable WHERE status IN ('pendente','parcial')")->fetchColumn();
+        $cashOpen = (int)$this->db->query("SELECT COUNT(*) FROM cash_registers WHERE status='aberto'")->fetchColumn();
 
-    public function chartSalesByDay(): array
-    {
-        return $this->db->query("SELECT DATE(created_at) AS day, SUM(total_amount) AS total FROM orders WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) AND status<>'cancelado' GROUP BY DATE(created_at) ORDER BY day")->fetchAll();
+        $pay = $this->db->query("SELECT payment_method, SUM(total_amount) total FROM orders WHERE DATE(created_at)=CURDATE() AND status<>'cancelado' GROUP BY payment_method")->fetchAll();
+        $topProducts = $this->db->query("SELECT oi.product_name, SUM(oi.quantity) qty FROM order_items oi INNER JOIN orders o ON o.id=oi.order_id WHERE DATE(o.created_at)>=DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND o.status<>'cancelado' GROUP BY oi.product_name ORDER BY qty DESC LIMIT 5")->fetchAll();
+        $topBairro = $this->db->query("SELECT c.neighborhood, COUNT(*) qty FROM orders o INNER JOIN customers c ON c.id=o.customer_id WHERE DATE(o.created_at)>=DATE_SUB(CURDATE(), INTERVAL 30 DAY) GROUP BY c.neighborhood ORDER BY qty DESC LIMIT 5")->fetchAll();
+        $newCustomers = (int)$this->db->query("SELECT COUNT(*) FROM customers WHERE DATE(created_at)=CURDATE()")->fetchColumn();
+
+        return compact('today','orders','ticket','receivable','cashOpen','pay','topProducts','topBairro','newCustomers');
     }
 }

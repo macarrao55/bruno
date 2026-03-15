@@ -18,20 +18,17 @@ class ProductsController extends Controller
     public function store(): void
     {
         validate_csrf();
-        $m = new Product();
-        $ok = $m->create([
-            'category_id' => (int) ($_POST['category_id'] ?? 0),
-            'code' => trim($_POST['code'] ?? ''),
-            'name' => trim($_POST['name'] ?? ''),
+        $ok = (new Product())->create([
+            'category_id' => (int)$_POST['category_id'],
+            'name' => trim($_POST['name']),
             'description' => trim($_POST['description'] ?? ''),
-            'sale_price' => (float) ($_POST['sale_price'] ?? 0),
-            'cost_price' => (float) ($_POST['cost_price'] ?? 0),
-            'margin_percent' => (float) ($_POST['margin_percent'] ?? 0),
+            'price' => (float)$_POST['price'],
+            'cost' => (float)$_POST['cost'],
+            'controls_stock' => isset($_POST['controls_stock']) ? 1 : 0,
+            'allows_addons' => isset($_POST['allows_addons']) ? 1 : 0,
             'active' => isset($_POST['active']) ? 1 : 0,
-            'stock_control' => isset($_POST['stock_control']) ? 1 : 0,
-            'allow_addons' => isset($_POST['allow_addons']) ? 1 : 0,
         ]);
-        flash($ok ? 'success' : 'danger', $ok ? 'Produto cadastrado.' : 'Erro ao cadastrar produto.');
+        flash($ok ? 'success' : 'danger', $ok ? 'Produto cadastrado' : 'Erro ao cadastrar');
         $this->redirect('/products');
     }
 }

@@ -11,11 +11,6 @@ class DashboardController extends Controller
 {
     public function index(): void
     {
-        $model = new Dashboard();
-        $this->view('dashboard/index', [
-            'title' => 'Dashboard',
-            'stats' => $model->stats(),
-            'salesByDay' => $model->chartSalesByDay(),
-        ]);
+        $this->view('dashboard/index', ['title' => 'Dashboard', 'stats' => (new Dashboard())->stats()]);
     }
 }
