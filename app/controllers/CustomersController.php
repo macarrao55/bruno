@@ -17,14 +17,23 @@ class CustomersController extends Controller
     public function store(): void
     {
         validate_csrf();
+
+        $name = trim($_POST['name'] ?? '');
+        $phone = trim($_POST['phone'] ?? '');
+        if ($name === '' || $phone === '') {
+            flash('danger', 'Nome e telefone são obrigatórios.');
+            $this->redirect('/customers');
+        }
+
         $ok = (new Customer())->create([
-            'name' => trim($_POST['name']),
-            'phone' => trim($_POST['phone']),
+            'name' => $name,
+            'phone' => $phone,
             'neighborhood' => trim($_POST['neighborhood'] ?? ''),
             'address' => trim($_POST['address'] ?? ''),
             'birth_date' => $_POST['birth_date'] ?: null,
             'notes' => trim($_POST['notes'] ?? ''),
         ]);
+
         flash($ok ? 'success' : 'danger', $ok ? 'Cliente cadastrado' : 'Erro ao cadastrar cliente');
         $this->redirect('/customers');
     }

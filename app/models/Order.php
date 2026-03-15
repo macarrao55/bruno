@@ -17,7 +17,14 @@ class Order extends Model
 
     public function findWithItems(int $id): ?array
     {
-        $stmt = $this->db->prepare('SELECT o.*, c.name customer_name, c.phone, c.address, c.neighborhood FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE o.id=:id');
+        $phoneCol = $this->hasColumn('customers', 'phone') ? 'phone' : 'phone_main';
+        $addressCol = $this->hasColumn('customers', 'address') ? 'address' : 'endereco';
+        $neighborhoodCol = $this->hasColumn('customers', 'neighborhood') ? 'neighborhood' : 'bairro';
+
+        $stmt = $this->db->prepare("SELECT o.*, c.name customer_name, c.{$phoneCol} AS phone, c.{$addressCol} AS address, c.{$neighborhoodCol} AS neighborhood
+                                    FROM orders o
+                                    LEFT JOIN customers c ON c.id=o.customer_id
+                                    WHERE o.id=:id");
         $stmt->execute(['id' => $id]);
         $order = $stmt->fetch();
         if (!$order) return null;
@@ -36,6 +43,8 @@ class Order extends Model
 
     public function createFromPdv(array $payload): int
     {
+        $this->validatePayload($payload);
+
         $this->db->beginTransaction();
         try {
             $stmt = $this->db->prepare('INSERT INTO orders (customer_id,user_id,order_type,status,payment_method,subtotal,discount_amount,delivery_fee,total_amount,change_amount,notes,created_at,updated_at) VALUES (:customer_id,:user_id,:order_type,"novo",:payment_method,:subtotal,:discount,:delivery,:total,:change_amount,:notes,NOW(),NOW())');
@@ -102,6 +111,23 @@ class Order extends Model
         }
     }
 
+    private function validatePayload(array $payload): void
+    {
+        if (($payload['total_amount'] ?? 0) <= 0) {
+            throw new \InvalidArgumentException('Total da venda inválido.');
+        }
+
+        if (empty($payload['items']) || !is_array($payload['items'])) {
+            throw new \InvalidArgumentException('Pedido sem itens.');
+        }
+
+        foreach ($payload['items'] as $item) {
+            if (($item['quantity'] ?? 0) <= 0) {
+                throw new \InvalidArgumentException('Item com quantidade inválida.');
+            }
+        }
+    }
+
     private function createFinancialAndCash(array $payload, int $orderId): void
     {
         $f = $this->db->prepare('INSERT INTO financial_entries (type,source,source_id,description,category,payment_method,amount,entry_date,status,created_at,updated_at) VALUES ("entrada","pedido",:sid,:d,"vendas",:pm,:a,CURDATE(),"realizado",NOW(),NOW())');
@@ -142,5 +168,12 @@ class Order extends Model
     {
         $stmt = $this->db->prepare('UPDATE orders SET status=:s, updated_at=NOW() WHERE id=:id');
         return $stmt->execute(['s' => $status, 'id' => $id]);
+    }
+
+    private function hasColumn(string $table, string $column): bool
+    {
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = :t AND column_name = :c');
+        $stmt->execute(['t' => $table, 'c' => $column]);
+        return (int)$stmt->fetchColumn() > 0;
     }
 }

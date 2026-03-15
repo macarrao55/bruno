@@ -18,7 +18,8 @@
   const format = (v) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
 
   async function selectAddons(productId) {
-    const res = await fetch(`addons?product_id=${productId}`);
+    const addonsUrl = document.getElementById('checkoutForm')?.action.replace('/checkout', '/addons') || 'addons';
+    const res = await fetch(`${addonsUrl}?product_id=${productId}`);
     if (!res.ok) return [];
     const list = await res.json();
     if (!Array.isArray(list) || list.length === 0) return [];
