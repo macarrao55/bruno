@@ -3,8 +3,6 @@ require_once __DIR__ . '/../includes/layout.php';
 requireLogin();
 
 $db = db();
-$formasPagamento = getPaymentMethods();
-
 // Atualiza automaticamente títulos vencidos em aberto para status atrasado.
 $db->exec("UPDATE contas_receber SET status = 'atrasado' WHERE status = 'aberto' AND vencimento < CURDATE()");
 
@@ -139,20 +137,9 @@ renderHeader('Contas a Receber');
           <td><span class="badge <?= $badge ?>"><?= e($label) ?></span></td>
           <td>
             <?php if ($situacao !== 'pago'): ?>
-              <form method="post" action="<?= BASE_URL ?>/actions/baixar_receber.php" onsubmit="return confirm('Confirmar registro de pagamento desta conta?');" class="row g-1">
+              <form method="post" action="<?= BASE_URL ?>/actions/baixar_receber.php" onsubmit="return confirm('Confirmar baixa desta conta?');" class="d-inline">
                 <input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
-                <div class="col-md-3"><input class="form-control form-control-sm" type="number" step="0.01" min="0" name="juros" placeholder="Juros" value="0"></div>
-                <div class="col-md-3"><input class="form-control form-control-sm" type="number" step="0.01" min="0" name="desconto" placeholder="Desconto" value="0"></div>
-                <div class="col-md-3"><input class="form-control form-control-sm" type="number" step="0.01" min="0.01" name="valor_pago" placeholder="Valor pago" value="<?= e((string) $c['valor']) ?>" required></div>
-                <div class="col-md-3">
-                  <select name="forma_pagamento" class="form-select form-select-sm" required>
-                    <option value="">Forma pgto</option>
-                    <?php foreach ($formasPagamento as $fp): ?>
-                      <option value="<?= e($fp) ?>"><?= e($fp) ?></option>
-                    <?php endforeach; ?>
-                  </select>
-                </div>
-                <div class="col-md-12"><button class="btn btn-sm btn-success" type="submit">Registrar pagamento / Dar baixa</button></div>
+                <button class="btn btn-sm btn-success" type="submit">Dar baixa</button>
               </form>
             <?php else: ?>
               <span class="text-muted small">Baixado</span>
