@@ -1,0 +1,132 @@
+<?php
+require_once __DIR__ . '/../includes/layout.php';
+requireLogin();
+
+$hasBloqueado = tableHasColumn('clientes', 'bloqueado');
+$hasCep = tableHasColumn('clientes', 'cep');
+
+$fNome = trim((string) ($_GET['nome'] ?? ''));
+$fBairro = trim((string) ($_GET['bairro'] ?? ''));
+$fCpf = trim((string) ($_GET['cpf'] ?? ''));
+$fTelefone = trim((string) ($_GET['telefone'] ?? ''));
+
+$cepExpr = $hasCep ? 'cep' : 'NULL AS cep';
+$bloqExpr = $hasBloqueado ? 'bloqueado' : '0 AS bloqueado';
+$sql = "SELECT id, nome, telefone, {$cepExpr}, rua, numero, bairro, referencia, cpf, tipo_cliente, {$bloqExpr} FROM clientes WHERE 1=1";
+$params = [];
+
+if ($fNome !== '') {
+    $sql .= ' AND nome LIKE ?';
+    $params[] = '%' . $fNome . '%';
+}
+if ($fBairro !== '') {
+    $sql .= ' AND bairro LIKE ?';
+    $params[] = '%' . $fBairro . '%';
+}
+if ($fCpf !== '') {
+    $sql .= ' AND cpf LIKE ?';
+    $params[] = '%' . $fCpf . '%';
+}
+if ($fTelefone !== '') {
+    $sql .= ' AND telefone LIKE ?';
+    $params[] = '%' . $fTelefone . '%';
+}
+
+$sql .= ' ORDER BY id DESC';
+$stmt = db()->prepare($sql);
+$stmt->execute($params);
+$clientes = $stmt->fetchAll();
+
+renderHeader('Clientes');
+?>
+<div class="card mb-3"><div class="card-body">
+  <h6>Novo cliente</h6>
+  <form class="row g-2 mb-2" method="post" action="<?= BASE_URL ?>/actions/save_cliente.php">
+    <div class="col-md-3"><input name="nome" class="form-control" placeholder="Nome" required></div>
+    <div class="col-md-2"><input name="telefone" class="form-control" placeholder="Telefone"></div>
+    <div class="col-md-2"><input name="cep" class="form-control" placeholder="CEP"></div>
+    <div class="col-md-2"><input name="rua" class="form-control" placeholder="Rua"></div>
+    <div class="col-md-1"><input name="numero" class="form-control" placeholder="Nº"></div>
+    <div class="col-md-2"><input name="bairro" class="form-control" placeholder="Bairro"></div>
+    <div class="col-md-2"><input name="referencia" class="form-control" placeholder="Referência"></div>
+    <div class="col-md-2"><input name="cpf" class="form-control" placeholder="CPF"></div>
+    <div class="col-md-2">
+      <select name="tipo_cliente" class="form-select"><option value="comum">Comum</option><option value="revendedor">Revendedor</option></select>
+    </div>
+    <div class="col-md-2"><button class="btn btn-primary">Salvar cliente</button></div>
+  </form>
+</div></div>
+
+<div class="card"><div class="card-body">
+  <h6>Gerenciar clientes (editar, bloquear/desbloquear, excluir)</h6>
+
+  <form class="row g-2 mb-3" method="get">
+    <div class="col-md-3"><label class="form-label">Nome</label><input type="text" name="nome" class="form-control" value="<?= e($fNome) ?>"></div>
+    <div class="col-md-3"><label class="form-label">Bairro</label><input type="text" name="bairro" class="form-control" value="<?= e($fBairro) ?>"></div>
+    <div class="col-md-2"><label class="form-label">CPF</label><input type="text" name="cpf" class="form-control" value="<?= e($fCpf) ?>"></div>
+    <div class="col-md-2"><label class="form-label">Telefone</label><input type="text" name="telefone" class="form-control" value="<?= e($fTelefone) ?>"></div>
+    <div class="col-md-2 d-flex align-items-end gap-2">
+      <button class="btn btn-primary" type="submit">Pesquisar</button>
+      <a class="btn btn-outline-secondary" href="<?= BASE_URL ?>/pages/clientes.php">Limpar</a>
+    </div>
+  </form>
+
+  <?php if (!$hasBloqueado || !$hasCep): ?>
+    <div class="alert alert-warning">
+      <?php if (!$hasBloqueado): ?>
+      Seu banco está sem a coluna <code>clientes.bloqueado</code>. O botão de bloqueio fica desabilitado até executar:
+      <code>ALTER TABLE clientes ADD COLUMN bloqueado TINYINT(1) DEFAULT 0;</code><br>
+      <?php endif; ?>
+      <?php if (!$hasCep): ?>
+      Seu banco está sem a coluna <code>clientes.cep</code>. O campo CEP não será salvo até executar:
+      <code>ALTER TABLE clientes ADD COLUMN cep VARCHAR(15) NULL;</code>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
+
+  <div class="table-responsive">
+    <table class="table table-striped align-middle">
+      <thead>
+        <tr>
+          <th>Nome</th><th>Telefone</th><th>CEP</th><th>Rua</th><th>Nº</th><th>Bairro</th><th>Referência</th><th>CPF</th><th>Tipo</th><th>Status</th><th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach ($clientes as $c): ?>
+        <tr class="<?= (int)$c['bloqueado'] === 1 ? 'table-warning' : '' ?>">
+          <form method="post" action="<?= BASE_URL ?>/actions/update_cliente.php">
+            <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
+            <td><input name="nome" class="form-control form-control-sm" value="<?= e($c['nome']) ?>" required></td>
+            <td><input name="telefone" class="form-control form-control-sm" value="<?= e($c['telefone']) ?>"></td>
+            <td><input name="cep" class="form-control form-control-sm" value="<?= e($c['cep']) ?>"></td>
+            <td><input name="rua" class="form-control form-control-sm" value="<?= e($c['rua']) ?>"></td>
+            <td><input name="numero" class="form-control form-control-sm" value="<?= e($c['numero']) ?>"></td>
+            <td><input name="bairro" class="form-control form-control-sm" value="<?= e($c['bairro']) ?>"></td>
+            <td><input name="referencia" class="form-control form-control-sm" value="<?= e($c['referencia']) ?>"></td>
+            <td><input name="cpf" class="form-control form-control-sm" value="<?= e($c['cpf']) ?>"></td>
+            <td>
+              <select name="tipo_cliente" class="form-select form-select-sm">
+                <option value="comum" <?= $c['tipo_cliente'] === 'comum' ? 'selected' : '' ?>>Comum</option>
+                <option value="revendedor" <?= $c['tipo_cliente'] === 'revendedor' ? 'selected' : '' ?>>Revendedor</option>
+              </select>
+            </td>
+            <td><?= (int)$c['bloqueado'] === 1 ? '<span class="badge bg-warning text-dark">Bloqueado</span>' : '<span class="badge bg-success">Ativo</span>' ?></td>
+            <td class="d-flex gap-1">
+              <button class="btn btn-sm btn-primary" type="submit">Editar</button>
+          </form>
+              <form method="post" action="<?= BASE_URL ?>/actions/toggle_block_cliente.php" onsubmit="return confirm('Alterar status de bloqueio deste cliente?');">
+                <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
+                <button class="btn btn-sm btn-outline-warning" type="submit" <?= $hasBloqueado ? '' : 'disabled' ?>><?= (int)$c['bloqueado'] === 1 ? 'Desbloquear' : 'Bloquear' ?></button>
+              </form>
+              <form method="post" action="<?= BASE_URL ?>/actions/delete_cliente.php" onsubmit="return confirm('Excluir cliente? Essa ação não pode ser desfeita.');">
+                <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Excluir</button>
+              </form>
+            </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div></div>
+<?php renderFooter(); ?>
