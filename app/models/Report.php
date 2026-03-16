@@ -62,7 +62,12 @@ class Report extends Model
         $salesStmt->execute(['s' => $start, 'e' => $end]);
         $sales = $salesStmt->fetch();
 
-        $cmvStmt = $this->db->prepare('SELECT COALESCE(SUM(unit_cost * quantity),0) FROM order_items oi INNER JOIN orders o ON o.id=oi.order_id WHERE DATE(o.created_at) BETWEEN :s AND :e AND o.status<>"cancelado"');
+        $cmvExpr = $this->cmvExpression();
+        $cmvStmt = $this->db->prepare("SELECT COALESCE(SUM({$cmvExpr} * oi.quantity),0)
+                                      FROM order_items oi
+                                      INNER JOIN orders o ON o.id=oi.order_id
+                                      WHERE DATE(o.created_at) BETWEEN :s AND :e
+                                        AND o.status<>'cancelado'");
         $cmvStmt->execute(['s' => $start, 'e' => $end]);
         $cmv = (float)$cmvStmt->fetchColumn();
 
@@ -79,10 +84,34 @@ class Report extends Model
         return compact('gross','discounts','net','cmv','lucroBruto','despesas','lucroLiquido');
     }
 
+    private function cmvExpression(): string
+    {
+        if ($this->hasColumn('order_items', 'unit_cost')) {
+            return 'oi.unit_cost';
+        }
+
+        if ($this->hasColumn('order_items', 'cost_price')) {
+            return 'oi.cost_price';
+        }
+
+        if ($this->hasColumn('order_items', 'unit_price')) {
+            return 'oi.unit_price';
+        }
+
+        return '0';
+    }
+
     private function hasTable(string $table): bool
     {
         $stmt = $this->db->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = :t');
         $stmt->execute(['t' => $table]);
+        return (int)$stmt->fetchColumn() > 0;
+    }
+
+    private function hasColumn(string $table, string $column): bool
+    {
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = :t AND column_name = :c');
+        $stmt->execute(['t' => $table, 'c' => $column]);
         return (int)$stmt->fetchColumn() > 0;
     }
 }
