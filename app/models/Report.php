@@ -71,13 +71,27 @@ class Report extends Model
         $cmvStmt->execute(['s' => $start, 'e' => $end]);
         $cmv = (float)$cmvStmt->fetchColumn();
 
-        $despStmt = $this->db->prepare('SELECT COALESCE(SUM(amount),0) FROM financial_entries WHERE type="saida" AND entry_date BETWEEN :s AND :e AND status="realizado"');
-        $despStmt->execute(['s' => $start, 'e' => $end]);
-        $despesas = (float)$despStmt->fetchColumn();
+        $typeColumn = $this->firstExistingColumn('financial_entries', ['type', 'entry_type']);
+        $statusColumn = $this->firstExistingColumn('financial_entries', ['status']);
+        $dateColumn = $this->firstExistingColumn('financial_entries', ['entry_date', 'date', 'created_at']) ?? 'created_at';
 
-        $gross = (float)$sales['gross'];
-        $discounts = (float)$sales['discounts'];
-        $net = (float)$sales['net'];
+        if ($typeColumn) {
+            $dateExpr = $dateColumn === 'created_at' ? 'DATE(created_at)' : $dateColumn;
+            $whereStatus = $statusColumn ? "AND {$statusColumn} = 'realizado'" : '';
+            $despStmt = $this->db->prepare("SELECT COALESCE(SUM(amount),0)
+                                            FROM financial_entries
+                                            WHERE {$typeColumn} IN ('saida','despesa')
+                                              AND {$dateExpr} BETWEEN :s AND :e
+                                              {$whereStatus}");
+            $despStmt->execute(['s' => $start, 'e' => $end]);
+            $despesas = (float)$despStmt->fetchColumn();
+        } else {
+            $despesas = 0.0;
+        }
+
+        $gross = (float)($sales['gross'] ?? 0);
+        $discounts = (float)($sales['discounts'] ?? 0);
+        $net = (float)($sales['net'] ?? 0);
         $lucroBruto = $net - $cmv;
         $lucroLiquido = $lucroBruto - $despesas;
 
@@ -113,5 +127,15 @@ class Report extends Model
         $stmt = $this->db->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = :t AND column_name = :c');
         $stmt->execute(['t' => $table, 'c' => $column]);
         return (int)$stmt->fetchColumn() > 0;
+    }
+
+    private function firstExistingColumn(string $table, array $columns): ?string
+    {
+        foreach ($columns as $column) {
+            if ($this->hasColumn($table, $column)) {
+                return $column;
+            }
+        }
+        return null;
     }
 }
