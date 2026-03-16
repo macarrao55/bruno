@@ -10,7 +10,7 @@ class Customer extends Model
 {
     public function all(): array
     {
-        $phoneCol = $this->firstExistingColumn('customers', ['phone', 'phone_main']);
+        $phoneCol = $this->firstExistingColumn('customers', ['phone', 'phone_main', 'telefone']);
         $neighborhoodCol = $this->firstExistingColumn('customers', ['neighborhood', 'bairro']);
         $addressCol = $this->firstExistingColumn('customers', ['address', 'endereco']);
         $birthCol = $this->firstExistingColumn('customers', ['birth_date', 'data_nascimento']);
@@ -53,7 +53,7 @@ class Customer extends Model
         $params = ['name' => $d['name']];
 
         foreach ([
-            ['phone', ['phone', 'phone_main']],
+            ['phone', ['phone', 'phone_main', 'telefone']],
             ['neighborhood', ['neighborhood', 'bairro']],
             ['address', ['address', 'endereco']],
             ['birth_date', ['birth_date', 'data_nascimento']],
@@ -123,7 +123,7 @@ class Customer extends Model
         $params = ['id' => $id, 'name' => $d['name']];
 
         foreach ([
-            ['phone', ['phone', 'phone_main']],
+            ['phone', ['phone', 'phone_main', 'telefone']],
             ['neighborhood', ['neighborhood', 'bairro']],
             ['address', ['address', 'endereco']],
             ['birth_date', ['birth_date', 'data_nascimento']],
@@ -153,7 +153,7 @@ class Customer extends Model
 
     public function findById(int $id): ?array
     {
-        $phoneCol = $this->firstExistingColumn('customers', ['phone', 'phone_main']);
+        $phoneCol = $this->firstExistingColumn('customers', ['phone', 'phone_main', 'telefone']);
 
         $phoneExpr = $phoneCol ? "c.{$phoneCol}" : "''";
         $sql = "SELECT c.*, {$phoneExpr} AS phone FROM customers c WHERE c.id=:id LIMIT 1";
@@ -173,7 +173,7 @@ class Customer extends Model
     private function paramNameForField(string $field): string
     {
         return match ($field) {
-            'phone', 'phone_main' => 'phone',
+            'phone', 'phone_main', 'telefone' => 'phone',
             'neighborhood', 'bairro' => 'neighborhood',
             'address', 'endereco' => 'address',
             'birth_date', 'data_nascimento' => 'birth_date',
