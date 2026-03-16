@@ -6,5 +6,13 @@ body { font-size: .95rem; background: #f5f7fb; }
 .nav-link:hover { background: rgba(255,255,255,.08); border-radius: .5rem; }
 .pdv-product { min-height: 84px; border-radius: 12px; }
 #cartItems .cart-line { border-bottom: 1px dashed #ddd; padding: 4px 0; }
+
+.addons-modal { position: fixed; inset: 0; z-index: 1080; display: flex; align-items: center; justify-content: center; }
+.addons-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .45); }
+.addons-panel { position: relative; width: min(560px, 92vw); border-radius: 14px; overflow: hidden; }
+.addons-list { max-height: 320px; overflow: auto; display: grid; gap: .5rem; }
+.addons-item { display: grid; grid-template-columns: 26px 1fr auto; gap: .75rem; align-items: center; border: 1px solid #e9ecef; border-radius: 10px; padding: .65rem .75rem; background: #fff; }
+.addons-item:hover { border-color: #0d6efd; background: #f8fbff; }
+
 [data-bs-theme='dark'] body { background: #0f172a; }
 [data-bs-theme='dark'] .card { background: #1e293b; color: #e2e8f0; }

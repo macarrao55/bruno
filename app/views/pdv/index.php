@@ -18,3 +18,25 @@
 <button class="btn btn-success w-100 mt-2" <?= !$openCash ? 'disabled' : '' ?>>Finalizar venda</button>
 </form>
 </div></div></div></div>
+
+<div id="addonsModal" class="addons-modal d-none" role="dialog" aria-modal="true" aria-labelledby="addonsModalTitle">
+  <div class="addons-backdrop"></div>
+  <div class="addons-panel card shadow-lg">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong id="addonsModalTitle">Selecionar adicionais</strong>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="addonsCloseBtn">Fechar</button>
+    </div>
+    <div class="card-body">
+      <p class="text-muted mb-2" id="addonsProductName">Produto</p>
+      <div id="addonsList" class="addons-list mb-3"></div>
+      <div class="d-flex justify-content-between align-items-center">
+        <span class="text-muted">Total adicionais</span>
+        <strong id="addonsTotal">R$ 0,00</strong>
+      </div>
+    </div>
+    <div class="card-footer d-flex justify-content-end gap-2">
+      <button type="button" class="btn btn-light" id="addonsCancelBtn">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="addonsApplyBtn">Adicionar ao item</button>
+    </div>
+  </div>
+</div>
