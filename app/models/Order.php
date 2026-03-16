@@ -45,12 +45,37 @@ class Order extends Model
     {
         $this->validatePayload($payload);
 
+        $userColumn = $this->resolveOrdersUserColumn();
+        $changeColumn = $this->hasColumn('orders', 'change_amount') ? 'change_amount' : ($this->hasColumn('orders', 'change_for') ? 'change_for' : null);
+
         $this->db->beginTransaction();
         try {
-            $stmt = $this->db->prepare('INSERT INTO orders (customer_id,user_id,order_type,status,payment_method,subtotal,discount_amount,delivery_fee,total_amount,change_amount,notes,created_at,updated_at) VALUES (:customer_id,:user_id,:order_type,"novo",:payment_method,:subtotal,:discount,:delivery,:total,:change_amount,:notes,NOW(),NOW())');
+            $columns = ['customer_id', $userColumn, 'order_type', 'status', 'payment_method', 'subtotal', 'discount_amount', 'delivery_fee', 'total_amount'];
+            $values = [':customer_id', ':user_ref', ':order_type', '"novo"', ':payment_method', ':subtotal', ':discount', ':delivery', ':total'];
+
+            if ($changeColumn) {
+                $columns[] = $changeColumn;
+                $values[] = ':change_amount';
+            }
+
+            $columns[] = 'notes';
+            $values[] = ':notes';
+
+            if ($this->hasColumn('orders', 'created_at')) {
+                $columns[] = 'created_at';
+                $values[] = 'NOW()';
+            }
+            if ($this->hasColumn('orders', 'updated_at')) {
+                $columns[] = 'updated_at';
+                $values[] = 'NOW()';
+            }
+
+            $sql = 'INSERT INTO orders (' . implode(',', $columns) . ') VALUES (' . implode(',', $values) . ')';
+
+            $stmt = $this->db->prepare($sql);
             $stmt->execute([
                 'customer_id' => $payload['customer_id'] ?: null,
-                'user_id' => $payload['user_id'],
+                'user_ref' => $payload['user_id'],
                 'order_type' => $payload['order_type'],
                 'payment_method' => $payload['payment_method'],
                 'subtotal' => $payload['subtotal'],
@@ -168,6 +193,14 @@ class Order extends Model
     {
         $stmt = $this->db->prepare('UPDATE orders SET status=:s, updated_at=NOW() WHERE id=:id');
         return $stmt->execute(['s' => $status, 'id' => $id]);
+    }
+
+    private function resolveOrdersUserColumn(): string
+    {
+        if ($this->hasColumn('orders', 'user_id')) return 'user_id';
+        if ($this->hasColumn('orders', 'created_by')) return 'created_by';
+        if ($this->hasColumn('orders', 'operator_id')) return 'operator_id';
+        return 'user_id';
     }
 
     private function hasColumn(string $table, string $column): bool
