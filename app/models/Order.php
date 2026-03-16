@@ -45,47 +45,9 @@ class Order extends Model
     {
         $this->validatePayload($payload);
 
-        $userColumn = $this->resolveOrdersUserColumn();
-        $changeColumn = $this->hasColumn('orders', 'change_amount') ? 'change_amount' : ($this->hasColumn('orders', 'change_for') ? 'change_for' : null);
-
         $this->db->beginTransaction();
         try {
-            $columns = ['customer_id', $userColumn, 'order_type', 'status', 'payment_method', 'subtotal', 'discount_amount', 'delivery_fee', 'total_amount'];
-            $values = [':customer_id', ':user_ref', ':order_type', '"novo"', ':payment_method', ':subtotal', ':discount', ':delivery', ':total'];
-
-            if ($changeColumn) {
-                $columns[] = $changeColumn;
-                $values[] = ':change_amount';
-            }
-
-            $columns[] = 'notes';
-            $values[] = ':notes';
-
-            if ($this->hasColumn('orders', 'created_at')) {
-                $columns[] = 'created_at';
-                $values[] = 'NOW()';
-            }
-            if ($this->hasColumn('orders', 'updated_at')) {
-                $columns[] = 'updated_at';
-                $values[] = 'NOW()';
-            }
-
-            $sql = 'INSERT INTO orders (' . implode(',', $columns) . ') VALUES (' . implode(',', $values) . ')';
-
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([
-                'customer_id' => $payload['customer_id'] ?: null,
-                'user_ref' => $payload['user_id'],
-                'order_type' => $payload['order_type'],
-                'payment_method' => $payload['payment_method'],
-                'subtotal' => $payload['subtotal'],
-                'discount' => $payload['discount_amount'],
-                'delivery' => $payload['delivery_fee'],
-                'total' => $payload['total_amount'],
-                'change_amount' => $payload['change_amount'],
-                'notes' => $payload['notes'],
-            ]);
-            $orderId = (int)$this->db->lastInsertId();
+            $orderId = $this->insertOrderWithFallback($payload);
 
             $itemStmt = $this->db->prepare('INSERT INTO order_items (order_id,product_id,product_name,quantity,unit_price,unit_cost,total_price,notes,created_at,updated_at) VALUES (:order_id,:product_id,:product_name,:quantity,:unit_price,:unit_cost,:total_price,:notes,NOW(),NOW())');
             $addonStmt = $this->db->prepare('INSERT INTO order_item_addons (order_item_id,addon_id,addon_name,addon_price,created_at,updated_at) VALUES (:order_item_id,:addon_id,:addon_name,:addon_price,NOW(),NOW())');
@@ -195,12 +157,73 @@ class Order extends Model
         return $stmt->execute(['s' => $status, 'id' => $id]);
     }
 
-    private function resolveOrdersUserColumn(): string
+    private function insertOrderWithFallback(array $payload): int
     {
-        if ($this->hasColumn('orders', 'user_id')) return 'user_id';
-        if ($this->hasColumn('orders', 'created_by')) return 'created_by';
-        if ($this->hasColumn('orders', 'operator_id')) return 'operator_id';
-        return 'user_id';
+        $userCandidates = ['user_id', 'created_by', 'operator_id'];
+        $changeCandidates = ['change_amount', 'change_for'];
+
+        $last = null;
+        foreach ($userCandidates as $userColumn) {
+            foreach ([null, ...$changeCandidates] as $changeColumn) {
+                try {
+                    return $this->insertOrder($payload, $userColumn, $changeColumn);
+                } catch (\PDOException $e) {
+                    $msg = $e->getMessage();
+                    if (str_contains($msg, "Unknown column")) {
+                        $last = $e;
+                        continue;
+                    }
+                    throw $e;
+                }
+            }
+        }
+
+        if ($last) {
+            throw $last;
+        }
+
+        throw new \RuntimeException('Não foi possível inserir pedido com o schema atual.');
+    }
+
+    private function insertOrder(array $payload, string $userColumn, ?string $changeColumn): int
+    {
+        $columns = ['customer_id', $userColumn, 'order_type', 'status', 'payment_method', 'subtotal', 'discount_amount', 'delivery_fee', 'total_amount'];
+        $values = [':customer_id', ':user_ref', ':order_type', '"novo"', ':payment_method', ':subtotal', ':discount', ':delivery', ':total'];
+
+        if ($changeColumn) {
+            $columns[] = $changeColumn;
+            $values[] = ':change_amount';
+        }
+
+        $columns[] = 'notes';
+        $values[] = ':notes';
+
+        if ($this->hasColumn('orders', 'created_at')) {
+            $columns[] = 'created_at';
+            $values[] = 'NOW()';
+        }
+        if ($this->hasColumn('orders', 'updated_at')) {
+            $columns[] = 'updated_at';
+            $values[] = 'NOW()';
+        }
+
+        $sql = 'INSERT INTO orders (' . implode(',', $columns) . ') VALUES (' . implode(',', $values) . ')';
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([
+            'customer_id' => $payload['customer_id'] ?: null,
+            'user_ref' => $payload['user_id'],
+            'order_type' => $payload['order_type'],
+            'payment_method' => $payload['payment_method'],
+            'subtotal' => $payload['subtotal'],
+            'discount' => $payload['discount_amount'],
+            'delivery' => $payload['delivery_fee'],
+            'total' => $payload['total_amount'],
+            'change_amount' => $payload['change_amount'],
+            'notes' => $payload['notes'],
+        ]);
+
+        return (int)$this->db->lastInsertId();
     }
 
     private function hasColumn(string $table, string $column): bool
