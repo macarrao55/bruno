@@ -28,6 +28,9 @@ $router->post('/users/store', 'UsersController@store', $auth);
 
 $router->get('/products', 'ProductsController@index', $auth);
 $router->post('/products/store', 'ProductsController@store', $auth);
+$router->post('/products/addon-groups/store', 'ProductsController@storeAddonGroup', $auth);
+$router->post('/products/addons/store', 'ProductsController@storeAddon', $auth);
+$router->post('/products/addons/attach', 'ProductsController@attachAddon', $auth);
 
 $router->get('/customers', 'CustomersController@index', $auth);
 $router->post('/customers/store', 'CustomersController@store', $auth);
@@ -38,6 +41,7 @@ $router->post('/cash/close', 'CashController@close', $auth);
 
 $router->get('/pdv', 'PdvController@index', $auth);
 $router->get('/pdv/addons', 'PdvController@addons', $auth);
+$router->post('/pdv/customers/quick-store', 'PdvController@quickCustomerStore', $auth);
 $router->post('/pdv/checkout', 'PdvController@checkout', $auth);
 
 $router->get('/orders', 'OrdersController@index', $auth);

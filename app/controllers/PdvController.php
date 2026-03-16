@@ -34,6 +34,43 @@ class PdvController extends Controller
         $this->json((new Product())->addonsByProduct($productId));
     }
 
+
+    public function quickCustomerStore(): void
+    {
+        validate_csrf();
+
+        $name = trim($_POST['name'] ?? '');
+        $phone = trim($_POST['phone'] ?? '');
+
+        if ($name === '' || $phone === '') {
+            $this->json(['ok' => false, 'message' => 'Nome e telefone são obrigatórios'], 422);
+        }
+
+        $customerModel = new Customer();
+        $customerId = $customerModel->createAndGetId([
+            'name' => $name,
+            'phone' => $phone,
+            'neighborhood' => trim($_POST['neighborhood'] ?? ''),
+            'address' => trim($_POST['address'] ?? ''),
+            'birth_date' => $_POST['birth_date'] ?: null,
+            'notes' => trim($_POST['notes'] ?? ''),
+        ]);
+
+        if ($customerId <= 0) {
+            $this->json(['ok' => false, 'message' => 'Não foi possível cadastrar o cliente'], 500);
+        }
+
+        $customer = $customerModel->findById($customerId);
+        $this->json([
+            'ok' => true,
+            'customer' => [
+                'id' => $customerId,
+                'name' => $customer['name'] ?? $name,
+                'phone' => $customer['phone'] ?? $phone,
+            ],
+        ]);
+    }
+
     public function checkout(): void
     {
         validate_csrf();

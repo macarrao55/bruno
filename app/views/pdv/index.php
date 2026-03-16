@@ -5,10 +5,10 @@
 <div class="row g-2"><?php foreach($products as $p): ?><div class="col-md-4 pdv-item" data-name="<?= strtolower($p['name']) ?>" data-category="<?= $p['category_id'] ?>"><button class="btn btn-light border w-100 pdv-product" data-id="<?= $p['id'] ?>" data-name="<?= htmlspecialchars($p['name']) ?>" data-price="<?= $p['price'] ?>" data-cost="<?= $p['cost'] ?>" data-controls-stock="<?= $p['controls_stock'] ?>" data-allows-addons="<?= $p['allows_addons'] ?>"><?= htmlspecialchars($p['name']) ?><br><strong>R$ <?= number_format($p['price'],2,',','.') ?></strong></button></div><?php endforeach; ?></div>
 </div>
 <div class="col-md-4"><div class="card"><div class="card-header">Carrinho</div><div class="card-body">
-<form id="checkoutForm" action="<?= base_url('/pdv/checkout') ?>" method="post"><?= csrf_field() ?>
+<form id="checkoutForm" action="<?= base_url('/pdv/checkout') ?>" method="post" data-quick-customer-url="<?= base_url('/pdv/customers/quick-store') ?>"><?= csrf_field() ?>
 <div id="cartItems"></div>
 <input type="hidden" id="itemsJson" name="items_json"><input type="hidden" name="subtotal" id="subtotalInput"><input type="hidden" name="total_amount" id="totalInput"><input type="hidden" name="change_amount" id="changeAmount">
-<label>Cliente</label><select name="customer_id" class="form-select mb-2"><option value="">Consumidor final</option><?php foreach($customers as $c): ?><option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?> - <?= htmlspecialchars($c['phone']) ?></option><?php endforeach; ?></select>
+<label>Cliente</label><select id="customerSelect" name="customer_id" class="form-select mb-2"><option value="">Consumidor final</option><?php foreach($customers as $c): ?><option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?> - <?= htmlspecialchars($c['phone']) ?></option><?php endforeach; ?></select>
 <label>Tipo pedido</label><select name="order_type" class="form-select mb-2"><option value="balcao">Balcão</option><option value="delivery">Delivery</option><option value="retirada">Retirada</option></select>
 <label>Pagamento</label><select name="payment_method" class="form-select mb-2" id="paymentMethod"><option value="dinheiro">Dinheiro</option><option value="pix">Pix</option><option value="debito">Débito</option><option value="credito">Crédito</option><option value="crediario">Crediário</option></select>
 <div class="row g-2 mb-2"><div class="col"><input id="discount" name="discount_amount" type="number" step="0.01" value="0" class="form-control" placeholder="Desconto"></div><div class="col"><input id="deliveryFee" name="delivery_fee" type="number" step="0.01" value="0" class="form-control" placeholder="Taxa entrega"></div></div>
@@ -37,6 +37,30 @@
     <div class="card-footer d-flex justify-content-end gap-2">
       <button type="button" class="btn btn-light" id="addonsCancelBtn">Cancelar</button>
       <button type="button" class="btn btn-primary" id="addonsApplyBtn">Adicionar ao item</button>
+    </div>
+  </div>
+</div>
+
+
+<div id="quickCustomerModal" class="addons-modal d-none" role="dialog" aria-modal="true" aria-labelledby="quickCustomerTitle">
+  <div class="addons-backdrop"></div>
+  <div class="addons-panel card shadow-lg">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong id="quickCustomerTitle">Cadastrar cliente no PDV</strong>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="quickCustomerCloseBtn">Fechar</button>
+    </div>
+    <div class="card-body">
+      <form id="quickCustomerForm" class="row g-2"><?= csrf_field() ?>
+        <div class="col-12"><input class="form-control" name="name" placeholder="Nome do cliente" required></div>
+        <div class="col-md-6"><input class="form-control" name="phone" placeholder="Telefone" required></div>
+        <div class="col-md-6"><input class="form-control" name="neighborhood" placeholder="Bairro"></div>
+        <div class="col-12"><input class="form-control" name="address" placeholder="Endereço"></div>
+      </form>
+      <small class="text-muted">Após salvar, o cliente será selecionado automaticamente nesta venda.</small>
+    </div>
+    <div class="card-footer d-flex justify-content-end gap-2">
+      <button type="button" class="btn btn-light" id="quickCustomerCancelBtn">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="quickCustomerSaveBtn">Salvar cliente</button>
     </div>
   </div>
 </div>

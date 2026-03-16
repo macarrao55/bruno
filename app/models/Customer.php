@@ -34,6 +34,11 @@ class Customer extends Model
 
     public function create(array $d): bool
     {
+        return $this->createAndGetId($d) > 0;
+    }
+
+    public function createAndGetId(array $d): int
+    {
         $fields = ['name'];
         $params = ['name' => $d['name']];
 
@@ -92,7 +97,24 @@ class Customer extends Model
             }
         }
 
-        return $stmt->execute($bind);
+        if (!$stmt->execute($bind)) {
+            return 0;
+        }
+
+        return (int)$this->db->lastInsertId();
+    }
+
+    public function findById(int $id): ?array
+    {
+        $phoneCol = $this->firstExistingColumn('customers', ['phone', 'phone_main']);
+
+        $phoneExpr = $phoneCol ? "c.{$phoneCol}" : "''";
+        $sql = "SELECT c.*, {$phoneExpr} AS phone FROM customers c WHERE c.id=:id LIMIT 1";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
     }
 
     public function updateStats(int $id, float $total): void

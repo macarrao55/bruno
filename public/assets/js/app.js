@@ -15,6 +15,42 @@
   const changeText = document.getElementById('changeText');
   const paymentMethod = document.getElementById('paymentMethod');
 
+  const customerSelect = document.getElementById('customerSelect');
+  const quickCustomerModal = document.getElementById('quickCustomerModal');
+  const quickCustomerForm = document.getElementById('quickCustomerForm');
+  const quickCustomerCloseBtn = document.getElementById('quickCustomerCloseBtn');
+  const quickCustomerCancelBtn = document.getElementById('quickCustomerCancelBtn');
+  const quickCustomerSaveBtn = document.getElementById('quickCustomerSaveBtn');
+
+  function closeQuickCustomerModal() {
+    quickCustomerModal?.classList.add('d-none');
+  }
+
+  async function saveQuickCustomer() {
+    if (!quickCustomerForm || !form) return;
+    const fd = new FormData(quickCustomerForm);
+    const csrf = form.querySelector('input[name="_token"]')?.value;
+    if (csrf && !fd.get('_token')) fd.set('_token', csrf);
+
+    const res = await fetch(form.dataset.quickCustomerUrl || '', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok || !data.customer) {
+      return alert(data.message || 'Erro ao cadastrar cliente');
+    }
+
+    if (customerSelect) {
+      const option = document.createElement('option');
+      option.value = data.customer.id;
+      option.textContent = `${data.customer.name} - ${data.customer.phone || ''}`.trim();
+      option.selected = true;
+      customerSelect.appendChild(option);
+      customerSelect.value = String(data.customer.id);
+    }
+
+    quickCustomerForm.reset();
+    closeQuickCustomerModal();
+  }
+
   const addonsModal = document.getElementById('addonsModal');
   const addonsList = document.getElementById('addonsList');
   const addonsTotal = document.getElementById('addonsTotal');
@@ -138,6 +174,20 @@
     const cat = e.target.value;
     document.querySelectorAll('.pdv-item').forEach(it => it.style.display = !cat || it.dataset.category === cat ? '' : 'none');
   });
+
+  customerSelect?.addEventListener('change', () => {
+    if (customerSelect.value !== '') return;
+    const shouldOpen = confirm('Consumidor final selecionado. Deseja cadastrar um cliente agora sem sair da venda?');
+    if (shouldOpen) {
+      quickCustomerModal?.classList.remove('d-none');
+      quickCustomerForm?.querySelector('input[name="name"]')?.focus();
+    }
+  });
+
+  quickCustomerCloseBtn && (quickCustomerCloseBtn.onclick = closeQuickCustomerModal);
+  quickCustomerCancelBtn && (quickCustomerCancelBtn.onclick = closeQuickCustomerModal);
+  quickCustomerModal?.querySelector('.addons-backdrop')?.addEventListener('click', closeQuickCustomerModal);
+  quickCustomerSaveBtn && (quickCustomerSaveBtn.onclick = saveQuickCustomer);
 
   const form = document.getElementById('checkoutForm');
   form?.addEventListener('submit', async (e) => {

@@ -37,9 +37,142 @@ class Product extends Model
         return $this->db->query("SELECT id,name FROM {$table} WHERE {$activeFilter} ORDER BY name")->fetchAll();
     }
 
+    public function addonGroups(): array
+    {
+        if (!$this->hasTable('addon_groups')) {
+            return [];
+        }
+
+        $active = $this->hasColumn('addon_groups', 'active') ? 'WHERE active=1' : '';
+        return $this->db->query("SELECT id,name FROM addon_groups {$active} ORDER BY name")->fetchAll();
+    }
+
+    public function allAddons(): array
+    {
+        if (!$this->hasTable('addons')) {
+            return [];
+        }
+
+        $joins = $this->hasTable('addon_groups') ? ' LEFT JOIN addon_groups g ON g.id=a.addon_group_id ' : '';
+        $groupName = $this->hasTable('addon_groups') ? 'g.name AS group_name,' : "'' AS group_name,";
+        $where = $this->hasColumn('addons', 'active') ? 'WHERE a.active=1' : '';
+        $sql = "SELECT a.id, a.name, a.price, {$groupName} a.addon_group_id
+                FROM addons a
+                {$joins}
+                {$where}
+                ORDER BY a.name";
+        return $this->db->query($sql)->fetchAll();
+    }
+
+    public function createAddonGroup(string $name): bool
+    {
+        if (!$this->hasTable('addon_groups')) {
+            return false;
+        }
+
+        $fields = ['name'];
+        $values = [':name'];
+        $params = ['name' => $name];
+
+        if ($this->hasColumn('addon_groups', 'active')) {
+            $fields[] = 'active';
+            $values[] = '1';
+        }
+        if ($this->hasColumn('addon_groups', 'created_at')) {
+            $fields[] = 'created_at';
+            $values[] = 'NOW()';
+        }
+        if ($this->hasColumn('addon_groups', 'updated_at')) {
+            $fields[] = 'updated_at';
+            $values[] = 'NOW()';
+        }
+
+        $sql = sprintf('INSERT INTO addon_groups (%s) VALUES (%s)', implode(',', $fields), implode(',', $values));
+        return $this->db->prepare($sql)->execute($params);
+    }
+
+    public function createAddon(int $groupId, string $name, float $price): bool
+    {
+        if (!$this->hasTable('addons')) {
+            return false;
+        }
+
+        $fields = ['name'];
+        $values = [':name'];
+        $params = ['name' => $name, 'price' => $price, 'addon_group_id' => $groupId];
+
+        if ($this->hasColumn('addons', 'addon_group_id')) {
+            $fields[] = 'addon_group_id';
+            $values[] = ':addon_group_id';
+        } elseif ($this->hasColumn('addons', 'group_id')) {
+            $fields[] = 'group_id';
+            $values[] = ':addon_group_id';
+        }
+
+        $priceCol = $this->hasColumn('addons', 'price') ? 'price' : ($this->hasColumn('addons', 'value') ? 'value' : null);
+        if ($priceCol === null) {
+            return false;
+        }
+
+        $fields[] = $priceCol;
+        $values[] = ':price';
+
+        if ($this->hasColumn('addons', 'active')) {
+            $fields[] = 'active';
+            $values[] = '1';
+        }
+        if ($this->hasColumn('addons', 'created_at')) {
+            $fields[] = 'created_at';
+            $values[] = 'NOW()';
+        }
+        if ($this->hasColumn('addons', 'updated_at')) {
+            $fields[] = 'updated_at';
+            $values[] = 'NOW()';
+        }
+
+        $sql = sprintf('INSERT INTO addons (%s) VALUES (%s)', implode(',', $fields), implode(',', $values));
+        return $this->db->prepare($sql)->execute($params);
+    }
+
+    public function attachAddonToProduct(int $productId, int $addonId): bool
+    {
+        if ($productId <= 0 || $addonId <= 0) {
+            return false;
+        }
+
+        if ($this->hasTable('product_addons') && $this->hasColumn('product_addons', 'product_id') && $this->hasColumn('product_addons', 'addon_id')) {
+            $fields = ['product_id', 'addon_id'];
+            $values = [':product_id', ':addon_id'];
+
+            if ($this->hasColumn('product_addons', 'active')) {
+                $fields[] = 'active';
+                $values[] = '1';
+            }
+            if ($this->hasColumn('product_addons', 'created_at')) {
+                $fields[] = 'created_at';
+                $values[] = 'NOW()';
+            }
+            if ($this->hasColumn('product_addons', 'updated_at')) {
+                $fields[] = 'updated_at';
+                $values[] = 'NOW()';
+            }
+
+            $sql = sprintf('INSERT IGNORE INTO product_addons (%s) VALUES (%s)', implode(',', $fields), implode(',', $values));
+            return $this->db->prepare($sql)->execute(['product_id' => $productId, 'addon_id' => $addonId]);
+        }
+
+        if ($this->hasTable('product_addon_links')) {
+            $fields = ['product_id', 'addon_group_id'];
+            $values = [':product_id', '(SELECT group_id FROM product_addons WHERE id=:addon_id LIMIT 1)'];
+            $sql = sprintf('INSERT IGNORE INTO product_addon_links (%s) VALUES (%s)', implode(',', $fields), implode(',', $values));
+            return $this->db->prepare($sql)->execute(['product_id' => $productId, 'addon_id' => $addonId]);
+        }
+
+        return false;
+    }
+
     public function addonsByProduct(int $productId): array
     {
-        // Schema novo: addons + product_addons (vínculo)
         if ($this->hasTable('addons')) {
             $sql = 'SELECT a.id, a.name, a.price
                     FROM product_addons pa
@@ -56,12 +189,12 @@ class Product extends Model
             return $stmt->fetchAll();
         }
 
-        // Schema legado: product_addons (itens) + product_addon_links
         if ($this->hasTable('product_addon_links')) {
-            $sql = 'SELECT a.id, a.name, a.price
+            $priceCol = $this->hasColumn('product_addons', 'price') ? 'price' : 'value';
+            $sql = "SELECT a.id, a.name, a.{$priceCol} AS price
                     FROM product_addon_links l
                     INNER JOIN product_addons a ON a.group_id = l.addon_group_id
-                    WHERE l.product_id = :pid';
+                    WHERE l.product_id = :pid";
             if ($this->hasColumn('product_addons', 'active')) {
                 $sql .= ' AND a.active = 1';
             }
