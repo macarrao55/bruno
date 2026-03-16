@@ -24,7 +24,17 @@ class Report extends Model
 
     public function salesByCategory(string $start, string $end): array
     {
-        $stmt = $this->db->prepare('SELECT c.name category, SUM(oi.total_price) total FROM order_items oi INNER JOIN products p ON p.id=oi.product_id INNER JOIN categories c ON c.id=p.category_id INNER JOIN orders o ON o.id=oi.order_id WHERE DATE(o.created_at) BETWEEN :s AND :e AND o.status<>"cancelado" GROUP BY c.name ORDER BY total DESC');
+        $categoryTable = $this->hasTable('categories') ? 'categories' : 'product_categories';
+
+        $stmt = $this->db->prepare("SELECT c.name category, SUM(oi.total_price) total
+                                    FROM order_items oi
+                                    INNER JOIN products p ON p.id = oi.product_id
+                                    INNER JOIN {$categoryTable} c ON c.id = p.category_id
+                                    INNER JOIN orders o ON o.id = oi.order_id
+                                    WHERE DATE(o.created_at) BETWEEN :s AND :e
+                                      AND o.status <> 'cancelado'
+                                    GROUP BY c.name
+                                    ORDER BY total DESC");
         $stmt->execute(['s' => $start, 'e' => $end]);
         return $stmt->fetchAll();
     }
@@ -67,5 +77,12 @@ class Report extends Model
         $lucroLiquido = $lucroBruto - $despesas;
 
         return compact('gross','discounts','net','cmv','lucroBruto','despesas','lucroLiquido');
+    }
+
+    private function hasTable(string $table): bool
+    {
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = :t');
+        $stmt->execute(['t' => $table]);
+        return (int)$stmt->fetchColumn() > 0;
     }
 }
