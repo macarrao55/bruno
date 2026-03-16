@@ -14,19 +14,29 @@ class Customer extends Model
         $neighborhoodCol = $this->firstExistingColumn('customers', ['neighborhood', 'bairro']);
         $addressCol = $this->firstExistingColumn('customers', ['address', 'endereco']);
         $birthCol = $this->firstExistingColumn('customers', ['birth_date', 'data_nascimento']);
+        $zipCol = $this->firstExistingColumn('customers', ['zip_code', 'cep']);
+        $numberCol = $this->firstExistingColumn('customers', ['address_number', 'number', 'numero']);
+        $sexCol = $this->firstExistingColumn('customers', ['sex', 'gender', 'sexo']);
 
         $phoneExpr = $phoneCol ? "c.{$phoneCol}" : "''";
         $neighExpr = $neighborhoodCol ? "c.{$neighborhoodCol}" : "''";
         $addressExpr = $addressCol ? "c.{$addressCol}" : "''";
         $birthExpr = $birthCol ? "c.{$birthCol}" : 'NULL';
+        $zipExpr = $zipCol ? "c.{$zipCol}" : "''";
+        $numberExpr = $numberCol ? "c.{$numberCol}" : "''";
+        $sexExpr = $sexCol ? "c.{$sexCol}" : "''";
 
+        $activeFilter = $this->hasColumn('customers', 'active') ? 'c.active=1' : '1=1';
         $sql = "SELECT c.*,
                        {$phoneExpr} AS phone,
                        {$neighExpr} AS neighborhood,
                        {$addressExpr} AS address,
-                       {$birthExpr} AS birth_date
+                       {$birthExpr} AS birth_date,
+                       {$zipExpr} AS zip_code,
+                       {$numberExpr} AS address_number,
+                       {$sexExpr} AS sex
                 FROM customers c
-                WHERE c.active=1
+                WHERE {$activeFilter}
                 ORDER BY c.name";
 
         return $this->db->query($sql)->fetchAll();
@@ -42,21 +52,20 @@ class Customer extends Model
         $fields = ['name'];
         $params = ['name' => $d['name']];
 
-        if ($col = $this->firstExistingColumn('customers', ['phone', 'phone_main'])) {
-            $fields[] = $col;
-            $params['phone'] = $d['phone'] ?? '';
-        }
-        if ($col = $this->firstExistingColumn('customers', ['neighborhood', 'bairro'])) {
-            $fields[] = $col;
-            $params['neighborhood'] = $d['neighborhood'] ?? '';
-        }
-        if ($col = $this->firstExistingColumn('customers', ['address', 'endereco'])) {
-            $fields[] = $col;
-            $params['address'] = $d['address'] ?? '';
-        }
-        if ($col = $this->firstExistingColumn('customers', ['birth_date', 'data_nascimento'])) {
-            $fields[] = $col;
-            $params['birth_date'] = $d['birth_date'] ?? null;
+        foreach ([
+            ['phone', ['phone', 'phone_main']],
+            ['neighborhood', ['neighborhood', 'bairro']],
+            ['address', ['address', 'endereco']],
+            ['birth_date', ['birth_date', 'data_nascimento']],
+            ['zip_code', ['zip_code', 'cep']],
+            ['address_number', ['address_number', 'number', 'numero']],
+            ['sex', ['sex', 'gender', 'sexo']],
+        ] as [$paramKey, $candidates]) {
+            $col = $this->firstExistingColumn('customers', $candidates);
+            if ($col) {
+                $fields[] = $col;
+                $params[$paramKey] = $d[$paramKey] ?? ($paramKey === 'birth_date' ? null : '');
+            }
         }
 
         if ($this->hasColumn('customers', 'notes')) {
@@ -92,7 +101,7 @@ class Customer extends Model
         $bind = [];
         foreach ($fields as $f) {
             $p = $this->paramNameForField($f);
-            if (isset($params[$p])) {
+            if (array_key_exists($p, $params)) {
                 $bind[$p] = $params[$p];
             }
         }
@@ -102,6 +111,44 @@ class Customer extends Model
         }
 
         return (int)$this->db->lastInsertId();
+    }
+
+    public function update(int $id, array $d): bool
+    {
+        if ($id <= 0) {
+            return false;
+        }
+
+        $sets = ['name=:name'];
+        $params = ['id' => $id, 'name' => $d['name']];
+
+        foreach ([
+            ['phone', ['phone', 'phone_main']],
+            ['neighborhood', ['neighborhood', 'bairro']],
+            ['address', ['address', 'endereco']],
+            ['birth_date', ['birth_date', 'data_nascimento']],
+            ['zip_code', ['zip_code', 'cep']],
+            ['address_number', ['address_number', 'number', 'numero']],
+            ['sex', ['sex', 'gender', 'sexo']],
+        ] as [$paramKey, $candidates]) {
+            $col = $this->firstExistingColumn('customers', $candidates);
+            if ($col) {
+                $sets[] = "{$col}=:{$paramKey}";
+                $params[$paramKey] = $d[$paramKey] ?? ($paramKey === 'birth_date' ? null : '');
+            }
+        }
+
+        if ($this->hasColumn('customers', 'notes')) {
+            $sets[] = 'notes=:notes';
+            $params['notes'] = $d['notes'] ?? '';
+        }
+
+        if ($this->hasColumn('customers', 'updated_at')) {
+            $sets[] = 'updated_at=NOW()';
+        }
+
+        $sql = 'UPDATE customers SET ' . implode(',', $sets) . ' WHERE id=:id';
+        return $this->db->prepare($sql)->execute($params);
     }
 
     public function findById(int $id): ?array
@@ -130,6 +177,9 @@ class Customer extends Model
             'neighborhood', 'bairro' => 'neighborhood',
             'address', 'endereco' => 'address',
             'birth_date', 'data_nascimento' => 'birth_date',
+            'zip_code', 'cep' => 'zip_code',
+            'address_number', 'number', 'numero' => 'address_number',
+            'sex', 'gender', 'sexo' => 'sex',
             default => $field,
         };
     }

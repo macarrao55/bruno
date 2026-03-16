@@ -28,12 +28,11 @@ $router->post('/users/store', 'UsersController@store', $auth);
 
 $router->get('/products', 'ProductsController@index', $auth);
 $router->post('/products/store', 'ProductsController@store', $auth);
-$router->post('/products/addon-groups/store', 'ProductsController@storeAddonGroup', $auth);
-$router->post('/products/addons/store', 'ProductsController@storeAddon', $auth);
-$router->post('/products/addons/attach', 'ProductsController@attachAddon', $auth);
+$router->post('/products/update', 'ProductsController@update', $auth);
 
 $router->get('/customers', 'CustomersController@index', $auth);
 $router->post('/customers/store', 'CustomersController@store', $auth);
+$router->post('/customers/update', 'CustomersController@update', $auth);
 
 $router->get('/cash', 'CashController@index', $auth);
 $router->post('/cash/open', 'CashController@open', $auth);
@@ -56,3 +55,6 @@ $router->get('/reports', 'ReportsController@index', $auth);
 
 $router->get('/settings', 'SettingsController@index', $auth);
 $router->post('/settings/save', 'SettingsController@save', $auth);
+$router->post('/settings/addon-groups/store', 'SettingsController@storeAddonGroup', $auth);
+$router->post('/settings/addons/store', 'SettingsController@storeAddon', $auth);
+$router->post('/settings/addons/attach', 'SettingsController@attachAddon', $auth);

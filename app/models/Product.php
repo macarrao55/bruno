@@ -206,6 +206,51 @@ class Product extends Model
         return [];
     }
 
+
+    public function update(int $id, array $d): bool
+    {
+        if ($id <= 0) {
+            return false;
+        }
+
+        $priceCol = $this->hasColumn('products', 'price') ? 'price' : 'sale_price';
+        $costCol = $this->hasColumn('products', 'cost') ? 'cost' : 'cost_price';
+        $controlsCol = $this->hasColumn('products', 'controls_stock') ? 'controls_stock' : 'stock_control';
+        $addonsCol = $this->hasColumn('products', 'allows_addons') ? 'allows_addons' : 'allow_addons';
+
+        $sets = [
+            'category_id=:category_id',
+            'name=:name',
+            'description=:description',
+            "{$priceCol}=:price",
+            "{$costCol}=:cost",
+            "{$controlsCol}=:controls_stock",
+            "{$addonsCol}=:allows_addons",
+        ];
+
+        if ($this->hasColumn('products', 'active')) {
+            $sets[] = 'active=:active';
+        }
+        if ($this->hasColumn('products', 'updated_at')) {
+            $sets[] = 'updated_at=NOW()';
+        }
+
+        $sql = 'UPDATE products SET ' . implode(',', $sets) . ' WHERE id=:id';
+        $params = [
+            'id' => $id,
+            'category_id' => (int)$d['category_id'],
+            'name' => (string)$d['name'],
+            'description' => (string)($d['description'] ?? ''),
+            'price' => (float)$d['price'],
+            'cost' => (float)$d['cost'],
+            'controls_stock' => (int)$d['controls_stock'],
+            'allows_addons' => (int)$d['allows_addons'],
+            'active' => (int)$d['active'],
+        ];
+
+        return $this->db->prepare($sql)->execute($params);
+    }
+
     public function create(array $d): bool
     {
         $priceCol = $this->hasColumn('products', 'price') ? 'price' : 'sale_price';

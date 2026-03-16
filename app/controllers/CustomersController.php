@@ -25,16 +25,41 @@ class CustomersController extends Controller
             $this->redirect('/customers');
         }
 
-        $ok = (new Customer())->create([
-            'name' => $name,
-            'phone' => $phone,
-            'neighborhood' => trim($_POST['neighborhood'] ?? ''),
-            'address' => trim($_POST['address'] ?? ''),
-            'birth_date' => $_POST['birth_date'] ?: null,
-            'notes' => trim($_POST['notes'] ?? ''),
-        ]);
+        $ok = (new Customer())->create($this->payload());
 
         flash($ok ? 'success' : 'danger', $ok ? 'Cliente cadastrado' : 'Erro ao cadastrar cliente');
         $this->redirect('/customers');
+    }
+
+    public function update(): void
+    {
+        validate_csrf();
+
+        $id = (int)($_POST['id'] ?? 0);
+        $name = trim($_POST['name'] ?? '');
+        $phone = trim($_POST['phone'] ?? '');
+        if ($id <= 0 || $name === '' || $phone === '') {
+            flash('danger', 'Dados inválidos para atualização do cliente.');
+            $this->redirect('/customers');
+        }
+
+        $ok = (new Customer())->update($id, $this->payload());
+        flash($ok ? 'success' : 'danger', $ok ? 'Cliente atualizado' : 'Erro ao atualizar cliente');
+        $this->redirect('/customers');
+    }
+
+    private function payload(): array
+    {
+        return [
+            'name' => trim($_POST['name'] ?? ''),
+            'phone' => trim($_POST['phone'] ?? ''),
+            'neighborhood' => trim($_POST['neighborhood'] ?? ''),
+            'address' => trim($_POST['address'] ?? ''),
+            'address_number' => trim($_POST['address_number'] ?? ''),
+            'zip_code' => trim($_POST['zip_code'] ?? ''),
+            'sex' => trim($_POST['sex'] ?? ''),
+            'birth_date' => $_POST['birth_date'] ?: null,
+            'notes' => trim($_POST['notes'] ?? ''),
+        ];
     }
 }
