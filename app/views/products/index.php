@@ -1,10 +1,11 @@
 <div class="card mb-3"><div class="card-body"><form method="post" action="<?= base_url('/products/store') ?>" class="row g-2"><?= csrf_field() ?>
 <div class="col-md-3"><input name="name" class="form-control" placeholder="Nome" required></div>
+<div class="col-md-2"><input name="code" class="form-control" placeholder="Código (opcional)"></div>
 <div class="col-md-2"><select name="category_id" class="form-select"><?php foreach($categories as $c): ?><option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-1"><input name="price" type="number" step="0.01" class="form-control" placeholder="Preço" required></div>
 <div class="col-md-1"><input name="cost" type="number" step="0.01" class="form-control" placeholder="Custo" required></div>
-<div class="col-md-3"><input name="description" class="form-control" placeholder="Descrição"></div>
-<div class="col-md-2"><button class="btn btn-primary w-100">Cadastrar</button></div>
+<div class="col-md-2"><input name="description" class="form-control" placeholder="Descrição"></div>
+<div class="col-md-1"><button class="btn btn-primary w-100">Cadastrar</button></div>
 <div class="col-12 d-flex gap-3"><label><input type="checkbox" name="controls_stock" checked> Controla estoque</label><label><input type="checkbox" name="allows_addons" checked> Aceita adicionais</label><label><input type="checkbox" name="active" checked> Ativo</label></div>
 </form></div></div>
 
@@ -21,6 +22,7 @@
         <button type="button" class="btn btn-sm btn-outline-primary product-edit-btn"
           data-id="<?= (int)$p['id'] ?>"
           data-name="<?= htmlspecialchars((string)$p['name'], ENT_QUOTES) ?>"
+          data-code="<?= htmlspecialchars((string)($p['code'] ?? ''), ENT_QUOTES) ?>"
           data-category-id="<?= (int)$p['category_id'] ?>"
           data-price="<?= htmlspecialchars((string)$p['price'], ENT_QUOTES) ?>"
           data-cost="<?= htmlspecialchars((string)$p['cost'], ENT_QUOTES) ?>"
@@ -47,9 +49,10 @@
       <form method="post" action="<?= base_url('/products/update') ?>" id="productEditForm" class="row g-2"><?= csrf_field() ?>
         <input type="hidden" name="id" id="product-edit-id">
         <div class="col-md-4"><input name="name" id="product-edit-name" class="form-control" required></div>
-        <div class="col-md-4"><select name="category_id" id="product-edit-category" class="form-select"><?php foreach($categories as $c): ?><option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option><?php endforeach; ?></select></div>
-        <div class="col-md-2"><input name="price" id="product-edit-price" type="number" step="0.01" class="form-control" required></div>
-        <div class="col-md-2"><input name="cost" id="product-edit-cost" type="number" step="0.01" class="form-control" required></div>
+        <div class="col-md-3"><input name="code" id="product-edit-code" class="form-control" placeholder="Código (opcional)"></div>
+        <div class="col-md-3"><select name="category_id" id="product-edit-category" class="form-select"><?php foreach($categories as $c): ?><option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option><?php endforeach; ?></select></div>
+        <div class="col-md-1"><input name="price" id="product-edit-price" type="number" step="0.01" class="form-control" required></div>
+        <div class="col-md-1"><input name="cost" id="product-edit-cost" type="number" step="0.01" class="form-control" required></div>
         <div class="col-12"><input name="description" id="product-edit-description" class="form-control" placeholder="Descrição"></div>
         <div class="col-12 d-flex gap-3">
           <label><input type="checkbox" name="controls_stock" id="product-edit-controls-stock"> Controla estoque</label>
@@ -77,6 +80,7 @@
   const fields = {
     id: document.getElementById('product-edit-id'),
     name: document.getElementById('product-edit-name'),
+    code: document.getElementById('product-edit-code'),
     category: document.getElementById('product-edit-category'),
     price: document.getElementById('product-edit-price'),
     cost: document.getElementById('product-edit-cost'),
@@ -96,6 +100,7 @@
     btn.addEventListener('click', () => {
       fields.id.value = btn.dataset.id || '';
       fields.name.value = btn.dataset.name || '';
+      fields.code.value = btn.dataset.code || '';
       fields.category.value = btn.dataset.categoryId || '';
       fields.price.value = btn.dataset.price || '0';
       fields.cost.value = btn.dataset.cost || '0';

@@ -22,7 +22,12 @@ class ProductsController extends Controller
     public function store(): void
     {
         validate_csrf();
-        $ok = (new Product())->create($this->payload());
+        try {
+            $ok = (new Product())->create($this->payload());
+        } catch (\Throwable $e) {
+            flash('danger', 'Erro ao cadastrar produto: ' . $e->getMessage());
+            $this->redirect('/products');
+        }
         flash($ok ? 'success' : 'danger', $ok ? 'Produto cadastrado' : 'Erro ao cadastrar');
         $this->redirect('/products');
     }
@@ -36,7 +41,12 @@ class ProductsController extends Controller
             $this->redirect('/products');
         }
 
-        $ok = (new Product())->update($id, $this->payload());
+        try {
+            $ok = (new Product())->update($id, $this->payload());
+        } catch (\Throwable $e) {
+            flash('danger', 'Erro ao atualizar produto: ' . $e->getMessage());
+            $this->redirect('/products');
+        }
         flash($ok ? 'success' : 'danger', $ok ? 'Produto atualizado' : 'Erro ao atualizar produto');
         $this->redirect('/products');
     }
@@ -46,6 +56,7 @@ class ProductsController extends Controller
         return [
             'category_id' => (int)$_POST['category_id'],
             'name' => trim($_POST['name']),
+            'code' => trim($_POST['code'] ?? ''),
             'description' => trim($_POST['description'] ?? ''),
             'price' => (float)$_POST['price'],
             'cost' => (float)$_POST['cost'],

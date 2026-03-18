@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Core\Model;
+use PDOException;
 
 class Product extends Model
 {
@@ -231,6 +232,9 @@ class Product extends Model
         if ($this->hasColumn('products', 'active')) {
             $sets[] = 'active=:active';
         }
+        if ($this->hasColumn('products', 'code')) {
+            $sets[] = 'code=:code';
+        }
         if ($this->hasColumn('products', 'updated_at')) {
             $sets[] = 'updated_at=NOW()';
         }
@@ -246,6 +250,7 @@ class Product extends Model
             'controls_stock' => (int)$d['controls_stock'],
             'allows_addons' => (int)$d['allows_addons'],
             'active' => (int)$d['active'],
+            'code' => trim((string)($d['code'] ?? '')) ?: $this->generateProductCode((string)$d['name']),
         ];
 
         return $this->db->prepare($sql)->execute($params);
@@ -258,10 +263,59 @@ class Product extends Model
         $controlsCol = $this->hasColumn('products', 'controls_stock') ? 'controls_stock' : 'stock_control';
         $addonsCol = $this->hasColumn('products', 'allows_addons') ? 'allows_addons' : 'allow_addons';
 
-        $stmt = $this->db->prepare("INSERT INTO products (category_id,name,description,{$priceCol},{$costCol},{$controlsCol},{$addonsCol},active,created_at,updated_at)
-                                    VALUES (:category_id,:name,:description,:price,:cost,:controls_stock,:allows_addons,:active,NOW(),NOW())");
+        $columns = ['category_id', 'name', 'description', $priceCol, $costCol, $controlsCol, $addonsCol];
+        $values = [':category_id', ':name', ':description', ':price', ':cost', ':controls_stock', ':allows_addons'];
+        $params = [
+            'category_id' => (int)$d['category_id'],
+            'name' => (string)$d['name'],
+            'description' => (string)($d['description'] ?? ''),
+            'price' => (float)$d['price'],
+            'cost' => (float)$d['cost'],
+            'controls_stock' => (int)$d['controls_stock'],
+            'allows_addons' => (int)$d['allows_addons'],
+            'active' => (int)($d['active'] ?? 1),
+        ];
 
-        return $stmt->execute($d);
+        if ($this->hasColumn('products', 'code')) {
+            $columns[] = 'code';
+            $values[] = ':code';
+            $params['code'] = trim((string)($d['code'] ?? '')) ?: $this->generateProductCode((string)$d['name']);
+        }
+        if ($this->hasColumn('products', 'active')) {
+            $columns[] = 'active';
+            $values[] = ':active';
+        }
+        if ($this->hasColumn('products', 'created_at')) {
+            $columns[] = 'created_at';
+            $values[] = 'NOW()';
+        }
+        if ($this->hasColumn('products', 'updated_at')) {
+            $columns[] = 'updated_at';
+            $values[] = 'NOW()';
+        }
+
+        $sql = 'INSERT INTO products (' . implode(',', $columns) . ') VALUES (' . implode(',', $values) . ')';
+        $stmt = $this->db->prepare($sql);
+
+        try {
+            return $stmt->execute($params);
+        } catch (PDOException $e) {
+            if ($this->hasColumn('products', 'code') && str_contains(strtolower($e->getMessage()), 'duplicate')) {
+                $params['code'] = $this->generateProductCode((string)$d['name']);
+                return $stmt->execute($params);
+            }
+            throw $e;
+        }
+    }
+
+    private function generateProductCode(string $name): string
+    {
+        $base = preg_replace('/[^A-Z0-9]/', '', strtoupper(substr(trim($name), 0, 4)));
+        if ($base === '') {
+            $base = 'PRD';
+        }
+
+        return $base . '-' . date('YmdHis') . '-' . substr(bin2hex(random_bytes(3)), 0, 6);
     }
 
     private function hasTable(string $table): bool
