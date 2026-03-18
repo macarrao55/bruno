@@ -189,14 +189,28 @@ class Order extends Model
     {
         $columns = ['customer_id', $userColumn, 'order_type', 'status', 'payment_method', 'subtotal', 'discount_amount', 'delivery_fee', 'total_amount'];
         $values = [':customer_id', ':user_ref', ':order_type', '"novo"', ':payment_method', ':subtotal', ':discount', ':delivery', ':total'];
+        $params = [
+            'customer_id' => $payload['customer_id'] ?: null,
+            'user_ref' => $payload['user_id'],
+            'order_type' => $payload['order_type'],
+            'payment_method' => $payload['payment_method'],
+            'subtotal' => $payload['subtotal'],
+            'discount' => $payload['discount_amount'],
+            'delivery' => $payload['delivery_fee'],
+            'total' => $payload['total_amount'],
+        ];
 
         if ($changeColumn) {
             $columns[] = $changeColumn;
             $values[] = ':change_amount';
+            $params['change_amount'] = $payload['change_amount'];
         }
 
-        $columns[] = 'notes';
-        $values[] = ':notes';
+        if ($this->hasColumn('orders', 'notes')) {
+            $columns[] = 'notes';
+            $values[] = ':notes';
+            $params['notes'] = $payload['notes'];
+        }
 
         if ($this->hasColumn('orders', 'created_at')) {
             $columns[] = 'created_at';
@@ -210,18 +224,7 @@ class Order extends Model
         $sql = 'INSERT INTO orders (' . implode(',', $columns) . ') VALUES (' . implode(',', $values) . ')';
 
         $stmt = $this->db->prepare($sql);
-        $stmt->execute([
-            'customer_id' => $payload['customer_id'] ?: null,
-            'user_ref' => $payload['user_id'],
-            'order_type' => $payload['order_type'],
-            'payment_method' => $payload['payment_method'],
-            'subtotal' => $payload['subtotal'],
-            'discount' => $payload['discount_amount'],
-            'delivery' => $payload['delivery_fee'],
-            'total' => $payload['total_amount'],
-            'change_amount' => $payload['change_amount'],
-            'notes' => $payload['notes'],
-        ]);
+        $stmt->execute($params);
 
         return (int)$this->db->lastInsertId();
     }
