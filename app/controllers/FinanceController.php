@@ -39,8 +39,80 @@ class FinanceController extends Controller
                 'amount_compare' => $amount,
                 'id' => $id,
             ]);
-            $f = $db->prepare('INSERT INTO financial_entries (type,source,source_id,description,category,payment_method,amount,entry_date,status,created_at,updated_at) VALUES ("entrada","recebimento",:sid,:d,"contas_receber","dinheiro",:a,CURDATE(),"realizado",NOW(),NOW())');
-            $f->execute(['sid' => $id, 'd' => 'Baixa de conta a receber #' . $id, 'a' => $amount]);
+            $fColumns = [];
+            $fValues = [];
+            $fParams = [];
+
+            $typeColumn = $this->hasColumn($db, 'financial_entries', 'type') ? 'type' : ($this->hasColumn($db, 'financial_entries', 'entry_type') ? 'entry_type' : null);
+            if ($typeColumn !== null) {
+                $fColumns[] = $typeColumn;
+                $fValues[] = ':entry_type';
+                $fParams['entry_type'] = 'entrada';
+            }
+
+            if ($this->hasColumn($db, 'financial_entries', 'source')) {
+                $fColumns[] = 'source';
+                $fValues[] = ':source';
+                $fParams['source'] = 'recebimento';
+            }
+
+            if ($this->hasColumn($db, 'financial_entries', 'source_id')) {
+                $fColumns[] = 'source_id';
+                $fValues[] = ':source_id';
+                $fParams['source_id'] = $id;
+            }
+
+            if ($this->hasColumn($db, 'financial_entries', 'description')) {
+                $fColumns[] = 'description';
+                $fValues[] = ':description';
+                $fParams['description'] = 'Baixa de conta a receber #' . $id;
+            }
+
+            if ($this->hasColumn($db, 'financial_entries', 'category')) {
+                $fColumns[] = 'category';
+                $fValues[] = ':category';
+                $fParams['category'] = 'contas_receber';
+            }
+
+            if ($this->hasColumn($db, 'financial_entries', 'payment_method')) {
+                $fColumns[] = 'payment_method';
+                $fValues[] = ':payment_method';
+                $fParams['payment_method'] = 'dinheiro';
+            }
+
+            $amountColumn = $this->hasColumn($db, 'financial_entries', 'amount') ? 'amount' : ($this->hasColumn($db, 'financial_entries', 'value') ? 'value' : null);
+            if ($amountColumn !== null) {
+                $fColumns[] = $amountColumn;
+                $fValues[] = ':amount';
+                $fParams['amount'] = $amount;
+            }
+
+            if ($this->hasColumn($db, 'financial_entries', 'entry_date')) {
+                $fColumns[] = 'entry_date';
+                $fValues[] = 'CURDATE()';
+            }
+
+            if ($this->hasColumn($db, 'financial_entries', 'status')) {
+                $fColumns[] = 'status';
+                $fValues[] = ':status';
+                $fParams['status'] = 'realizado';
+            }
+
+            if ($this->hasColumn($db, 'financial_entries', 'created_at')) {
+                $fColumns[] = 'created_at';
+                $fValues[] = 'NOW()';
+            }
+
+            if ($this->hasColumn($db, 'financial_entries', 'updated_at')) {
+                $fColumns[] = 'updated_at';
+                $fValues[] = 'NOW()';
+            }
+
+            if ($fColumns && $fValues) {
+                $fSql = 'INSERT INTO financial_entries (' . implode(',', $fColumns) . ') VALUES (' . implode(',', $fValues) . ')';
+                $f = $db->prepare($fSql);
+                $f->execute($fParams);
+            }
             $db->commit();
             flash('success', 'Conta a receber baixada');
         } catch (\Throwable $e) {
@@ -48,5 +120,12 @@ class FinanceController extends Controller
             flash('danger', 'Erro ao baixar: ' . $e->getMessage());
         }
         $this->redirect('/finance');
+    }
+
+    private function hasColumn(\PDO $db, string $table, string $column): bool
+    {
+        $stmt = $db->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = :table AND column_name = :column');
+        $stmt->execute(['table' => $table, 'column' => $column]);
+        return (int)$stmt->fetchColumn() > 0;
     }
 }
