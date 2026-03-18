@@ -63,6 +63,11 @@ $router->post('/settings/addons/attach', 'SettingsController@attachAddon', $auth
 $router->get('/dre', 'ModuleController@dre', $auth);
 $router->get('/conciliation', 'ModuleController@conciliation', $auth);
 $router->get('/stock', 'ModuleController@stock', $auth);
+$router->post('/stock/store', 'ModuleController@stockStore', $auth);
+$router->post('/stock/update', 'ModuleController@stockUpdate', $auth);
+$router->post('/stock/delete', 'ModuleController@stockDelete', $auth);
+$router->post('/stock/recipes/store', 'ModuleController@stockRecipeStore', $auth);
+$router->post('/stock/recipes/delete', 'ModuleController@stockRecipeDelete', $auth);
 $router->get('/loyalty', 'ModuleController@loyalty', $auth);
 $router->get('/marketing', 'ModuleController@marketing', $auth);
 $router->get('/employees', 'ModuleController@employees', $auth);

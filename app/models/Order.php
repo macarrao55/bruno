@@ -155,23 +155,21 @@ class Order extends Model
                     $addonStmt->execute($addonParams);
                 }
 
-                if ((int)$item['controls_stock'] === 1) {
-                    $recipeStmt->execute(['pid' => $item['product_id']]);
-                    foreach ($recipeStmt->fetchAll() as $recipe) {
-                        $q = (float)$recipe['quantity_used'] * (float)$item['quantity'];
-                        $stockDown->execute(['qty' => $q, 'sid' => $recipe['stock_item_id']]);
-                        $stockMovParams = ['sid' => $recipe['stock_item_id'], 'qty' => $q];
-                        if ($this->hasColumn('stock_movements', 'unit_cost')) {
-                            $stockMovParams['unit_cost'] = 0;
-                        }
-                        if ($this->hasColumn('stock_movements', 'notes')) {
-                            $stockMovParams['notes'] = 'Baixa automática do pedido';
-                        }
-                        if ($this->hasColumn('stock_movements', 'reference_id')) {
-                            $stockMovParams['order_id'] = $orderId;
-                        }
-                        $stockMov->execute($stockMovParams);
+                $recipeStmt->execute(['pid' => $item['product_id']]);
+                foreach ($recipeStmt->fetchAll() as $recipe) {
+                    $q = (float)$recipe['quantity_used'] * (float)$item['quantity'];
+                    $stockDown->execute(['qty' => $q, 'sid' => $recipe['stock_item_id']]);
+                    $stockMovParams = ['sid' => $recipe['stock_item_id'], 'qty' => $q];
+                    if ($this->hasColumn('stock_movements', 'unit_cost')) {
+                        $stockMovParams['unit_cost'] = 0;
                     }
+                    if ($this->hasColumn('stock_movements', 'notes')) {
+                        $stockMovParams['notes'] = 'Baixa automática do pedido';
+                    }
+                    if ($this->hasColumn('stock_movements', 'reference_id')) {
+                        $stockMovParams['order_id'] = $orderId;
+                    }
+                    $stockMov->execute($stockMovParams);
                 }
             }
 
