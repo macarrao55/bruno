@@ -14,7 +14,15 @@
 <a class="nav-link text-white" href="<?= base_url('/products') ?>">Produtos</a>
 <a class="nav-link text-white" href="<?= base_url('/customers') ?>">Clientes</a>
 <a class="nav-link text-white" href="<?= base_url('/finance') ?>">Financeiro</a>
+<a class="nav-link text-white" href="<?= base_url('/dre') ?>">DRE</a>
+<a class="nav-link text-white" href="<?= base_url('/conciliation') ?>">Conciliação</a>
+<a class="nav-link text-white" href="<?= base_url('/stock') ?>">Estoque</a>
+<a class="nav-link text-white" href="<?= base_url('/loyalty') ?>">Fidelidade</a>
+<a class="nav-link text-white" href="<?= base_url('/marketing') ?>">Marketing</a>
+<a class="nav-link text-white" href="<?= base_url('/employees') ?>">Funcionários</a>
 <a class="nav-link text-white" href="<?= base_url('/reports') ?>">Relatórios</a>
+<a class="nav-link text-white" href="<?= base_url('/audit') ?>">Auditoria</a>
+<a class="nav-link text-white" href="<?= base_url('/backup') ?>">Backup</a>
 <a class="nav-link text-white" href="<?= base_url('/users') ?>">Usuários</a>
 <a class="nav-link text-white" href="<?= base_url('/settings') ?>">Configurações</a>
 </nav></aside>
