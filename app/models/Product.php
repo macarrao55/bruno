@@ -9,7 +9,7 @@ use PDOException;
 
 class Product extends Model
 {
-    public function all(): array
+    public function all(array $filters = []): array
     {
         $categoryTable = $this->hasTable('categories') ? 'categories' : 'product_categories';
         $priceCol = $this->hasColumn('products', 'price') ? 'price' : 'sale_price';
@@ -17,7 +17,33 @@ class Product extends Model
         $controlsCol = $this->hasColumn('products', 'controls_stock') ? 'controls_stock' : 'stock_control';
         $addonsCol = $this->hasColumn('products', 'allows_addons') ? 'allows_addons' : 'allow_addons';
 
-        $activeFilter = $this->hasColumn('products', 'active') ? 'p.active=1' : '1=1';
+        $where = [];
+        $params = [];
+
+        if (($filters['name'] ?? '') !== '') {
+            $where[] = 'p.name LIKE :name';
+            $params['name'] = '%' . $filters['name'] . '%';
+        }
+        if (($filters['category_id'] ?? '') !== '') {
+            $where[] = 'p.category_id = :category_id';
+            $params['category_id'] = (int)$filters['category_id'];
+        }
+        if (($filters['controls_stock'] ?? '') !== '') {
+            $where[] = "p.{$controlsCol} = :controls_stock";
+            $params['controls_stock'] = (int)$filters['controls_stock'];
+        }
+        if (($filters['allows_addons'] ?? '') !== '') {
+            $where[] = "p.{$addonsCol} = :allows_addons";
+            $params['allows_addons'] = (int)$filters['allows_addons'];
+        }
+        if (($filters['active'] ?? '') !== '' && $this->hasColumn('products', 'active')) {
+            $where[] = 'p.active = :active';
+            $params['active'] = (int)$filters['active'];
+        } elseif ($this->hasColumn('products', 'active')) {
+            $where[] = 'p.active = 1';
+        }
+
+        $whereSql = $where ? implode(' AND ', $where) : '1=1';
         $sql = "SELECT p.*, c.name category_name,
                        p.{$priceCol} AS price,
                        p.{$costCol} AS cost,
@@ -25,10 +51,11 @@ class Product extends Model
                        p.{$addonsCol} AS allows_addons
                 FROM products p
                 INNER JOIN {$categoryTable} c ON c.id = p.category_id
-                WHERE {$activeFilter}
+                WHERE {$whereSql}
                 ORDER BY p.name";
-
-        return $this->db->query($sql)->fetchAll();
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
     }
 
     public function categories(): array

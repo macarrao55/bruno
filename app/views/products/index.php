@@ -1,13 +1,65 @@
-<div class="card mb-3"><div class="card-body"><form method="post" action="<?= base_url('/products/store') ?>" class="row g-2"><?= csrf_field() ?>
-<div class="col-md-3"><input name="name" class="form-control" placeholder="Nome" required></div>
-<div class="col-md-2"><input name="code" class="form-control" placeholder="Código (opcional)"></div>
-<div class="col-md-2"><select name="category_id" class="form-select"><?php foreach($categories as $c): ?><option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option><?php endforeach; ?></select></div>
-<div class="col-md-1"><input name="price" type="number" step="0.01" class="form-control" placeholder="Preço" required></div>
-<div class="col-md-1"><input name="cost" type="number" step="0.01" class="form-control" placeholder="Custo" required></div>
-<div class="col-md-2"><input name="description" class="form-control" placeholder="Descrição"></div>
-<div class="col-md-1"><button class="btn btn-primary w-100">Cadastrar</button></div>
-<div class="col-12 d-flex gap-3"><label><input type="checkbox" name="controls_stock" checked> Controla estoque</label><label><input type="checkbox" name="allows_addons" checked> Aceita adicionais</label><label><input type="checkbox" name="active" checked> Ativo</label></div>
-</form></div></div>
+<?php $filters = $filters ?? []; ?>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="mb-0">Produtos</h5>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-primary btn-sm" id="openProductCreateBtn">Cadastro de produtos</button>
+    <button type="button" class="btn btn-outline-primary btn-sm" id="openProductFilterBtn">Filtro de produtos</button>
+    <a href="<?= base_url('/products') ?>" class="btn btn-outline-secondary btn-sm">Limpar filtros</a>
+  </div>
+</div>
+
+<div id="productCreateModal" class="addons-modal d-none" role="dialog" aria-modal="true" aria-labelledby="productCreateTitle">
+  <div class="addons-backdrop"></div>
+  <div class="addons-panel card shadow-lg">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong id="productCreateTitle">Cadastrar produto</strong>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="productCreateCloseBtn">Fechar</button>
+    </div>
+    <div class="card-body">
+      <form method="post" action="<?= base_url('/products/store') ?>" id="productCreateForm" class="row g-2"><?= csrf_field() ?>
+        <div class="col-md-4"><input name="name" class="form-control" placeholder="Nome" required></div>
+        <div class="col-md-2"><input name="code" class="form-control" placeholder="Código (opcional)"></div>
+        <div class="col-md-3"><select name="category_id" class="form-select"><?php foreach($categories as $c): ?><option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option><?php endforeach; ?></select></div>
+        <div class="col-md-1"><input name="price" type="number" step="0.01" class="form-control" placeholder="Preço" required></div>
+        <div class="col-md-1"><input name="cost" type="number" step="0.01" class="form-control" placeholder="Custo" required></div>
+        <div class="col-md-12"><input name="description" class="form-control" placeholder="Descrição"></div>
+        <div class="col-12 d-flex gap-3">
+          <label><input type="checkbox" name="controls_stock" checked> Controla estoque</label>
+          <label><input type="checkbox" name="allows_addons" checked> Aceita adicionais</label>
+          <label><input type="checkbox" name="active" checked> Ativo</label>
+        </div>
+      </form>
+    </div>
+    <div class="card-footer d-flex justify-content-end gap-2">
+      <button type="button" class="btn btn-light" id="productCreateCancelBtn">Cancelar</button>
+      <button type="submit" class="btn btn-primary" form="productCreateForm">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div id="productFilterModal" class="addons-modal d-none" role="dialog" aria-modal="true" aria-labelledby="productFilterTitle">
+  <div class="addons-backdrop"></div>
+  <div class="addons-panel card shadow-lg">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong id="productFilterTitle">Como deseja filtrar os produtos?</strong>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="productFilterCloseBtn">Fechar</button>
+    </div>
+    <div class="card-body">
+      <form method="get" action="<?= base_url('/products') ?>" id="productFilterForm" class="row g-2">
+        <div class="col-md-6"><label class="form-label">Nome</label><input name="name" class="form-control form-control-sm" value="<?= htmlspecialchars((string)($filters['name'] ?? '')) ?>"></div>
+        <div class="col-md-6"><label class="form-label">Categoria</label><select name="category_id" class="form-select form-select-sm"><option value="">Todas</option><?php foreach($categories as $c): ?><option value="<?= $c['id'] ?>" <?= (string)($filters['category_id'] ?? '') === (string)$c['id'] ? 'selected' : '' ?>><?= htmlspecialchars($c['name']) ?></option><?php endforeach; ?></select></div>
+        <div class="col-md-4"><label class="form-label">Controla estoque</label><select name="controls_stock" class="form-select form-select-sm"><option value="">Todos</option><option value="1" <?= ($filters['controls_stock'] ?? '') === '1' ? 'selected' : '' ?>>Sim</option><option value="0" <?= ($filters['controls_stock'] ?? '') === '0' ? 'selected' : '' ?>>Não</option></select></div>
+        <div class="col-md-4"><label class="form-label">Aceita adicionais</label><select name="allows_addons" class="form-select form-select-sm"><option value="">Todos</option><option value="1" <?= ($filters['allows_addons'] ?? '') === '1' ? 'selected' : '' ?>>Sim</option><option value="0" <?= ($filters['allows_addons'] ?? '') === '0' ? 'selected' : '' ?>>Não</option></select></div>
+        <div class="col-md-4"><label class="form-label">Ativo</label><select name="active" class="form-select form-select-sm"><option value="">Todos</option><option value="1" <?= ($filters['active'] ?? '') === '1' ? 'selected' : '' ?>>Sim</option><option value="0" <?= ($filters['active'] ?? '') === '0' ? 'selected' : '' ?>>Não</option></select></div>
+      </form>
+    </div>
+    <div class="card-footer d-flex justify-content-end gap-2">
+      <button type="button" class="btn btn-light" id="productFilterCancelBtn">Cancelar</button>
+      <button type="submit" class="btn btn-primary" form="productFilterForm">Aplicar filtros</button>
+    </div>
+  </div>
+</div>
 
 <table class="table table-striped align-middle">
   <thead><tr><th>Produto</th><th>Categoria</th><th>Preço</th><th>Custo</th><th width="180">Ações</th></tr></thead>
@@ -70,12 +122,30 @@
 
 <script>
 (() => {
-  const modal = document.getElementById('productEditModal');
-  if (!modal) return;
+  function wireSimpleModal(modalId, openBtnId, closeBtnId, cancelBtnId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return null;
+    const openBtn = openBtnId ? document.getElementById(openBtnId) : null;
+    const closeBtn = closeBtnId ? document.getElementById(closeBtnId) : null;
+    const cancelBtn = cancelBtnId ? document.getElementById(cancelBtnId) : null;
+    const backdrop = modal.querySelector('.addons-backdrop');
 
-  const closeBtn = document.getElementById('productEditCloseBtn');
-  const cancelBtn = document.getElementById('productEditCancelBtn');
-  const backdrop = modal.querySelector('.addons-backdrop');
+    const open = () => modal.classList.remove('d-none');
+    const close = () => modal.classList.add('d-none');
+
+    openBtn?.addEventListener('click', open);
+    closeBtn?.addEventListener('click', close);
+    cancelBtn?.addEventListener('click', close);
+    backdrop?.addEventListener('click', close);
+
+    return { open, close };
+  }
+
+  wireSimpleModal('productCreateModal', 'openProductCreateBtn', 'productCreateCloseBtn', 'productCreateCancelBtn');
+  wireSimpleModal('productFilterModal', 'openProductFilterBtn', 'productFilterCloseBtn', 'productFilterCancelBtn');
+
+  const editModal = wireSimpleModal('productEditModal', null, 'productEditCloseBtn', 'productEditCancelBtn');
+  if (!editModal) return;
 
   const fields = {
     id: document.getElementById('product-edit-id'),
@@ -90,12 +160,6 @@
     active: document.getElementById('product-edit-active')
   };
 
-  const close = () => modal.classList.add('d-none');
-
-  closeBtn?.addEventListener('click', close);
-  cancelBtn?.addEventListener('click', close);
-  backdrop?.addEventListener('click', close);
-
   document.querySelectorAll('.product-edit-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       fields.id.value = btn.dataset.id || '';
@@ -108,8 +172,7 @@
       fields.controlsStock.checked = btn.dataset.controlsStock === '1';
       fields.allowsAddons.checked = btn.dataset.allowsAddons === '1';
       fields.active.checked = btn.dataset.active === '1';
-
-      modal.classList.remove('d-none');
+      editModal.open();
       fields.name.focus();
     });
   });

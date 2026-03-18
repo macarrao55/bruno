@@ -11,11 +11,20 @@ class ProductsController extends Controller
 {
     public function index(): void
     {
+        $filters = [
+            'name' => trim((string)($_GET['name'] ?? '')),
+            'category_id' => trim((string)($_GET['category_id'] ?? '')),
+            'controls_stock' => trim((string)($_GET['controls_stock'] ?? '')),
+            'allows_addons' => trim((string)($_GET['allows_addons'] ?? '')),
+            'active' => trim((string)($_GET['active'] ?? '')),
+        ];
+
         $m = new Product();
         $this->view('products/index', [
             'title' => 'Produtos',
-            'products' => $m->all(),
+            'products' => $m->all($filters),
             'categories' => $m->categories(),
+            'filters' => $filters,
         ]);
     }
 
