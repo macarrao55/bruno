@@ -326,15 +326,54 @@ class Order extends Model
     {
         if (!$payload['customer_id']) return;
 
-        $u = $this->db->prepare('UPDATE customers SET total_spent = total_spent + :t, orders_count = orders_count + 1, updated_at=NOW() WHERE id=:id');
-        $u->execute(['t' => $payload['total_amount'], 'id' => $payload['customer_id']]);
+        $customerSets = [];
+        if ($this->hasColumn('customers', 'total_spent')) {
+            $customerSets[] = 'total_spent = total_spent + :t';
+        }
+        if ($this->hasColumn('customers', 'orders_count')) {
+            $customerSets[] = 'orders_count = orders_count + 1';
+        }
+        if ($this->hasColumn('customers', 'updated_at')) {
+            $customerSets[] = 'updated_at=NOW()';
+        }
+        if ($customerSets) {
+            $u = $this->db->prepare('UPDATE customers SET ' . implode(', ', $customerSets) . ' WHERE id=:id');
+            $u->execute(['t' => $payload['total_amount'], 'id' => $payload['customer_id']]);
+        }
 
         $ppr = (float)(new Settings())->get('points_per_real', '1');
         $points = (int)floor($payload['total_amount'] * $ppr);
         if ($points <= 0) return;
 
-        $lt = $this->db->prepare('INSERT INTO loyalty_transactions (customer_id,order_id,points,type,description,created_at,updated_at) VALUES (:c,:o,:p,"credito",:d,NOW(),NOW())');
-        $lt->execute(['c' => $payload['customer_id'], 'o' => $orderId, 'p' => $points, 'd' => 'Pontos por pedido #' . $orderId]);
+        if (!$this->hasTable('loyalty_transactions')) {
+            return;
+        }
+
+        $ltColumns = ['customer_id', 'order_id', 'points'];
+        $ltValues = [':c', ':o', ':p'];
+        $ltParams = ['c' => $payload['customer_id'], 'o' => $orderId, 'p' => $points];
+
+        if ($this->hasColumn('loyalty_transactions', 'type')) {
+            $ltColumns[] = 'type';
+            $ltValues[] = ':type';
+            $ltParams['type'] = 'credito';
+        }
+        if ($this->hasColumn('loyalty_transactions', 'description')) {
+            $ltColumns[] = 'description';
+            $ltValues[] = ':description';
+            $ltParams['description'] = 'Pontos por pedido #' . $orderId;
+        }
+        if ($this->hasColumn('loyalty_transactions', 'created_at')) {
+            $ltColumns[] = 'created_at';
+            $ltValues[] = 'NOW()';
+        }
+        if ($this->hasColumn('loyalty_transactions', 'updated_at')) {
+            $ltColumns[] = 'updated_at';
+            $ltValues[] = 'NOW()';
+        }
+
+        $lt = $this->db->prepare('INSERT INTO loyalty_transactions (' . implode(',', $ltColumns) . ') VALUES (' . implode(',', $ltValues) . ')');
+        $lt->execute($ltParams);
     }
 
     public function changeStatus(int $id, string $status): bool
@@ -413,6 +452,13 @@ class Order extends Model
         $stmt->execute($params);
 
         return (int)$this->db->lastInsertId();
+    }
+
+    private function hasTable(string $table): bool
+    {
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = :t');
+        $stmt->execute(['t' => $table]);
+        return (int)$stmt->fetchColumn() > 0;
     }
 
     private function hasColumn(string $table, string $column): bool
