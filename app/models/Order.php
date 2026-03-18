@@ -11,7 +11,7 @@ class Order extends Model
 {
     private static bool $lifecycleColumnsEnsured = false;
 
-    public function all(): array
+    public function all(array $filters = []): array
     {
         $this->ensureLifecycleColumns();
 
@@ -27,14 +27,52 @@ class Order extends Model
             $deliveryExpression = 'TIMESTAMPDIFF(MINUTE, o.created_at, o.delivered_at)';
         }
 
+        $where = [];
+        $params = [];
+
+        if (($filters['status'] ?? '') !== '') {
+            $where[] = 'o.status = :status';
+            $params['status'] = $filters['status'];
+        }
+        if (($filters['order_type'] ?? '') !== '') {
+            $where[] = 'o.order_type = :order_type';
+            $params['order_type'] = $filters['order_type'];
+        }
+        if (($filters['payment_method'] ?? '') !== '') {
+            $where[] = 'o.payment_method = :payment_method';
+            $params['payment_method'] = $filters['payment_method'];
+        }
+        if (($filters['customer'] ?? '') !== '') {
+            $where[] = 'c.name LIKE :customer';
+            $params['customer'] = '%' . $filters['customer'] . '%';
+        }
+        if (($filters['date_from'] ?? '') !== '') {
+            $where[] = 'DATE(o.created_at) >= :date_from';
+            $params['date_from'] = $filters['date_from'];
+        }
+        if (($filters['date_to'] ?? '') !== '') {
+            $where[] = 'DATE(o.created_at) <= :date_to';
+            $params['date_to'] = $filters['date_to'];
+        }
+        if (($filters['date'] ?? '') !== '') {
+            $where[] = 'DATE(o.created_at) = :date_exact';
+            $params['date_exact'] = $filters['date'];
+        }
+
         $sql = "SELECT o.*, c.name customer_name,
                        {$prepExpression} AS minutes_to_prep,
                        {$deliveryExpression} AS minutes_to_delivery
                 FROM orders o
-                LEFT JOIN customers c ON c.id=o.customer_id
-                ORDER BY o.id DESC
+                LEFT JOIN customers c ON c.id = o.customer_id";
+        if ($where) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= " ORDER BY o.id DESC
                 LIMIT 150";
-        return $this->db->query($sql)->fetchAll();
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
     }
 
     public function findWithItems(int $id): ?array

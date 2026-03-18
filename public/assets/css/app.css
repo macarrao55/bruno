@@ -16,3 +16,7 @@ body { font-size: .95rem; background: #f5f7fb; }
 
 [data-bs-theme='dark'] body { background: #0f172a; }
 [data-bs-theme='dark'] .card { background: #1e293b; color: #e2e8f0; }
+
+.table-preparo > td {
+    background-color: #efe1ff !important;
+}

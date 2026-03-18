@@ -11,7 +11,21 @@ class OrdersController extends Controller
 {
     public function index(): void
     {
-        $this->view('orders/index', ['title' => 'Pedidos', 'orders' => (new Order())->all()]);
+        $filters = [
+            'status' => trim((string)($_GET['status'] ?? '')),
+            'customer' => trim((string)($_GET['customer'] ?? '')),
+            'order_type' => trim((string)($_GET['order_type'] ?? '')),
+            'payment_method' => trim((string)($_GET['payment_method'] ?? '')),
+            'date' => trim((string)($_GET['date'] ?? '')),
+            'date_from' => trim((string)($_GET['date_from'] ?? '')),
+            'date_to' => trim((string)($_GET['date_to'] ?? '')),
+        ];
+
+        $this->view('orders/index', [
+            'title' => 'Pedidos',
+            'orders' => (new Order())->all($filters),
+            'filters' => $filters,
+        ]);
     }
 
     public function status(): void
