@@ -10,6 +10,7 @@ class Customer extends Model
 {
     public function all(): array
     {
+        $this->ensureExtendedColumns();
         $phoneCol = $this->firstExistingColumn('customers', ['phone', 'phone_main', 'telefone']);
         $neighborhoodCol = $this->firstExistingColumn('customers', ['neighborhood', 'bairro']);
         $addressCol = $this->firstExistingColumn('customers', ['address', 'endereco']);
@@ -49,6 +50,7 @@ class Customer extends Model
 
     public function createAndGetId(array $d): int
     {
+        $this->ensureExtendedColumns();
         $fields = ['name'];
         $params = ['name' => $d['name']];
 
@@ -58,7 +60,7 @@ class Customer extends Model
             ['address', ['address', 'endereco']],
             ['birth_date', ['birth_date', 'data_nascimento']],
             ['zip_code', ['zip_code', 'cep']],
-            ['address_number', ['address_number', 'number', 'numero']],
+            ['address_number', ['address_number', 'number', 'numero', 'n']],
             ['sex', ['sex', 'gender', 'sexo']],
         ] as [$paramKey, $candidates]) {
             $col = $this->firstExistingColumn('customers', $candidates);
@@ -115,6 +117,7 @@ class Customer extends Model
 
     public function update(int $id, array $d): bool
     {
+        $this->ensureExtendedColumns();
         if ($id <= 0) {
             return false;
         }
@@ -128,7 +131,7 @@ class Customer extends Model
             ['address', ['address', 'endereco']],
             ['birth_date', ['birth_date', 'data_nascimento']],
             ['zip_code', ['zip_code', 'cep']],
-            ['address_number', ['address_number', 'number', 'numero']],
+            ['address_number', ['address_number', 'number', 'numero', 'n']],
             ['sex', ['sex', 'gender', 'sexo']],
         ] as [$paramKey, $candidates]) {
             $col = $this->firstExistingColumn('customers', $candidates);
@@ -178,7 +181,7 @@ class Customer extends Model
             'address', 'endereco' => 'address',
             'birth_date', 'data_nascimento' => 'birth_date',
             'zip_code', 'cep' => 'zip_code',
-            'address_number', 'number', 'numero' => 'address_number',
+            'address_number', 'number', 'numero', 'n' => 'address_number',
             'sex', 'gender', 'sexo' => 'sex',
             default => $field,
         };
@@ -192,6 +195,31 @@ class Customer extends Model
             }
         }
         return null;
+    }
+
+
+    private function ensureExtendedColumns(): void
+    {
+        $alter = [];
+        if (!$this->hasColumn('customers', 'cep') && !$this->hasColumn('customers', 'zip_code')) {
+            $alter[] = 'ADD COLUMN cep VARCHAR(20) NULL';
+        }
+        if (!$this->hasColumn('customers', 'numero') && !$this->hasColumn('customers', 'address_number') && !$this->hasColumn('customers', 'n')) {
+            $alter[] = 'ADD COLUMN numero VARCHAR(20) NULL';
+        }
+        if (!$this->hasColumn('customers', 'sexo') && !$this->hasColumn('customers', 'sex') && !$this->hasColumn('customers', 'gender')) {
+            $alter[] = 'ADD COLUMN sexo VARCHAR(20) NULL';
+        }
+
+        if (!$alter) {
+            return;
+        }
+
+        try {
+            $this->db->exec('ALTER TABLE customers ' . implode(', ', $alter));
+        } catch (\Throwable $e) {
+            // segue sem falhar em ambientes sem permissão de ALTER TABLE
+        }
     }
 
     private function hasColumn(string $table, string $column): bool
