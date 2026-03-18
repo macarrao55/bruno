@@ -85,7 +85,11 @@ class Order extends Model
             }
             $addonStmt = $this->db->prepare('INSERT INTO order_item_addons (' . implode(',', $addonColumns) . ') VALUES (' . implode(',', $addonValues) . ')');
 
-            $recipeStmt = $this->db->prepare('SELECT si.id stock_item_id, pr.quantity_used FROM product_recipes pr INNER JOIN stock_items si ON si.id=pr.stock_item_id WHERE pr.product_id=:pid AND pr.active=1');
+            $recipeSql = 'SELECT si.id stock_item_id, pr.quantity_used FROM product_recipes pr INNER JOIN stock_items si ON si.id=pr.stock_item_id WHERE pr.product_id=:pid';
+            if ($this->hasColumn('product_recipes', 'active')) {
+                $recipeSql .= ' AND pr.active=1';
+            }
+            $recipeStmt = $this->db->prepare($recipeSql);
             $stockDownSql = 'UPDATE stock_items SET current_stock = current_stock - :qty';
             if ($this->hasColumn('stock_items', 'updated_at')) {
                 $stockDownSql .= ', updated_at=NOW()';
