@@ -20,8 +20,31 @@ class CashRegister extends Model
     public function open(int $userId, float $amount, string $notes = ''): bool
     {
         $userColumn = $this->resolveCashUserColumn();
-        $stmt = $this->db->prepare("INSERT INTO cash_registers ({$userColumn},opened_at,opening_amount,status,notes,created_at,updated_at) VALUES (:u,NOW(),:a,'aberto',:n,NOW(),NOW())");
-        return $stmt->execute(['u' => $userId, 'a' => $amount, 'n' => $notes]);
+
+        $fields = [$userColumn, 'opened_at', 'opening_amount', 'status'];
+        $values = [':u', 'NOW()', ':a', "'aberto'"];
+        $params = ['u' => $userId, 'a' => $amount];
+
+        if ($this->hasColumn('cash_registers', 'notes')) {
+            $fields[] = 'notes';
+            $values[] = ':n';
+            $params['n'] = $notes;
+        }
+
+        if ($this->hasColumn('cash_registers', 'created_at')) {
+            $fields[] = 'created_at';
+            $values[] = 'NOW()';
+        }
+
+        if ($this->hasColumn('cash_registers', 'updated_at')) {
+            $fields[] = 'updated_at';
+            $values[] = 'NOW()';
+        }
+
+        $sql = sprintf('INSERT INTO cash_registers (%s) VALUES (%s)', implode(',', $fields), implode(',', $values));
+        $stmt = $this->db->prepare($sql);
+
+        return $stmt->execute($params);
     }
 
     public function close(int $id, float $counted): bool
