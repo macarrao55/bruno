@@ -205,8 +205,68 @@ class Order extends Model
 
     private function createFinancialAndCash(array $payload, int $orderId): void
     {
-        $f = $this->db->prepare('INSERT INTO financial_entries (type,source,source_id,description,category,payment_method,amount,entry_date,status,created_at,updated_at) VALUES ("entrada","pedido",:sid,:d,"vendas",:pm,:a,CURDATE(),"realizado",NOW(),NOW())');
-        $f->execute(['sid' => $orderId, 'd' => 'Venda pedido #' . $orderId, 'pm' => $payload['payment_method'], 'a' => $payload['total_amount']]);
+        $typeCol = $this->hasColumn('financial_entries', 'type') ? 'type' : ($this->hasColumn('financial_entries', 'entry_type') ? 'entry_type' : null);
+        $sourceCol = $this->hasColumn('financial_entries', 'source') ? 'source' : null;
+        $sourceIdCol = $this->hasColumn('financial_entries', 'source_id') ? 'source_id' : null;
+
+        $fColumns = [];
+        $fValues = [];
+        $fParams = [];
+
+        if ($typeCol) {
+            $fColumns[] = $typeCol;
+            $fValues[] = ':entry_type';
+            $fParams['entry_type'] = 'entrada';
+        }
+        if ($sourceCol) {
+            $fColumns[] = $sourceCol;
+            $fValues[] = ':source';
+            $fParams['source'] = 'pedido';
+        }
+        if ($sourceIdCol) {
+            $fColumns[] = $sourceIdCol;
+            $fValues[] = ':source_id';
+            $fParams['source_id'] = $orderId;
+        }
+
+        $fColumns[] = 'description';
+        $fValues[] = ':description';
+        $fParams['description'] = 'Venda pedido #' . $orderId;
+
+        if ($this->hasColumn('financial_entries', 'category')) {
+            $fColumns[] = 'category';
+            $fValues[] = ':category';
+            $fParams['category'] = 'vendas';
+        }
+
+        $fColumns[] = 'payment_method';
+        $fValues[] = ':payment_method';
+        $fParams['payment_method'] = $payload['payment_method'];
+
+        $fColumns[] = 'amount';
+        $fValues[] = ':amount';
+        $fParams['amount'] = $payload['total_amount'];
+
+        if ($this->hasColumn('financial_entries', 'entry_date')) {
+            $fColumns[] = 'entry_date';
+            $fValues[] = 'CURDATE()';
+        }
+        if ($this->hasColumn('financial_entries', 'status')) {
+            $fColumns[] = 'status';
+            $fValues[] = ':status';
+            $fParams['status'] = 'realizado';
+        }
+        if ($this->hasColumn('financial_entries', 'created_at')) {
+            $fColumns[] = 'created_at';
+            $fValues[] = 'NOW()';
+        }
+        if ($this->hasColumn('financial_entries', 'updated_at')) {
+            $fColumns[] = 'updated_at';
+            $fValues[] = 'NOW()';
+        }
+
+        $f = $this->db->prepare('INSERT INTO financial_entries (' . implode(',', $fColumns) . ') VALUES (' . implode(',', $fValues) . ')');
+        $f->execute($fParams);
 
         if ($payload['payment_method'] === 'crediario') {
             $dueDays = (int)(new Settings())->get('crediario_due_days', '30');
@@ -220,8 +280,46 @@ class Order extends Model
         $payment = $payload['payment_method'];
         if ($payment === 'pix' && !$pixInCash) return;
 
-        $cm = $this->db->prepare('INSERT INTO cash_movements (cash_register_id,type,payment_method,amount,description,order_id,created_at,updated_at) VALUES (:r,"venda",:p,:a,:d,:o,NOW(),NOW())');
-        $cm->execute(['r' => $payload['cash_register_id'], 'p' => $payment, 'a' => $payload['total_amount'], 'd' => 'Venda pedido #' . $orderId, 'o' => $orderId]);
+        $cashTypeCol = $this->hasColumn('cash_movements', 'type') ? 'type' : ($this->hasColumn('cash_movements', 'movement_type') ? 'movement_type' : null);
+        $cmColumns = ['cash_register_id'];
+        $cmValues = [':cash_register_id'];
+        $cmParams = ['cash_register_id' => $payload['cash_register_id']];
+
+        if ($cashTypeCol) {
+            $cmColumns[] = $cashTypeCol;
+            $cmValues[] = ':cash_type';
+            $cmParams['cash_type'] = 'venda';
+        }
+
+        $cmColumns[] = 'payment_method';
+        $cmValues[] = ':payment_method';
+        $cmParams['payment_method'] = $payment;
+
+        $cmColumns[] = 'amount';
+        $cmValues[] = ':amount';
+        $cmParams['amount'] = $payload['total_amount'];
+
+        if ($this->hasColumn('cash_movements', 'description')) {
+            $cmColumns[] = 'description';
+            $cmValues[] = ':description';
+            $cmParams['description'] = 'Venda pedido #' . $orderId;
+        }
+        if ($this->hasColumn('cash_movements', 'order_id')) {
+            $cmColumns[] = 'order_id';
+            $cmValues[] = ':order_id';
+            $cmParams['order_id'] = $orderId;
+        }
+        if ($this->hasColumn('cash_movements', 'created_at')) {
+            $cmColumns[] = 'created_at';
+            $cmValues[] = 'NOW()';
+        }
+        if ($this->hasColumn('cash_movements', 'updated_at')) {
+            $cmColumns[] = 'updated_at';
+            $cmValues[] = 'NOW()';
+        }
+
+        $cm = $this->db->prepare('INSERT INTO cash_movements (' . implode(',', $cmColumns) . ') VALUES (' . implode(',', $cmValues) . ')');
+        $cm->execute($cmParams);
     }
 
     private function updateCustomerAndLoyalty(array $payload, int $orderId): void
