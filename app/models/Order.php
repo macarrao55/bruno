@@ -49,32 +49,106 @@ class Order extends Model
         try {
             $orderId = $this->insertOrderWithFallback($payload);
 
-            $itemStmt = $this->db->prepare('INSERT INTO order_items (order_id,product_id,product_name,quantity,unit_price,unit_cost,total_price,notes,created_at,updated_at) VALUES (:order_id,:product_id,:product_name,:quantity,:unit_price,:unit_cost,:total_price,:notes,NOW(),NOW())');
-            $addonStmt = $this->db->prepare('INSERT INTO order_item_addons (order_item_id,addon_id,addon_name,addon_price,created_at,updated_at) VALUES (:order_item_id,:addon_id,:addon_name,:addon_price,NOW(),NOW())');
+            $itemColumns = ['order_id', 'product_id', 'product_name', 'quantity', 'unit_price', 'total_price'];
+            $itemValues = [':order_id', ':product_id', ':product_name', ':quantity', ':unit_price', ':total_price'];
+            if ($this->hasColumn('order_items', 'unit_cost')) {
+                $itemColumns[] = 'unit_cost';
+                $itemValues[] = ':unit_cost';
+            }
+            if ($this->hasColumn('order_items', 'notes')) {
+                $itemColumns[] = 'notes';
+                $itemValues[] = ':notes';
+            }
+            if ($this->hasColumn('order_items', 'created_at')) {
+                $itemColumns[] = 'created_at';
+                $itemValues[] = 'NOW()';
+            }
+            if ($this->hasColumn('order_items', 'updated_at')) {
+                $itemColumns[] = 'updated_at';
+                $itemValues[] = 'NOW()';
+            }
+            $itemStmt = $this->db->prepare('INSERT INTO order_items (' . implode(',', $itemColumns) . ') VALUES (' . implode(',', $itemValues) . ')');
+
+            $addonColumns = ['order_item_id', 'addon_name', 'addon_price'];
+            $addonValues = [':order_item_id', ':addon_name', ':addon_price'];
+            if ($this->hasColumn('order_item_addons', 'addon_id')) {
+                $addonColumns[] = 'addon_id';
+                $addonValues[] = ':addon_id';
+            }
+            if ($this->hasColumn('order_item_addons', 'created_at')) {
+                $addonColumns[] = 'created_at';
+                $addonValues[] = 'NOW()';
+            }
+            if ($this->hasColumn('order_item_addons', 'updated_at')) {
+                $addonColumns[] = 'updated_at';
+                $addonValues[] = 'NOW()';
+            }
+            $addonStmt = $this->db->prepare('INSERT INTO order_item_addons (' . implode(',', $addonColumns) . ') VALUES (' . implode(',', $addonValues) . ')');
+
             $recipeStmt = $this->db->prepare('SELECT si.id stock_item_id, pr.quantity_used FROM product_recipes pr INNER JOIN stock_items si ON si.id=pr.stock_item_id WHERE pr.product_id=:pid AND pr.active=1');
-            $stockDown = $this->db->prepare('UPDATE stock_items SET current_stock = current_stock - :qty, updated_at=NOW() WHERE id=:sid');
-            $stockMov = $this->db->prepare('INSERT INTO stock_movements (stock_item_id,movement_type,quantity,unit_cost,notes,reference_type,reference_id,created_at,updated_at) VALUES (:sid,"saida",:qty,0,:notes,"order",:order_id,NOW(),NOW())');
+            $stockDownSql = 'UPDATE stock_items SET current_stock = current_stock - :qty';
+            if ($this->hasColumn('stock_items', 'updated_at')) {
+                $stockDownSql .= ', updated_at=NOW()';
+            }
+            $stockDownSql .= ' WHERE id=:sid';
+            $stockDown = $this->db->prepare($stockDownSql);
+
+            $stockMovColumns = ['stock_item_id', 'movement_type', 'quantity'];
+            $stockMovValues = [':sid', '"saida"', ':qty'];
+            if ($this->hasColumn('stock_movements', 'unit_cost')) {
+                $stockMovColumns[] = 'unit_cost';
+                $stockMovValues[] = ':unit_cost';
+            }
+            if ($this->hasColumn('stock_movements', 'notes')) {
+                $stockMovColumns[] = 'notes';
+                $stockMovValues[] = ':notes';
+            }
+            if ($this->hasColumn('stock_movements', 'reference_type')) {
+                $stockMovColumns[] = 'reference_type';
+                $stockMovValues[] = '"order"';
+            }
+            if ($this->hasColumn('stock_movements', 'reference_id')) {
+                $stockMovColumns[] = 'reference_id';
+                $stockMovValues[] = ':order_id';
+            }
+            if ($this->hasColumn('stock_movements', 'created_at')) {
+                $stockMovColumns[] = 'created_at';
+                $stockMovValues[] = 'NOW()';
+            }
+            if ($this->hasColumn('stock_movements', 'updated_at')) {
+                $stockMovColumns[] = 'updated_at';
+                $stockMovValues[] = 'NOW()';
+            }
+            $stockMov = $this->db->prepare('INSERT INTO stock_movements (' . implode(',', $stockMovColumns) . ') VALUES (' . implode(',', $stockMovValues) . ')');
 
             foreach ($payload['items'] as $item) {
-                $itemStmt->execute([
+                $itemParams = [
                     'order_id' => $orderId,
                     'product_id' => $item['product_id'],
                     'product_name' => $item['product_name'],
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
-                    'unit_cost' => $item['unit_cost'],
                     'total_price' => $item['total_price'],
-                    'notes' => $item['notes'] ?? null,
-                ]);
+                ];
+                if ($this->hasColumn('order_items', 'unit_cost')) {
+                    $itemParams['unit_cost'] = $item['unit_cost'] ?? 0;
+                }
+                if ($this->hasColumn('order_items', 'notes')) {
+                    $itemParams['notes'] = $item['notes'] ?? null;
+                }
+                $itemStmt->execute($itemParams);
                 $orderItemId = (int)$this->db->lastInsertId();
 
                 foreach (($item['addons'] ?? []) as $ad) {
-                    $addonStmt->execute([
+                    $addonParams = [
                         'order_item_id' => $orderItemId,
-                        'addon_id' => $ad['id'],
                         'addon_name' => $ad['name'],
                         'addon_price' => $ad['price'],
-                    ]);
+                    ];
+                    if ($this->hasColumn('order_item_addons', 'addon_id')) {
+                        $addonParams['addon_id'] = $ad['id'];
+                    }
+                    $addonStmt->execute($addonParams);
                 }
 
                 if ((int)$item['controls_stock'] === 1) {
@@ -82,7 +156,17 @@ class Order extends Model
                     foreach ($recipeStmt->fetchAll() as $recipe) {
                         $q = (float)$recipe['quantity_used'] * (float)$item['quantity'];
                         $stockDown->execute(['qty' => $q, 'sid' => $recipe['stock_item_id']]);
-                        $stockMov->execute(['sid' => $recipe['stock_item_id'], 'qty' => $q, 'notes' => 'Baixa automática do pedido', 'order_id' => $orderId]);
+                        $stockMovParams = ['sid' => $recipe['stock_item_id'], 'qty' => $q];
+                        if ($this->hasColumn('stock_movements', 'unit_cost')) {
+                            $stockMovParams['unit_cost'] = 0;
+                        }
+                        if ($this->hasColumn('stock_movements', 'notes')) {
+                            $stockMovParams['notes'] = 'Baixa automática do pedido';
+                        }
+                        if ($this->hasColumn('stock_movements', 'reference_id')) {
+                            $stockMovParams['order_id'] = $orderId;
+                        }
+                        $stockMov->execute($stockMovParams);
                     }
                 }
             }
