@@ -20,9 +20,9 @@
       <form method="post" action="<?= base_url('/products/store') ?>" id="productCreateForm" class="row g-2"><?= csrf_field() ?>
         <div class="col-md-4"><input name="name" class="form-control" placeholder="Nome" required></div>
         <div class="col-md-2"><input name="code" class="form-control" placeholder="Código (opcional)"></div>
-        <div class="col-md-3"><select name="category_id" class="form-select"><?php foreach($categories as $c): ?><option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option><?php endforeach; ?></select></div>
-        <div class="col-md-1"><input name="price" type="number" step="0.01" class="form-control" placeholder="Preço" required></div>
-        <div class="col-md-1"><input name="cost" type="number" step="0.01" class="form-control" placeholder="Custo" required></div>
+        <div class="col-md-2"><select name="category_id" class="form-select"><?php foreach($categories as $c): ?><option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option><?php endforeach; ?></select></div>
+        <div class="col-md-2"><input name="price" type="number" step="0.01" class="form-control" placeholder="Preço" required></div>
+        <div class="col-md-2"><input name="cost" type="number" step="0.01" class="form-control" placeholder="Custo" required></div>
         <div class="col-md-12"><input name="description" class="form-control" placeholder="Descrição"></div>
         <div class="col-12 d-flex gap-3">
           <label><input type="checkbox" name="controls_stock" checked> Controla estoque</label>
@@ -101,10 +101,10 @@
       <form method="post" action="<?= base_url('/products/update') ?>" id="productEditForm" class="row g-2"><?= csrf_field() ?>
         <input type="hidden" name="id" id="product-edit-id">
         <div class="col-md-4"><input name="name" id="product-edit-name" class="form-control" required></div>
-        <div class="col-md-3"><input name="code" id="product-edit-code" class="form-control" placeholder="Código (opcional)"></div>
-        <div class="col-md-3"><select name="category_id" id="product-edit-category" class="form-select"><?php foreach($categories as $c): ?><option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option><?php endforeach; ?></select></div>
-        <div class="col-md-1"><input name="price" id="product-edit-price" type="number" step="0.01" class="form-control" required></div>
-        <div class="col-md-1"><input name="cost" id="product-edit-cost" type="number" step="0.01" class="form-control" required></div>
+        <div class="col-md-2"><input name="code" id="product-edit-code" class="form-control" placeholder="Código (opcional)"></div>
+        <div class="col-md-2"><select name="category_id" id="product-edit-category" class="form-select"><?php foreach($categories as $c): ?><option value="<?= $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option><?php endforeach; ?></select></div>
+        <div class="col-md-2"><input name="price" id="product-edit-price" type="number" step="0.01" class="form-control" required></div>
+        <div class="col-md-2"><input name="cost" id="product-edit-cost" type="number" step="0.01" class="form-control" required></div>
         <div class="col-12"><input name="description" id="product-edit-description" class="form-control" placeholder="Descrição"></div>
         <div class="col-12 d-flex gap-3">
           <label><input type="checkbox" name="controls_stock" id="product-edit-controls-stock"> Controla estoque</label>
