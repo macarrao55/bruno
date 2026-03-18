@@ -5,63 +5,76 @@ $types = ['balcao','delivery','retirada'];
 $payments = ['dinheiro','pix','cartao','crediario'];
 ?>
 
-<div class="card mb-3">
-    <div class="card-header">Filtros de pedidos</div>
-    <div class="card-body">
-        <form method="get" action="<?= base_url('/orders') ?>" class="row g-2">
-            <div class="col-md-2">
-                <label class="form-label">Status</label>
-                <select name="status" class="form-select form-select-sm">
-                    <option value="">Todos</option>
-                    <?php foreach ($statuses as $status): ?>
-                        <option value="<?= $status ?>" <?= ($filters['status'] ?? '') === $status ? 'selected' : '' ?>><?= $status ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Cliente</label>
-                <input name="customer" class="form-control form-control-sm" value="<?= htmlspecialchars((string)($filters['customer'] ?? '')) ?>" placeholder="Nome">
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Tipo</label>
-                <select name="order_type" class="form-select form-select-sm">
-                    <option value="">Todos</option>
-                    <?php foreach ($types as $type): ?>
-                        <option value="<?= $type ?>" <?= ($filters['order_type'] ?? '') === $type ? 'selected' : '' ?>><?= $type ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Pagamento</label>
-                <select name="payment_method" class="form-select form-select-sm">
-                    <option value="">Todos</option>
-                    <?php foreach ($payments as $payment): ?>
-                        <option value="<?= $payment ?>" <?= ($filters['payment_method'] ?? '') === $payment ? 'selected' : '' ?>><?= $payment ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Data</label>
-                <input name="date" type="date" class="form-control form-control-sm" value="<?= htmlspecialchars((string)($filters['date'] ?? '')) ?>">
-            </div>
-            <div class="col-md-2 d-flex align-items-end gap-2">
-                <button class="btn btn-sm btn-primary">Filtrar</button>
-                <a href="<?= base_url('/orders') ?>" class="btn btn-sm btn-outline-secondary">Limpar</a>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Data de</label>
-                <input name="date_from" type="date" class="form-control form-control-sm" value="<?= htmlspecialchars((string)($filters['date_from'] ?? '')) ?>">
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Data até</label>
-                <input name="date_to" type="date" class="form-control form-control-sm" value="<?= htmlspecialchars((string)($filters['date_to'] ?? '')) ?>">
-            </div>
-        </form>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">Pedidos e análise de tempo</h5>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-primary btn-sm" id="openOrderFilterBtn">Filtros de pedidos</button>
+        <a href="<?= base_url('/orders') ?>" class="btn btn-outline-secondary btn-sm">Limpar filtros</a>
+    </div>
+</div>
+
+<div id="ordersFilterModal" class="addons-modal d-none" role="dialog" aria-modal="true" aria-labelledby="ordersFilterTitle">
+    <div class="addons-backdrop"></div>
+    <div class="addons-panel card shadow-lg">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong id="ordersFilterTitle">Como deseja filtrar os pedidos?</strong>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="ordersFilterCloseBtn">Fechar</button>
+        </div>
+        <div class="card-body">
+            <form method="get" action="<?= base_url('/orders') ?>" id="ordersFilterForm" class="row g-2">
+                <div class="col-md-4">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <?php foreach ($statuses as $status): ?>
+                            <option value="<?= $status ?>" <?= ($filters['status'] ?? '') === $status ? 'selected' : '' ?>><?= $status ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Cliente</label>
+                    <input name="customer" class="form-control form-control-sm" value="<?= htmlspecialchars((string)($filters['customer'] ?? '')) ?>" placeholder="Nome do cliente">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Tipo</label>
+                    <select name="order_type" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <?php foreach ($types as $type): ?>
+                            <option value="<?= $type ?>" <?= ($filters['order_type'] ?? '') === $type ? 'selected' : '' ?>><?= $type ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Pagamento</label>
+                    <select name="payment_method" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <?php foreach ($payments as $payment): ?>
+                            <option value="<?= $payment ?>" <?= ($filters['payment_method'] ?? '') === $payment ? 'selected' : '' ?>><?= $payment ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Data exata</label>
+                    <input name="date" type="date" class="form-control form-control-sm" value="<?= htmlspecialchars((string)($filters['date'] ?? '')) ?>">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Data de</label>
+                    <input name="date_from" type="date" class="form-control form-control-sm" value="<?= htmlspecialchars((string)($filters['date_from'] ?? '')) ?>">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Data até</label>
+                    <input name="date_to" type="date" class="form-control form-control-sm" value="<?= htmlspecialchars((string)($filters['date_to'] ?? '')) ?>">
+                </div>
+            </form>
+        </div>
+        <div class="card-footer d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-light" id="ordersFilterCancelBtn">Cancelar</button>
+            <button type="submit" class="btn btn-primary" form="ordersFilterForm">Aplicar filtros</button>
+        </div>
     </div>
 </div>
 
 <div class="card">
-    <div class="card-header">Pedidos e análise de tempo</div>
     <div class="table-responsive">
         <table class="table table-striped align-middle mb-0">
             <thead>
@@ -138,3 +151,23 @@ $payments = ['dinheiro','pix','cartao','crediario'];
         </table>
     </div>
 </div>
+
+<script>
+(() => {
+  const modal = document.getElementById('ordersFilterModal');
+  if (!modal) return;
+
+  const openBtn = document.getElementById('openOrderFilterBtn');
+  const closeBtn = document.getElementById('ordersFilterCloseBtn');
+  const cancelBtn = document.getElementById('ordersFilterCancelBtn');
+  const backdrop = modal.querySelector('.addons-backdrop');
+
+  const open = () => modal.classList.remove('d-none');
+  const close = () => modal.classList.add('d-none');
+
+  openBtn?.addEventListener('click', open);
+  closeBtn?.addEventListener('click', close);
+  cancelBtn?.addEventListener('click', close);
+  backdrop?.addEventListener('click', close);
+})();
+</script>
