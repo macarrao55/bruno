@@ -53,8 +53,8 @@ class CustomersController extends Controller
         return [
             'name' => trim($_POST['name'] ?? ''),
             'phone' => trim($_POST['phone'] ?? ''),
-            'neighborhood' => trim($_POST['neighborhood'] ?? ''),
-            'address' => trim($_POST['address'] ?? ''),
+            'neighborhood' => trim($_POST['neighborhood'] ?? ($_POST['bairro'] ?? '')),
+            'address' => trim($_POST['address'] ?? ($_POST['endereco'] ?? '')),
             'address_number' => trim($_POST['address_number'] ?? ($_POST['numero'] ?? ($_POST['n'] ?? ''))),
             'zip_code' => trim($_POST['zip_code'] ?? ($_POST['cep'] ?? '')),
             'sex' => trim($_POST['sex'] ?? ''),

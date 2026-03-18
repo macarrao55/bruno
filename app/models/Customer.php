@@ -201,6 +201,12 @@ class Customer extends Model
     private function ensureExtendedColumns(): void
     {
         $alter = [];
+        if (!$this->hasColumn('customers', 'neighborhood') && !$this->hasColumn('customers', 'bairro')) {
+            $alter[] = 'ADD COLUMN bairro VARCHAR(80) NULL';
+        }
+        if (!$this->hasColumn('customers', 'address') && !$this->hasColumn('customers', 'endereco')) {
+            $alter[] = 'ADD COLUMN endereco VARCHAR(180) NULL';
+        }
         if (!$this->hasColumn('customers', 'cep') && !$this->hasColumn('customers', 'zip_code')) {
             $alter[] = 'ADD COLUMN cep VARCHAR(20) NULL';
         }
