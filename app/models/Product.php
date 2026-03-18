@@ -40,25 +40,53 @@ class Product extends Model
 
     public function addonGroups(): array
     {
-        if (!$this->hasTable('addon_groups')) {
+        $table = $this->hasTable('addon_groups') ? 'addon_groups' : ($this->hasTable('product_addon_groups') ? 'product_addon_groups' : null);
+        if ($table === null) {
             return [];
         }
 
-        $active = $this->hasColumn('addon_groups', 'active') ? 'WHERE active=1' : '';
-        return $this->db->query("SELECT id,name FROM addon_groups {$active} ORDER BY name")->fetchAll();
+        $active = $this->hasColumn($table, 'active') ? 'WHERE active=1' : '';
+        return $this->db->query("SELECT id,name FROM {$table} {$active} ORDER BY name")->fetchAll();
     }
 
     public function allAddons(): array
     {
-        if (!$this->hasTable('addons')) {
+        if ($this->hasTable('addons')) {
+            $groupTable = $this->hasTable('addon_groups') ? 'addon_groups' : ($this->hasTable('product_addon_groups') ? 'product_addon_groups' : null);
+            $groupColumn = $this->hasColumn('addons', 'addon_group_id') ? 'addon_group_id' : ($this->hasColumn('addons', 'group_id') ? 'group_id' : null);
+            $priceCol = $this->hasColumn('addons', 'price') ? 'price' : ($this->hasColumn('addons', 'value') ? 'value' : 'price');
+
+            $joins = ($groupTable && $groupColumn) ? " LEFT JOIN {$groupTable} g ON g.id = a.{$groupColumn} " : '';
+            $groupName = ($groupTable && $groupColumn) ? 'g.name AS group_name,' : "'' AS group_name,";
+            $groupSelect = $groupColumn ? "a.{$groupColumn} AS addon_group_id" : "NULL AS addon_group_id";
+            $where = $this->hasColumn('addons', 'active') ? 'WHERE a.active=1' : '';
+
+            $sql = "SELECT a.id, a.name, a.{$priceCol} AS price, {$groupName} {$groupSelect}
+                    FROM addons a
+                    {$joins}
+                    {$where}
+                    ORDER BY a.name";
+            return $this->db->query($sql)->fetchAll();
+        }
+
+        // Schema legado: product_addons como tabela de adicionais (não pivô).
+        if (!$this->hasTable('product_addons') || $this->hasColumn('product_addons', 'product_id')) {
             return [];
         }
 
-        $joins = $this->hasTable('addon_groups') ? ' LEFT JOIN addon_groups g ON g.id=a.addon_group_id ' : '';
-        $groupName = $this->hasTable('addon_groups') ? 'g.name AS group_name,' : "'' AS group_name,";
-        $where = $this->hasColumn('addons', 'active') ? 'WHERE a.active=1' : '';
-        $sql = "SELECT a.id, a.name, a.price, {$groupName} a.addon_group_id
-                FROM addons a
+        $groupTable = $this->hasTable('product_addon_groups') ? 'product_addon_groups' : ($this->hasTable('addon_groups') ? 'addon_groups' : null);
+        $groupColumn = $this->hasColumn('product_addons', 'group_id') ? 'group_id' : ($this->hasColumn('product_addons', 'addon_group_id') ? 'addon_group_id' : null);
+        $priceCol = $this->hasColumn('product_addons', 'price') ? 'price' : ($this->hasColumn('product_addons', 'value') ? 'value' : null);
+        if ($priceCol === null) {
+            return [];
+        }
+
+        $joins = ($groupTable && $groupColumn) ? " LEFT JOIN {$groupTable} g ON g.id = a.{$groupColumn} " : '';
+        $groupName = ($groupTable && $groupColumn) ? 'g.name AS group_name,' : "'' AS group_name,";
+        $groupSelect = $groupColumn ? "a.{$groupColumn} AS addon_group_id" : "NULL AS addon_group_id";
+        $where = $this->hasColumn('product_addons', 'active') ? 'WHERE a.active=1' : '';
+        $sql = "SELECT a.id, a.name, a.{$priceCol} AS price, {$groupName} {$groupSelect}
+                FROM product_addons a
                 {$joins}
                 {$where}
                 ORDER BY a.name";
@@ -67,7 +95,8 @@ class Product extends Model
 
     public function createAddonGroup(string $name): bool
     {
-        if (!$this->hasTable('addon_groups')) {
+        $table = $this->hasTable('addon_groups') ? 'addon_groups' : ($this->hasTable('product_addon_groups') ? 'product_addon_groups' : null);
+        if ($table === null) {
             return false;
         }
 
@@ -75,26 +104,27 @@ class Product extends Model
         $values = [':name'];
         $params = ['name' => $name];
 
-        if ($this->hasColumn('addon_groups', 'active')) {
+        if ($this->hasColumn($table, 'active')) {
             $fields[] = 'active';
             $values[] = '1';
         }
-        if ($this->hasColumn('addon_groups', 'created_at')) {
+        if ($this->hasColumn($table, 'created_at')) {
             $fields[] = 'created_at';
             $values[] = 'NOW()';
         }
-        if ($this->hasColumn('addon_groups', 'updated_at')) {
+        if ($this->hasColumn($table, 'updated_at')) {
             $fields[] = 'updated_at';
             $values[] = 'NOW()';
         }
 
-        $sql = sprintf('INSERT INTO addon_groups (%s) VALUES (%s)', implode(',', $fields), implode(',', $values));
+        $sql = sprintf('INSERT INTO %s (%s) VALUES (%s)', $table, implode(',', $fields), implode(',', $values));
         return $this->db->prepare($sql)->execute($params);
     }
 
     public function createAddon(int $groupId, string $name, float $price): bool
     {
-        if (!$this->hasTable('addons')) {
+        $table = $this->hasTable('addons') ? 'addons' : (($this->hasTable('product_addons') && !$this->hasColumn('product_addons', 'product_id')) ? 'product_addons' : null);
+        if ($table === null) {
             return false;
         }
 
@@ -102,15 +132,15 @@ class Product extends Model
         $values = [':name'];
         $params = ['name' => $name, 'price' => $price, 'addon_group_id' => $groupId];
 
-        if ($this->hasColumn('addons', 'addon_group_id')) {
+        if ($this->hasColumn($table, 'addon_group_id')) {
             $fields[] = 'addon_group_id';
             $values[] = ':addon_group_id';
-        } elseif ($this->hasColumn('addons', 'group_id')) {
+        } elseif ($this->hasColumn($table, 'group_id')) {
             $fields[] = 'group_id';
             $values[] = ':addon_group_id';
         }
 
-        $priceCol = $this->hasColumn('addons', 'price') ? 'price' : ($this->hasColumn('addons', 'value') ? 'value' : null);
+        $priceCol = $this->hasColumn($table, 'price') ? 'price' : ($this->hasColumn($table, 'value') ? 'value' : null);
         if ($priceCol === null) {
             return false;
         }
@@ -118,20 +148,20 @@ class Product extends Model
         $fields[] = $priceCol;
         $values[] = ':price';
 
-        if ($this->hasColumn('addons', 'active')) {
+        if ($this->hasColumn($table, 'active')) {
             $fields[] = 'active';
             $values[] = '1';
         }
-        if ($this->hasColumn('addons', 'created_at')) {
+        if ($this->hasColumn($table, 'created_at')) {
             $fields[] = 'created_at';
             $values[] = 'NOW()';
         }
-        if ($this->hasColumn('addons', 'updated_at')) {
+        if ($this->hasColumn($table, 'updated_at')) {
             $fields[] = 'updated_at';
             $values[] = 'NOW()';
         }
 
-        $sql = sprintf('INSERT INTO addons (%s) VALUES (%s)', implode(',', $fields), implode(',', $values));
+        $sql = sprintf('INSERT INTO %s (%s) VALUES (%s)', $table, implode(',', $fields), implode(',', $values));
         return $this->db->prepare($sql)->execute($params);
     }
 
@@ -163,10 +193,19 @@ class Product extends Model
         }
 
         if ($this->hasTable('product_addon_links')) {
-            $fields = ['product_id', 'addon_group_id'];
-            $values = [':product_id', '(SELECT group_id FROM product_addons WHERE id=:addon_id LIMIT 1)'];
-            $sql = sprintf('INSERT IGNORE INTO product_addon_links (%s) VALUES (%s)', implode(',', $fields), implode(',', $values));
-            return $this->db->prepare($sql)->execute(['product_id' => $productId, 'addon_id' => $addonId]);
+            if ($this->hasColumn('product_addon_links', 'addon_id')) {
+                $sql = 'INSERT IGNORE INTO product_addon_links (product_id,addon_id) VALUES (:product_id,:addon_id)';
+                return $this->db->prepare($sql)->execute(['product_id' => $productId, 'addon_id' => $addonId]);
+            }
+
+            if ($this->hasColumn('product_addon_links', 'addon_group_id')) {
+                $addonGroupId = $this->resolveAddonGroupId($addonId);
+                if ($addonGroupId <= 0) {
+                    return false;
+                }
+                $sql = 'INSERT IGNORE INTO product_addon_links (product_id,addon_group_id) VALUES (:product_id,:addon_group_id)';
+                return $this->db->prepare($sql)->execute(['product_id' => $productId, 'addon_group_id' => $addonGroupId]);
+            }
         }
 
         return false;
@@ -191,17 +230,54 @@ class Product extends Model
         }
 
         if ($this->hasTable('product_addon_links')) {
-            $priceCol = $this->hasColumn('product_addons', 'price') ? 'price' : 'value';
-            $sql = "SELECT a.id, a.name, a.{$priceCol} AS price
-                    FROM product_addon_links l
-                    INNER JOIN product_addons a ON a.group_id = l.addon_group_id
-                    WHERE l.product_id = :pid";
-            if ($this->hasColumn('product_addons', 'active')) {
-                $sql .= ' AND a.active = 1';
+            // links por addon_id
+            if ($this->hasColumn('product_addon_links', 'addon_id')) {
+                if ($this->hasTable('addons')) {
+                    $priceCol = $this->hasColumn('addons', 'price') ? 'price' : ($this->hasColumn('addons', 'value') ? 'value' : 'price');
+                    $sql = "SELECT a.id, a.name, a.{$priceCol} AS price
+                            FROM product_addon_links l
+                            INNER JOIN addons a ON a.id = l.addon_id
+                            WHERE l.product_id = :pid";
+                    if ($this->hasColumn('addons', 'active')) {
+                        $sql .= ' AND a.active = 1';
+                    }
+                    $stmt = $this->db->prepare($sql);
+                    $stmt->execute(['pid' => $productId]);
+                    return $stmt->fetchAll();
+                }
+
+                if ($this->hasTable('product_addons') && !$this->hasColumn('product_addons', 'product_id')) {
+                    $priceCol = $this->hasColumn('product_addons', 'price') ? 'price' : 'value';
+                    $sql = "SELECT a.id, a.name, a.{$priceCol} AS price
+                            FROM product_addon_links l
+                            INNER JOIN product_addons a ON a.id = l.addon_id
+                            WHERE l.product_id = :pid";
+                    if ($this->hasColumn('product_addons', 'active')) {
+                        $sql .= ' AND a.active = 1';
+                    }
+                    $stmt = $this->db->prepare($sql);
+                    $stmt->execute(['pid' => $productId]);
+                    return $stmt->fetchAll();
+                }
             }
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute(['pid' => $productId]);
-            return $stmt->fetchAll();
+
+            // links por addon_group_id
+            if ($this->hasColumn('product_addon_links', 'addon_group_id') && $this->hasTable('product_addons') && !$this->hasColumn('product_addons', 'product_id')) {
+                $groupCol = $this->hasColumn('product_addons', 'group_id') ? 'group_id' : ($this->hasColumn('product_addons', 'addon_group_id') ? 'addon_group_id' : null);
+                $priceCol = $this->hasColumn('product_addons', 'price') ? 'price' : ($this->hasColumn('product_addons', 'value') ? 'value' : null);
+                if ($groupCol !== null && $priceCol !== null) {
+                    $sql = "SELECT a.id, a.name, a.{$priceCol} AS price
+                            FROM product_addon_links l
+                            INNER JOIN product_addons a ON a.{$groupCol} = l.addon_group_id
+                            WHERE l.product_id = :pid";
+                    if ($this->hasColumn('product_addons', 'active')) {
+                        $sql .= ' AND a.active = 1';
+                    }
+                    $stmt = $this->db->prepare($sql);
+                    $stmt->execute(['pid' => $productId]);
+                    return $stmt->fetchAll();
+                }
+            }
         }
 
         return [];
@@ -330,5 +406,32 @@ class Product extends Model
         $stmt = $this->db->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = :t AND column_name = :c');
         $stmt->execute(['t' => $table, 'c' => $column]);
         return (int)$stmt->fetchColumn() > 0;
+    }
+
+    private function resolveAddonGroupId(int $addonId): int
+    {
+        if ($addonId <= 0) {
+            return 0;
+        }
+
+        if ($this->hasTable('addons')) {
+            $groupCol = $this->hasColumn('addons', 'addon_group_id') ? 'addon_group_id' : ($this->hasColumn('addons', 'group_id') ? 'group_id' : null);
+            if ($groupCol !== null) {
+                $stmt = $this->db->prepare("SELECT {$groupCol} FROM addons WHERE id = :id LIMIT 1");
+                $stmt->execute(['id' => $addonId]);
+                return (int)$stmt->fetchColumn();
+            }
+        }
+
+        if ($this->hasTable('product_addons') && !$this->hasColumn('product_addons', 'product_id')) {
+            $groupCol = $this->hasColumn('product_addons', 'group_id') ? 'group_id' : ($this->hasColumn('product_addons', 'addon_group_id') ? 'addon_group_id' : null);
+            if ($groupCol !== null) {
+                $stmt = $this->db->prepare("SELECT {$groupCol} FROM product_addons WHERE id = :id LIMIT 1");
+                $stmt->execute(['id' => $addonId]);
+                return (int)$stmt->fetchColumn();
+            }
+        }
+
+        return 0;
     }
 }

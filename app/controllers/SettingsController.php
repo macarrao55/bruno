@@ -50,7 +50,12 @@ class SettingsController extends Controller
             $this->redirect('/settings');
         }
 
-        $ok = (new Product())->createAddonGroup($name);
+        try {
+            $ok = (new Product())->createAddonGroup($name);
+        } catch (\Throwable $e) {
+            flash('danger', 'Erro ao criar grupo: ' . $e->getMessage());
+            $this->redirect('/settings');
+        }
         flash($ok ? 'success' : 'danger', $ok ? 'Grupo de adicionais criado.' : 'Erro ao criar grupo.');
         $this->redirect('/settings');
     }
@@ -66,7 +71,12 @@ class SettingsController extends Controller
             $this->redirect('/settings');
         }
 
-        $ok = (new Product())->createAddon($groupId, $name, (float)($_POST['price'] ?? 0));
+        try {
+            $ok = (new Product())->createAddon($groupId, $name, (float)($_POST['price'] ?? 0));
+        } catch (\Throwable $e) {
+            flash('danger', 'Erro ao cadastrar adicional: ' . $e->getMessage());
+            $this->redirect('/settings');
+        }
         flash($ok ? 'success' : 'danger', $ok ? 'Adicional cadastrado.' : 'Erro ao cadastrar adicional.');
         $this->redirect('/settings');
     }
@@ -75,7 +85,12 @@ class SettingsController extends Controller
     {
         validate_csrf();
 
-        $ok = (new Product())->attachAddonToProduct((int)($_POST['product_id'] ?? 0), (int)($_POST['addon_id'] ?? 0));
+        try {
+            $ok = (new Product())->attachAddonToProduct((int)($_POST['product_id'] ?? 0), (int)($_POST['addon_id'] ?? 0));
+        } catch (\Throwable $e) {
+            flash('danger', 'Erro ao vincular adicional: ' . $e->getMessage());
+            $this->redirect('/settings');
+        }
         flash($ok ? 'success' : 'danger', $ok ? 'Adicional vinculado ao produto.' : 'Erro ao vincular adicional.');
         $this->redirect('/settings');
     }
