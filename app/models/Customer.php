@@ -8,7 +8,7 @@ use App\Core\Model;
 
 class Customer extends Model
 {
-    public function all(): array
+    public function all(array $filters = []): array
     {
         $this->ensureExtendedColumns();
         $phoneCol = $this->firstExistingColumn('customers', ['phone', 'phone_main', 'telefone']);
@@ -27,7 +27,35 @@ class Customer extends Model
         $numberExpr = $numberCol ? "c.{$numberCol}" : "''";
         $sexExpr = $sexCol ? "c.{$sexCol}" : "''";
 
-        $activeFilter = $this->hasColumn('customers', 'active') ? 'c.active=1' : '1=1';
+        $conditions = [];
+        $params = [];
+
+        if ($this->hasColumn('customers', 'active')) {
+            $conditions[] = 'c.active=1';
+        }
+
+        if (($filters['name'] ?? '') !== '') {
+            $conditions[] = 'c.name LIKE :name';
+            $params['name'] = '%' . $filters['name'] . '%';
+        }
+        if (($filters['phone'] ?? '') !== '' && $phoneCol) {
+            $conditions[] = "c.{$phoneCol} LIKE :phone";
+            $params['phone'] = '%' . $filters['phone'] . '%';
+        }
+        if (($filters['neighborhood'] ?? '') !== '' && $neighborhoodCol) {
+            $conditions[] = "c.{$neighborhoodCol} LIKE :neighborhood";
+            $params['neighborhood'] = '%' . $filters['neighborhood'] . '%';
+        }
+        if (($filters['sex'] ?? '') !== '' && $sexCol) {
+            $conditions[] = "c.{$sexCol} = :sex";
+            $params['sex'] = $filters['sex'];
+        }
+        if (($filters['birth_date'] ?? '') !== '' && $birthCol) {
+            $conditions[] = "DATE(c.{$birthCol}) = :birth_date";
+            $params['birth_date'] = $filters['birth_date'];
+        }
+
+        $whereSql = $conditions ? implode(' AND ', $conditions) : '1=1';
         $sql = "SELECT c.*,
                        {$phoneExpr} AS phone,
                        {$neighExpr} AS neighborhood,
@@ -37,10 +65,11 @@ class Customer extends Model
                        {$numberExpr} AS address_number,
                        {$sexExpr} AS sex
                 FROM customers c
-                WHERE {$activeFilter}
+                WHERE {$whereSql}
                 ORDER BY c.name";
-
-        return $this->db->query($sql)->fetchAll();
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
     }
 
     public function create(array $d): bool

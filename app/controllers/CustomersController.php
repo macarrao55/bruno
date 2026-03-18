@@ -11,7 +11,19 @@ class CustomersController extends Controller
 {
     public function index(): void
     {
-        $this->view('customers/index', ['title' => 'Clientes', 'customers' => (new Customer())->all()]);
+        $filters = [
+            'name' => trim((string)($_GET['name'] ?? '')),
+            'phone' => trim((string)($_GET['phone'] ?? '')),
+            'neighborhood' => trim((string)($_GET['neighborhood'] ?? '')),
+            'sex' => trim((string)($_GET['sex'] ?? '')),
+            'birth_date' => trim((string)($_GET['birth_date'] ?? '')),
+        ];
+
+        $this->view('customers/index', [
+            'title' => 'Clientes',
+            'customers' => (new Customer())->all($filters),
+            'filters' => $filters,
+        ]);
     }
 
     public function store(): void
