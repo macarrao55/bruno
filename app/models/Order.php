@@ -9,9 +9,31 @@ use Throwable;
 
 class Order extends Model
 {
+    private static bool $lifecycleColumnsEnsured = false;
+
     public function all(): array
     {
-        $sql = 'SELECT o.*, c.name customer_name FROM orders o LEFT JOIN customers c ON c.id=o.customer_id ORDER BY o.id DESC LIMIT 150';
+        $this->ensureLifecycleColumns();
+
+        $prepExpression = 'NULL';
+        if ($this->hasColumn('orders', 'prep_started_at') && $this->hasColumn('orders', 'created_at')) {
+            $prepExpression = 'TIMESTAMPDIFF(MINUTE, o.created_at, o.prep_started_at)';
+        } elseif ($this->hasColumn('orders', 'ready_at') && $this->hasColumn('orders', 'created_at')) {
+            $prepExpression = 'TIMESTAMPDIFF(MINUTE, o.created_at, o.ready_at)';
+        }
+
+        $deliveryExpression = 'NULL';
+        if ($this->hasColumn('orders', 'delivered_at') && $this->hasColumn('orders', 'created_at')) {
+            $deliveryExpression = 'TIMESTAMPDIFF(MINUTE, o.created_at, o.delivered_at)';
+        }
+
+        $sql = "SELECT o.*, c.name customer_name,
+                       {$prepExpression} AS minutes_to_prep,
+                       {$deliveryExpression} AS minutes_to_delivery
+                FROM orders o
+                LEFT JOIN customers c ON c.id=o.customer_id
+                ORDER BY o.id DESC
+                LIMIT 150";
         return $this->db->query($sql)->fetchAll();
     }
 
@@ -376,8 +398,43 @@ class Order extends Model
 
     public function changeStatus(int $id, string $status): bool
     {
-        $stmt = $this->db->prepare('UPDATE orders SET status=:s, updated_at=NOW() WHERE id=:id');
-        return $stmt->execute(['s' => $status, 'id' => $id]);
+        $this->ensureLifecycleColumns();
+
+        $sets = ['status=:s'];
+        $params = ['s' => $status, 'id' => $id];
+
+        if ($this->hasColumn('orders', 'updated_at')) {
+            $sets[] = 'updated_at=NOW()';
+        }
+
+        if ($status === 'em preparo' && $this->hasColumn('orders', 'prep_started_at')) {
+            $sets[] = 'prep_started_at=COALESCE(prep_started_at, NOW())';
+        }
+
+        if ($status === 'pronto') {
+            if ($this->hasColumn('orders', 'prep_started_at')) {
+                $sets[] = 'prep_started_at=COALESCE(prep_started_at, NOW())';
+            }
+            if ($this->hasColumn('orders', 'ready_at')) {
+                $sets[] = 'ready_at=COALESCE(ready_at, NOW())';
+            }
+        }
+
+        if ($status === 'entregue') {
+            if ($this->hasColumn('orders', 'prep_started_at')) {
+                $sets[] = 'prep_started_at=COALESCE(prep_started_at, NOW())';
+            }
+            if ($this->hasColumn('orders', 'ready_at')) {
+                $sets[] = 'ready_at=COALESCE(ready_at, NOW())';
+            }
+            if ($this->hasColumn('orders', 'delivered_at')) {
+                $sets[] = 'delivered_at=COALESCE(delivered_at, NOW())';
+            }
+        }
+
+        $sql = 'UPDATE orders SET ' . implode(', ', $sets) . ' WHERE id=:id';
+        $stmt = $this->db->prepare($sql);
+        return $stmt->execute($params);
     }
 
     private function insertOrderWithFallback(array $payload): int
@@ -464,5 +521,27 @@ class Order extends Model
         $stmt = $this->db->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = :t AND column_name = :c');
         $stmt->execute(['t' => $table, 'c' => $column]);
         return (int)$stmt->fetchColumn() > 0;
+    }
+
+    private function ensureLifecycleColumns(): void
+    {
+        if (self::$lifecycleColumnsEnsured || !$this->hasTable('orders')) {
+            return;
+        }
+
+        $columns = ['prep_started_at', 'ready_at', 'delivered_at'];
+        foreach ($columns as $column) {
+            if ($this->hasColumn('orders', $column)) {
+                continue;
+            }
+
+            try {
+                $this->db->exec("ALTER TABLE orders ADD COLUMN {$column} DATETIME NULL");
+            } catch (\Throwable) {
+                // Se não for possível alterar schema, seguimos sem bloquear o fluxo.
+            }
+        }
+
+        self::$lifecycleColumnsEnsured = true;
     }
 }
