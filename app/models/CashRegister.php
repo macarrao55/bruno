@@ -26,12 +26,51 @@ class CashRegister extends Model
 
     public function close(int $id, float $counted): bool
     {
-        $stmt = $this->db->prepare("SELECT opening_amount + COALESCE((SELECT SUM(CASE WHEN type IN ('entrada','venda','reforco') THEN amount ELSE -amount END) FROM cash_movements WHERE cash_register_id=:id),0) AS expected FROM cash_registers WHERE id=:id");
-        $stmt->execute(['id' => $id]);
+        $stmt = $this->db->prepare(
+            "SELECT opening_amount + COALESCE((
+                SELECT SUM(CASE WHEN type IN ('entrada','venda','reforco') THEN amount ELSE -amount END)
+                FROM cash_movements
+                WHERE cash_register_id=:movement_cash_id
+            ),0) AS expected
+            FROM cash_registers
+            WHERE id=:register_id"
+        );
+        $stmt->execute([
+            'movement_cash_id' => $id,
+            'register_id' => $id,
+        ]);
+
         $expected = (float)$stmt->fetchColumn();
         $diff = $counted - $expected;
-        $upd = $this->db->prepare("UPDATE cash_registers SET closed_at=NOW(), closing_amount=:c, expected_amount=:e, difference_amount=:d, status='fechado', updated_at=NOW() WHERE id=:id");
-        return $upd->execute(['c' => $counted, 'e' => $expected, 'd' => $diff, 'id' => $id]);
+
+        $sets = [
+            'closed_at=NOW()',
+            'closing_amount=:c',
+            "status='fechado'",
+        ];
+        $params = [
+            'c' => $counted,
+            'id' => $id,
+        ];
+
+        if ($this->hasColumn('cash_registers', 'expected_amount')) {
+            $sets[] = 'expected_amount=:e';
+            $params['e'] = $expected;
+        }
+
+        if ($this->hasColumn('cash_registers', 'difference_amount')) {
+            $sets[] = 'difference_amount=:d';
+            $params['d'] = $diff;
+        }
+
+        if ($this->hasColumn('cash_registers', 'updated_at')) {
+            $sets[] = 'updated_at=NOW()';
+        }
+
+        $sql = 'UPDATE cash_registers SET ' . implode(', ', $sets) . ' WHERE id=:id';
+        $upd = $this->db->prepare($sql);
+
+        return $upd->execute($params);
     }
 
     public function addMovement(int $registerId, string $type, string $payment, float $amount, string $desc, ?int $orderId = null): void
@@ -67,5 +106,12 @@ class CashRegister extends Model
         }
 
         return 'user_id';
+    }
+
+    private function hasColumn(string $table, string $column): bool
+    {
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = :t AND column_name = :c');
+        $stmt->execute(['t' => $table, 'c' => $column]);
+        return (int)$stmt->fetchColumn() > 0;
     }
 }
