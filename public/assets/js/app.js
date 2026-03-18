@@ -96,18 +96,20 @@
   async function selectAddons(productId, productName) {
     const addonsUrl = document.getElementById('checkoutForm')?.action.replace('/checkout', '/addons') || 'addons';
     const res = await fetch(`${addonsUrl}?product_id=${productId}`);
-    if (!res.ok) return [];
-    const list = await res.json();
-    if (!Array.isArray(list) || list.length === 0 || !addonsModal || !addonsList) return [];
+    if (!res.ok || !addonsModal || !addonsList) return [];
+    const rawList = await res.json();
+    const list = Array.isArray(rawList) ? rawList : [];
 
     addonsProductName && (addonsProductName.textContent = `Produto: ${productName}`);
-    addonsList.innerHTML = list.map(a => `
-      <label class="addons-item">
-        <input type="checkbox" value="${a.id}">
-        <span>${a.name}</span>
-        <strong>${format(a.price)}</strong>
-      </label>
-    `).join('');
+    addonsList.innerHTML = list.length > 0
+      ? list.map(a => `
+        <label class="addons-item">
+          <input type="checkbox" value="${a.id}">
+          <span>${a.name}</span>
+          <strong>${format(a.price)}</strong>
+        </label>
+      `).join('')
+      : '<div class="text-muted border rounded p-2">Este produto ainda não possui adicionais vinculados.</div>';
 
     addonsModal.classList.remove('d-none');
 
@@ -146,7 +148,9 @@
     btn.addEventListener('click', async () => {
       const productId = Number(btn.dataset.id);
       const productName = btn.dataset.name;
-      const addons = btn.dataset.allowsAddons === '1' ? await selectAddons(productId, productName) : [];
+      const allowsAddonsRaw = String(btn.dataset.allowsAddons || '').toLowerCase();
+      const allowsAddons = ['1', 'true', 'on', 'yes'].includes(allowsAddonsRaw);
+      const addons = allowsAddons ? await selectAddons(productId, productName) : [];
       const addonTotal = addons.reduce((s, a) => s + Number(a.price), 0);
       const unit = Number(btn.dataset.price) + addonTotal;
       cart.push({
