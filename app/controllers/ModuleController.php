@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Models\GenericList;
+use App\Models\Report;
 use App\Models\Stock;
 use App\Core\Auth;
 
@@ -23,7 +24,16 @@ class ModuleController extends Controller
 
     public function dre(): void
     {
-        $this->view('dre/index', ['title' => 'DRE']);
+        $start = $_GET['start'] ?? date('Y-m-01');
+        $end = $_GET['end'] ?? date('Y-m-t');
+        $dre = (new Report())->dre($start, $end);
+
+        $this->view('dre/index', [
+            'title' => 'DRE',
+            'start' => $start,
+            'end' => $end,
+            'dre' => $dre,
+        ]);
     }
 
     public function conciliation(): void
