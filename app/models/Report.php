@@ -98,6 +98,83 @@ class Report extends Model
         return compact('gross','discounts','net','cmv','lucroBruto','despesas','lucroLiquido');
     }
 
+    public function conciliation(string $start, string $end): array
+    {
+        $ordersTotalStmt = $this->db->prepare("SELECT COALESCE(SUM(total_amount),0) FROM orders WHERE DATE(created_at) BETWEEN :s AND :e AND status <> 'cancelado'");
+        $ordersTotalStmt->execute(['s' => $start, 'e' => $end]);
+        $ordersTotal = (float)$ordersTotalStmt->fetchColumn();
+
+        $cancelledStmt = $this->db->prepare("SELECT COUNT(*) FROM orders WHERE DATE(created_at) BETWEEN :s AND :e AND status = 'cancelado'");
+        $cancelledStmt->execute(['s' => $start, 'e' => $end]);
+        $cancelledOrders = (int)$cancelledStmt->fetchColumn();
+
+        $cashDateCol = $this->firstExistingColumn('cash_movements', ['created_at', 'movement_date']) ?? 'created_at';
+        $cashDateExpr = $cashDateCol === 'created_at' ? 'DATE(created_at)' : $cashDateCol;
+        $cashTypeCol = $this->firstExistingColumn('cash_movements', ['type', 'movement_type']);
+        $cashTypeWhere = $cashTypeCol ? "AND {$cashTypeCol} = 'venda'" : '';
+        $cashStmt = $this->db->prepare("SELECT COALESCE(SUM(amount),0) FROM cash_movements WHERE {$cashDateExpr} BETWEEN :s AND :e {$cashTypeWhere}");
+        $cashStmt->execute(['s' => $start, 'e' => $end]);
+        $cashSales = (float)$cashStmt->fetchColumn();
+
+        $entryTypeCol = $this->firstExistingColumn('financial_entries', ['type', 'entry_type']);
+        $entryDateCol = $this->firstExistingColumn('financial_entries', ['entry_date', 'date', 'created_at']) ?? 'created_at';
+        $entryDateExpr = $entryDateCol === 'created_at' ? 'DATE(created_at)' : $entryDateCol;
+        $finEntryIn = 0.0;
+        $finEntryOut = 0.0;
+        if ($entryTypeCol !== null) {
+            $inStmt = $this->db->prepare("SELECT COALESCE(SUM(amount),0) FROM financial_entries WHERE {$entryDateExpr} BETWEEN :s AND :e AND {$entryTypeCol} IN ('entrada','recebimento')");
+            $inStmt->execute(['s' => $start, 'e' => $end]);
+            $finEntryIn = (float)$inStmt->fetchColumn();
+
+            $outStmt = $this->db->prepare("SELECT COALESCE(SUM(amount),0) FROM financial_entries WHERE {$entryDateExpr} BETWEEN :s AND :e AND {$entryTypeCol} IN ('saida','despesa')");
+            $outStmt->execute(['s' => $start, 'e' => $end]);
+            $finEntryOut = (float)$outStmt->fetchColumn();
+        }
+
+        $receivablesOpen = 0.0;
+        if ($this->hasTable('accounts_receivable')) {
+            $receivableStmt = $this->db->query("SELECT COALESCE(SUM(total_amount - paid_amount),0) FROM accounts_receivable WHERE status IN ('pendente','parcial')");
+            $receivablesOpen = (float)$receivableStmt->fetchColumn();
+        }
+
+        $orderPayStmt = $this->db->prepare("SELECT payment_method, COALESCE(SUM(total_amount),0) total FROM orders WHERE DATE(created_at) BETWEEN :s AND :e AND status <> 'cancelado' GROUP BY payment_method");
+        $orderPayStmt->execute(['s' => $start, 'e' => $end]);
+        $orderByPayment = [];
+        foreach ($orderPayStmt->fetchAll() as $row) {
+            $orderByPayment[$row['payment_method']] = (float)$row['total'];
+        }
+
+        $cashByPayment = [];
+        $cashPayStmt = $this->db->prepare("SELECT payment_method, COALESCE(SUM(amount),0) total FROM cash_movements WHERE {$cashDateExpr} BETWEEN :s AND :e {$cashTypeWhere} GROUP BY payment_method");
+        $cashPayStmt->execute(['s' => $start, 'e' => $end]);
+        foreach ($cashPayStmt->fetchAll() as $row) {
+            $cashByPayment[$row['payment_method']] = (float)$row['total'];
+        }
+
+        $paymentRows = [];
+        foreach (array_unique(array_merge(array_keys($orderByPayment), array_keys($cashByPayment))) as $payment) {
+            $orderTotal = $orderByPayment[$payment] ?? 0;
+            $cashTotal = $cashByPayment[$payment] ?? 0;
+            $paymentRows[] = [
+                'payment_method' => $payment,
+                'order_total' => $orderTotal,
+                'cash_total' => $cashTotal,
+                'diff' => $cashTotal - $orderTotal,
+            ];
+        }
+
+        return [
+            'ordersTotal' => $ordersTotal,
+            'cashSales' => $cashSales,
+            'cashDiff' => $cashSales - $ordersTotal,
+            'financialIn' => $finEntryIn,
+            'financialOut' => $finEntryOut,
+            'receivablesOpen' => $receivablesOpen,
+            'cancelledOrders' => $cancelledOrders,
+            'paymentRows' => $paymentRows,
+        ];
+    }
+
     private function cmvExpression(): string
     {
         if ($this->hasColumn('order_items', 'unit_cost')) {
