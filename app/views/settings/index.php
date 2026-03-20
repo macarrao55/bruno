@@ -2,9 +2,14 @@
 <div class="col-md-4"><label>Empresa</label><input name="company_name" class="form-control" value="<?= htmlspecialchars($settings['company_name']) ?>"></div>
 <div class="col-md-4"><label>Telefone</label><input name="company_phone" class="form-control" value="<?= htmlspecialchars($settings['company_phone']) ?>"></div>
 <div class="col-md-4"><label>Instagram</label><input name="company_instagram" class="form-control" value="<?= htmlspecialchars($settings['company_instagram']) ?>"></div>
-<div class="col-md-2"><label>Pontos por real</label><input name="points_per_real" class="form-control" type="number" step="0.1" value="<?= htmlspecialchars($settings['points_per_real']) ?>"></div>
 <div class="col-md-2"><label>Dias crediário</label><input name="crediario_due_days" class="form-control" type="number" value="<?= htmlspecialchars($settings['crediario_due_days']) ?>"></div>
 <div class="col-md-3"><label>Pix entra no caixa</label><select name="pix_entra_no_caixa" class="form-select"><option value="1" <?= $settings['pix_entra_no_caixa']==='1'?'selected':'' ?>>Sim</option><option value="0" <?= $settings['pix_entra_no_caixa']==='0'?'selected':'' ?>>Não</option></select></div>
+<div class="col-12 mt-2"><hr class="my-2"></div>
+<div class="col-12"><h6 class="mb-1">Programa Fidelidade</h6><small class="text-muted">Configure as regras de acúmulo de pontos.</small></div>
+<div class="col-md-3"><label>Fidelidade ativa</label><select name="loyalty_enabled" class="form-select"><option value="1" <?= $settings['loyalty_enabled']==='1'?'selected':'' ?>>Sim</option><option value="0" <?= $settings['loyalty_enabled']==='0'?'selected':'' ?>>Não</option></select></div>
+<div class="col-md-3"><label>Pontos por real</label><input name="points_per_real" class="form-control" type="number" min="0" step="0.1" value="<?= htmlspecialchars($settings['points_per_real']) ?>"></div>
+<div class="col-md-3"><label>Pedido mínimo (R$)</label><input name="loyalty_min_order_value" class="form-control" type="number" min="0" step="0.01" value="<?= htmlspecialchars($settings['loyalty_min_order_value']) ?>"></div>
+<div class="col-md-3"><label>Saldo mínimo p/ resgate</label><input name="loyalty_min_points_balance" class="form-control" type="number" min="0" step="1" value="<?= htmlspecialchars($settings['loyalty_min_points_balance']) ?>"></div>
 <div class="col-md-2 align-self-end"><button class="btn btn-primary">Salvar</button></div>
 </form>
 

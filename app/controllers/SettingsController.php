@@ -19,7 +19,10 @@ class SettingsController extends Controller
             'company_name' => $s->get('company_name'),
             'company_phone' => $s->get('company_phone'),
             'company_instagram' => $s->get('company_instagram'),
+            'loyalty_enabled' => $s->get('loyalty_enabled', '1'),
             'points_per_real' => $s->get('points_per_real', '1'),
+            'loyalty_min_order_value' => $s->get('loyalty_min_order_value', '0'),
+            'loyalty_min_points_balance' => $s->get('loyalty_min_points_balance', '0'),
             'crediario_due_days' => $s->get('crediario_due_days', '30'),
             'pix_entra_no_caixa' => $s->get('pix_entra_no_caixa', '1'),
         ],
@@ -34,7 +37,17 @@ class SettingsController extends Controller
         Auth::requireRole(['ADMIN','GERENTE']);
         validate_csrf();
         $s = new Settings();
-        foreach (['company_name','company_phone','company_instagram','points_per_real','crediario_due_days','pix_entra_no_caixa'] as $key) {
+        foreach ([
+            'company_name',
+            'company_phone',
+            'company_instagram',
+            'loyalty_enabled',
+            'points_per_real',
+            'loyalty_min_order_value',
+            'loyalty_min_points_balance',
+            'crediario_due_days',
+            'pix_entra_no_caixa',
+        ] as $key) {
             $s->set($key, (string)($_POST[$key] ?? ''));
         }
         flash('success', 'Configurações salvas');

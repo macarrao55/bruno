@@ -1,3 +1,15 @@
+<div class="alert alert-secondary">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <strong>Status:</strong> <?= !empty($program['enabled']) ? 'Ativo' : 'Inativo' ?> ·
+            <strong>Pontos por real:</strong> <?= number_format((float)($program['points_per_real'] ?? 0), 2, ',', '.') ?> ·
+            <strong>Pedido mínimo:</strong> R$ <?= number_format((float)($program['min_order_value'] ?? 0), 2, ',', '.') ?> ·
+            <strong>Saldo mínimo p/ resgate:</strong> <?= (int)($program['min_points_balance'] ?? 0) ?> pts
+        </div>
+        <a class="btn btn-sm btn-outline-primary" href="<?= base_url('/settings') ?>">Configurar fidelidade</a>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-header">Fidelidade</div>
     <div class="table-responsive">

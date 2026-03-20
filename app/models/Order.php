@@ -399,7 +399,18 @@ class Order extends Model
             $u->execute(['t' => $payload['total_amount'], 'id' => $payload['customer_id']]);
         }
 
-        $ppr = (float)(new Settings())->get('points_per_real', '1');
+        $settings = new Settings();
+        $loyaltyEnabled = $settings->get('loyalty_enabled', '1') === '1';
+        if (!$loyaltyEnabled) {
+            return;
+        }
+
+        $minOrderValue = (float)$settings->get('loyalty_min_order_value', '0');
+        if ((float)$payload['total_amount'] < $minOrderValue) {
+            return;
+        }
+
+        $ppr = (float)$settings->get('points_per_real', '1');
         $points = (int)floor($payload['total_amount'] * $ppr);
         if ($points <= 0) return;
 

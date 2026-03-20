@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Models\GenericList;
 use App\Models\Report;
+use App\Models\Settings;
 use App\Models\Stock;
 use App\Core\Auth;
 
@@ -138,7 +139,17 @@ class ModuleController extends Controller
 
     public function loyalty(): void
     {
-        $this->view('loyalty/index', ['title' => 'Fidelidade', 'rows' => (new GenericList())->loyalty()]);
+        $settings = new Settings();
+        $this->view('loyalty/index', [
+            'title' => 'Fidelidade',
+            'rows' => (new GenericList())->loyalty(),
+            'program' => [
+                'enabled' => $settings->get('loyalty_enabled', '1') === '1',
+                'points_per_real' => (float)$settings->get('points_per_real', '1'),
+                'min_order_value' => (float)$settings->get('loyalty_min_order_value', '0'),
+                'min_points_balance' => (int)$settings->get('loyalty_min_points_balance', '0'),
+            ],
+        ]);
     }
 
     public function marketing(): void
