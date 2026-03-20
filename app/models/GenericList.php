@@ -92,7 +92,16 @@ class GenericList extends Model
     {
         if ($this->tableExists('loyalty_points')) {
             return $this->db->query('
-                SELECT c.name, lp.points_balance, lp.points_earned, lp.points_used
+                SELECT
+                    c.id AS customer_id,
+                    c.name,
+                    c.phone,
+                    c.total_spent,
+                    c.orders_count,
+                    lp.points_balance,
+                    lp.points_earned,
+                    lp.points_used,
+                    NULL AS last_movement_at
                 FROM loyalty_points lp
                 INNER JOIN customers c ON c.id = lp.customer_id
                 ORDER BY lp.points_balance DESC
@@ -103,15 +112,30 @@ class GenericList extends Model
             return [];
         }
 
+        $ltTypeExpr = $this->hasColumn('loyalty_transactions', 'type')
+            ? "CASE WHEN lt.type = 'credito' THEN lt.points ELSE -lt.points END"
+            : 'lt.points';
+        $ltCreditExpr = $this->hasColumn('loyalty_transactions', 'type')
+            ? "CASE WHEN lt.type = 'credito' THEN lt.points ELSE 0 END"
+            : 'lt.points';
+        $ltDebitExpr = $this->hasColumn('loyalty_transactions', 'type')
+            ? "CASE WHEN lt.type = 'debito' THEN lt.points ELSE 0 END"
+            : '0';
+
         return $this->db->query("
             SELECT
+                c.id AS customer_id,
                 c.name,
-                SUM(CASE WHEN lt.type = 'credito' THEN lt.points ELSE -lt.points END) AS points_balance,
-                SUM(CASE WHEN lt.type = 'credito' THEN lt.points ELSE 0 END) AS points_earned,
-                SUM(CASE WHEN lt.type = 'debito' THEN lt.points ELSE 0 END) AS points_used
-            FROM loyalty_transactions lt
-            INNER JOIN customers c ON c.id = lt.customer_id
-            GROUP BY c.id, c.name
+                c.phone,
+                c.total_spent,
+                c.orders_count,
+                COALESCE(SUM({$ltTypeExpr}), 0) AS points_balance,
+                COALESCE(SUM({$ltCreditExpr}), 0) AS points_earned,
+                COALESCE(SUM({$ltDebitExpr}), 0) AS points_used,
+                MAX(lt.created_at) AS last_movement_at
+            FROM customers c
+            LEFT JOIN loyalty_transactions lt ON lt.customer_id = c.id
+            GROUP BY c.id, c.name, c.phone, c.total_spent, c.orders_count
             ORDER BY points_balance DESC
         ")->fetchAll();
     }
