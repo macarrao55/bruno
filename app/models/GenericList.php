@@ -90,14 +90,18 @@ class GenericList extends Model
 
     public function loyalty(): array
     {
+        $customerPhoneExpr = $this->hasColumn('customers', 'phone') ? 'c.phone' : "''";
+        $customerSpentExpr = $this->hasColumn('customers', 'total_spent') ? 'c.total_spent' : '0';
+        $customerOrdersExpr = $this->hasColumn('customers', 'orders_count') ? 'c.orders_count' : '0';
+
         if ($this->tableExists('loyalty_points')) {
             return $this->db->query('
                 SELECT
                     c.id AS customer_id,
                     c.name,
-                    c.phone,
-                    c.total_spent,
-                    c.orders_count,
+                    ' . $customerPhoneExpr . ' AS phone,
+                    ' . $customerSpentExpr . ' AS total_spent,
+                    ' . $customerOrdersExpr . ' AS orders_count,
                     lp.points_balance,
                     lp.points_earned,
                     lp.points_used,
@@ -126,16 +130,16 @@ class GenericList extends Model
             SELECT
                 c.id AS customer_id,
                 c.name,
-                c.phone,
-                c.total_spent,
-                c.orders_count,
+                {$customerPhoneExpr} AS phone,
+                {$customerSpentExpr} AS total_spent,
+                {$customerOrdersExpr} AS orders_count,
                 COALESCE(SUM({$ltTypeExpr}), 0) AS points_balance,
                 COALESCE(SUM({$ltCreditExpr}), 0) AS points_earned,
                 COALESCE(SUM({$ltDebitExpr}), 0) AS points_used,
                 MAX(lt.created_at) AS last_movement_at
             FROM customers c
             LEFT JOIN loyalty_transactions lt ON lt.customer_id = c.id
-            GROUP BY c.id, c.name, c.phone, c.total_spent, c.orders_count
+            GROUP BY c.id, c.name
             ORDER BY points_balance DESC
         ")->fetchAll();
     }
