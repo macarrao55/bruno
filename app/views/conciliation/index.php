@@ -1,0 +1,1 @@
+<div class="card"><div class="card-header">Conciliação Vendas x Financeiro</div><div class="card-body"><p>Concilia pedidos, formas de pagamento, caixa, contas a receber e lançamentos financeiros.</p><ul><li>Vendas x caixa esperado/contado</li><li>Descontos concedidos</li><li>Pedidos cancelados auditados</li><li>Crediário pendente</li></ul></div></div>

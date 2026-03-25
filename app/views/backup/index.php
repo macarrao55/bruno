@@ -1,0 +1,1 @@
+<div class="card"><div class="card-header">Backup Manual</div><div class="card-body"><p>Para gerar backup no XAMPP execute:</p><code>mysqldump -u root mega_lanches_erp > storage/backup/backup_$(date +%F).sql</code><p class="mt-2 mb-0">Os arquivos ficam em <code>storage/backup</code>.</p></div></div>
