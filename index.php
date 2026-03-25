@@ -1,0 +1,424 @@
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/db.php';
+
+$pdo = db();
+$module = $_GET['module'] ?? 'dashboard';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    handlePost($pdo, $module);
+    header('Location: index.php?module=' . urlencode($module));
+    exit;
+}
+
+function handlePost(PDO $pdo, string $module): void
+{
+    switch ($module) {
+        case 'fluxo':
+            $stmt = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)');
+            $stmt->execute([
+                ':movement_type' => $_POST['movement_type'],
+                ':amount' => (float) $_POST['amount'],
+                ':category' => trim($_POST['category']),
+                ':subcategory' => trim($_POST['subcategory']),
+                ':origin_account' => trim($_POST['origin_account']),
+                ':destination_account' => trim($_POST['destination_account']),
+                ':description' => trim($_POST['description']),
+                ':occurred_on' => $_POST['occurred_on'],
+            ]);
+            break;
+
+        case 'pagar':
+            $stmt = $pdo->prepare('INSERT INTO accounts_payable (supplier, due_date, amount, installment, status, reminder_date, notes)
+                VALUES (:supplier,:due_date,:amount,:installment,:status,:reminder_date,:notes)');
+            $stmt->execute([
+                ':supplier' => trim($_POST['supplier']),
+                ':due_date' => $_POST['due_date'],
+                ':amount' => (float) $_POST['amount'],
+                ':installment' => trim($_POST['installment']),
+                ':status' => $_POST['status'],
+                ':reminder_date' => $_POST['reminder_date'] ?: null,
+                ':notes' => trim($_POST['notes']),
+            ]);
+            break;
+
+        case 'receber':
+            $total = (float) $_POST['amount'];
+            $received = (float) $_POST['amount_received'];
+            $status = $received === 0.0 ? 'aberto' : ($received < $total ? 'parcial' : 'recebido');
+            $stmt = $pdo->prepare('INSERT INTO accounts_receivable (customer, due_date, amount, amount_received, installment, is_credit_sale, status, notes)
+                VALUES (:customer,:due_date,:amount,:amount_received,:installment,:is_credit_sale,:status,:notes)');
+            $stmt->execute([
+                ':customer' => trim($_POST['customer']),
+                ':due_date' => $_POST['due_date'],
+                ':amount' => $total,
+                ':amount_received' => $received,
+                ':installment' => trim($_POST['installment']),
+                ':is_credit_sale' => isset($_POST['is_credit_sale']) ? 1 : 0,
+                ':status' => $status,
+                ':notes' => trim($_POST['notes']),
+            ]);
+            break;
+
+        case 'cartoes':
+            $gross = (float) $_POST['gross_value'];
+            $fee = (float) $_POST['fee_percent'];
+            $net = $gross - ($gross * $fee / 100);
+            $stmt = $pdo->prepare('INSERT INTO card_receivables (machine, brand, card_type, fee_percent, gross_value, net_value, sale_date, expected_release_date, received)
+                VALUES (:machine,:brand,:card_type,:fee_percent,:gross_value,:net_value,:sale_date,:expected_release_date,:received)');
+            $stmt->execute([
+                ':machine' => trim($_POST['machine']),
+                ':brand' => trim($_POST['brand']),
+                ':card_type' => $_POST['card_type'],
+                ':fee_percent' => $fee,
+                ':gross_value' => $gross,
+                ':net_value' => $net,
+                ':sale_date' => $_POST['sale_date'],
+                ':expected_release_date' => $_POST['expected_release_date'],
+                ':received' => isset($_POST['received']) ? 1 : 0,
+            ]);
+            break;
+
+        case 'cheques':
+            $stmt = $pdo->prepare('INSERT INTO checks_control (check_type, customer, bank, check_number, due_date, amount, cleared, compensated, returned)
+                VALUES (:check_type,:customer,:bank,:check_number,:due_date,:amount,:cleared,:compensated,:returned)');
+            $stmt->execute([
+                ':check_type' => $_POST['check_type'],
+                ':customer' => trim($_POST['customer']),
+                ':bank' => trim($_POST['bank']),
+                ':check_number' => trim($_POST['check_number']),
+                ':due_date' => $_POST['due_date'],
+                ':amount' => (float) $_POST['amount'],
+                ':cleared' => isset($_POST['cleared']) ? 1 : 0,
+                ':compensated' => isset($_POST['compensated']) ? 1 : 0,
+                ':returned' => isset($_POST['returned']) ? 1 : 0,
+            ]);
+            break;
+
+        case 'conciliacao':
+            $stmt = $pdo->prepare('INSERT INTO bank_reconciliation (bank_account_id, movement_date, description, system_amount, bank_amount, reconciled)
+                VALUES (:bank_account_id,:movement_date,:description,:system_amount,:bank_amount,:reconciled)');
+            $stmt->execute([
+                ':bank_account_id' => (int) $_POST['bank_account_id'],
+                ':movement_date' => $_POST['movement_date'],
+                ':description' => trim($_POST['description']),
+                ':system_amount' => (float) $_POST['system_amount'],
+                ':bank_amount' => (float) $_POST['bank_amount'],
+                ':reconciled' => isset($_POST['reconciled']) ? 1 : 0,
+            ]);
+            break;
+
+        case 'fechamento':
+            $opening = (float) $_POST['opening_amount'];
+            $entries = (float) $_POST['total_entries'];
+            $exits = (float) $_POST['total_exits'];
+            $counted = (float) $_POST['counted_amount'];
+            $expected = $opening + $entries - $exits;
+            $diff = $counted - $expected;
+            $stmt = $pdo->prepare('INSERT INTO cash_closing (opening_date, opening_amount, total_entries, total_exits, counted_amount, cash_difference, notes)
+                VALUES (:opening_date,:opening_amount,:total_entries,:total_exits,:counted_amount,:cash_difference,:notes)');
+            $stmt->execute([
+                ':opening_date' => $_POST['opening_date'],
+                ':opening_amount' => $opening,
+                ':total_entries' => $entries,
+                ':total_exits' => $exits,
+                ':counted_amount' => $counted,
+                ':cash_difference' => $diff,
+                ':notes' => trim($_POST['notes']),
+            ]);
+            break;
+    }
+}
+
+function money(float $v): string
+{
+    return 'R$ ' . number_format($v, 2, ',', '.');
+}
+
+function sumValue(PDO $pdo, string $sql, array $params = []): float
+{
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+
+    return (float) ($stmt->fetchColumn() ?: 0);
+}
+
+function fetchAll(PDO $pdo, string $sql, array $params = []): array
+{
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+
+    return $stmt->fetchAll();
+}
+
+$today = date('Y-m-d');
+$monthStart = date('Y-m-01');
+$period = $_GET['period'] ?? '30';
+$days = in_array($period, ['7', '30', '90'], true) ? (int) $period : 30;
+$periodStart = date('Y-m-d', strtotime("-$days days"));
+
+$cashBalance = sumValue($pdo, "SELECT COALESCE(SUM(CASE WHEN movement_type='entrada' THEN amount ELSE -amount END),0) FROM transactions");
+$bankBalance = sumValue($pdo, 'SELECT COALESCE(SUM(current_balance),0) FROM bank_accounts');
+$payToday = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM accounts_payable WHERE due_date=:d AND status='aberto'", [':d' => $today]);
+$receiveToday = sumValue($pdo, "SELECT COALESCE(SUM(amount-amount_received),0) FROM accounts_receivable WHERE due_date=:d AND status IN ('aberto','parcial')", [':d' => $today]);
+$cardsReceive = sumValue($pdo, 'SELECT COALESCE(SUM(net_value),0) FROM card_receivables WHERE received=0');
+$checksToCompensate = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM checks_control WHERE compensated=0 AND returned=0');
+$monthEntries = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='entrada' AND occurred_on>=:m", [':m' => $monthStart]);
+$monthExits = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='saida' AND occurred_on>=:m", [':m' => $monthStart]);
+$estimatedProfit = $monthEntries - $monthExits;
+
+$chartRows = fetchAll($pdo, "SELECT occurred_on,
+    SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas,
+    SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas
+    FROM transactions WHERE occurred_on>=:start GROUP BY occurred_on ORDER BY occurred_on", [':start' => $periodStart]);
+
+$transactionFilter = $_GET['filtro'] ?? 'mes';
+$filterStart = match ($transactionFilter) {
+    'dia' => date('Y-m-d'),
+    'semana' => date('Y-m-d', strtotime('-7 days')),
+    'periodo' => $_GET['inicio'] ?? date('Y-m-d', strtotime('-30 days')),
+    default => date('Y-m-01')
+};
+$filterEnd = $transactionFilter === 'periodo' ? ($_GET['fim'] ?? date('Y-m-d')) : date('Y-m-d');
+$transactions = fetchAll($pdo, 'SELECT * FROM transactions WHERE occurred_on BETWEEN :s AND :e ORDER BY occurred_on DESC, id DESC', [':s' => $filterStart, ':e' => $filterEnd]);
+
+$payables = fetchAll($pdo, 'SELECT *, CASE WHEN status = "aberto" AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_payable ORDER BY due_date ASC', [':today' => $today]);
+$receivables = fetchAll($pdo, 'SELECT *, CASE WHEN status IN ("aberto","parcial") AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_receivable ORDER BY due_date ASC', [':today' => $today]);
+$cards = fetchAll($pdo, 'SELECT * FROM card_receivables ORDER BY sale_date DESC');
+$checks = fetchAll($pdo, 'SELECT * FROM checks_control ORDER BY due_date ASC');
+$banks = fetchAll($pdo, 'SELECT * FROM bank_accounts ORDER BY name');
+$reconciliations = fetchAll($pdo, 'SELECT br.*, ba.name bank_name FROM bank_reconciliation br JOIN bank_accounts ba ON ba.id=br.bank_account_id ORDER BY movement_date DESC');
+$closings = fetchAll($pdo, 'SELECT * FROM cash_closing ORDER BY opening_date DESC');
+
+$dre = [
+    'receitas' => $monthEntries,
+    'custos' => sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='saida' AND category='custos' AND occurred_on>=:m", [':m' => $monthStart]),
+    'despesas_fixas' => sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='saida' AND category='despesas_fixas' AND occurred_on>=:m", [':m' => $monthStart]),
+    'despesas_variaveis' => sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='saida' AND category='despesas_variaveis' AND occurred_on>=:m", [':m' => $monthStart]),
+];
+$dre['resultado_operacional'] = $dre['receitas'] - $dre['custos'] - $dre['despesas_fixas'] - $dre['despesas_variaveis'];
+$dre['lucro_liquido'] = $dre['resultado_operacional'];
+
+$reportType = $_GET['tipo_relatorio'] ?? 'mensal';
+$reportSql = match ($reportType) {
+    'diario' => "SELECT occurred_on periodo, SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas, SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas FROM transactions GROUP BY occurred_on ORDER BY occurred_on DESC LIMIT 31",
+    'semanal' => "SELECT strftime('%Y-W%W', occurred_on) periodo, SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas, SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas FROM transactions GROUP BY periodo ORDER BY periodo DESC LIMIT 12",
+    'categoria' => "SELECT category periodo, SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas, SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas FROM transactions GROUP BY category ORDER BY category",
+    'conta' => "SELECT origin_account periodo, SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas, SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas FROM transactions GROUP BY origin_account ORDER BY origin_account",
+    'cliente' => "SELECT customer periodo, SUM(amount) entradas, SUM(amount_received) saidas FROM accounts_receivable GROUP BY customer ORDER BY customer",
+    'vendedor' => "SELECT 'N/A' periodo, 0 entradas, 0 saidas",
+    'forma' => "SELECT movement_type periodo, SUM(amount) entradas, 0 saidas FROM transactions GROUP BY movement_type",
+    default => "SELECT strftime('%Y-%m', occurred_on) periodo, SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas, SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas FROM transactions GROUP BY periodo ORDER BY periodo DESC LIMIT 12"
+};
+$reportRows = fetchAll($pdo, $reportSql);
+
+?><!doctype html>
+<html lang="pt-br">
+<head>
+    <meta charset="utf-8">
+    <title>Sistema Financeiro PHP</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<header>
+    <h2>Sistema Financeiro</h2>
+    <nav>
+        <a href="?module=dashboard">Dashboard</a>
+        <a href="?module=fluxo">Fluxo de Caixa</a>
+        <a href="?module=pagar">Contas a Pagar</a>
+        <a href="?module=receber">Contas a Receber</a>
+        <a href="?module=cartoes">Cartões</a>
+        <a href="?module=cheques">Cheques</a>
+        <a href="?module=conciliacao">Conciliação Bancária</a>
+        <a href="?module=dre">DRE</a>
+        <a href="?module=fechamento">Fechamento</a>
+        <a href="?module=relatorios">Relatórios</a>
+    </nav>
+</header>
+<div class="container">
+<?php if ($module === 'dashboard'): ?>
+    <div class="cards">
+        <div class="card"><h4>Saldo em Caixa</h4><p><?= money($cashBalance) ?></p></div>
+        <div class="card"><h4>Saldo em Bancos</h4><p><?= money($bankBalance) ?></p></div>
+        <div class="card"><h4>Contas a Pagar Hoje</h4><p><?= money($payToday) ?></p></div>
+        <div class="card"><h4>Contas a Receber Hoje</h4><p><?= money($receiveToday) ?></p></div>
+        <div class="card"><h4>Cartões a Receber</h4><p><?= money($cardsReceive) ?></p></div>
+        <div class="card"><h4>Cheques a Compensar</h4><p><?= money($checksToCompensate) ?></p></div>
+        <div class="card"><h4>Lucro Estimado do Mês</h4><p><?= money($estimatedProfit) ?></p></div>
+    </div>
+
+    <form method="get">
+        <input type="hidden" name="module" value="dashboard">
+        <label>Gráfico por período:</label>
+        <select name="period">
+            <option value="7" <?= $period === '7' ? 'selected' : '' ?>>7 dias</option>
+            <option value="30" <?= $period === '30' ? 'selected' : '' ?>>30 dias</option>
+            <option value="90" <?= $period === '90' ? 'selected' : '' ?>>90 dias</option>
+        </select>
+        <button>Filtrar</button>
+    </form>
+    <canvas id="chart" height="100"></canvas>
+    <script>
+        const labels = <?= json_encode(array_column($chartRows, 'occurred_on')) ?>;
+        const entradas = <?= json_encode(array_map('floatval', array_column($chartRows, 'entradas'))) ?>;
+        const saidas = <?= json_encode(array_map('floatval', array_column($chartRows, 'saidas'))) ?>;
+        new Chart(document.getElementById('chart'), {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'Entradas', data: entradas, borderColor: '#2f9e44' },
+                    { label: 'Saídas', data: saidas, borderColor: '#d9480f' }
+                ]
+            }
+        });
+    </script>
+<?php elseif ($module === 'fluxo'): ?>
+    <h3>Fluxo de Caixa</h3>
+    <form method="post">
+        <select name="movement_type"><option value="entrada">Entrada</option><option value="saida">Saída</option></select>
+        <input name="amount" type="number" step="0.01" placeholder="Valor" required>
+        <input name="category" placeholder="Categoria" required>
+        <input name="subcategory" placeholder="Subcategoria">
+        <input name="origin_account" placeholder="Conta origem">
+        <input name="destination_account" placeholder="Conta destino">
+        <input name="occurred_on" type="date" value="<?= $today ?>" required>
+        <input name="description" placeholder="Histórico">
+        <button>Lançar</button>
+    </form>
+    <form method="get">
+        <input type="hidden" name="module" value="fluxo">
+        <select name="filtro">
+            <option value="dia">Dia</option><option value="semana">Semana</option><option value="mes" selected>Mês</option><option value="periodo">Período</option>
+        </select>
+        <input type="date" name="inicio" value="<?= htmlspecialchars($_GET['inicio'] ?? '') ?>">
+        <input type="date" name="fim" value="<?= htmlspecialchars($_GET['fim'] ?? '') ?>">
+        <button>Aplicar</button>
+    </form>
+    <p class="small">Saldo acumulado do filtro: <?= money(array_reduce($transactions, fn($c, $r) => $c + ($r['movement_type'] === 'entrada' ? $r['amount'] : -$r['amount']), 0.0)) ?></p>
+    <table>
+        <tr><th>Data</th><th>Tipo</th><th>Valor</th><th>Categoria</th><th>Subcategoria</th><th>Origem</th><th>Destino</th><th>Histórico</th></tr>
+        <?php foreach ($transactions as $t): ?>
+            <tr><td><?= $t['occurred_on'] ?></td><td><?= $t['movement_type'] ?></td><td><?= money((float) $t['amount']) ?></td><td><?= htmlspecialchars($t['category']) ?></td><td><?= htmlspecialchars((string) $t['subcategory']) ?></td><td><?= htmlspecialchars((string) $t['origin_account']) ?></td><td><?= htmlspecialchars((string) $t['destination_account']) ?></td><td><?= htmlspecialchars((string) $t['description']) ?></td></tr>
+        <?php endforeach; ?>
+    </table>
+<?php elseif ($module === 'pagar'): ?>
+    <h3>Contas a Pagar</h3>
+    <form method="post">
+        <input name="supplier" placeholder="Fornecedor" required>
+        <input name="due_date" type="date" required>
+        <input name="amount" type="number" step="0.01" placeholder="Valor" required>
+        <input name="installment" placeholder="Parcela">
+        <select name="status"><option>aberto</option><option>pago</option><option>atrasado</option></select>
+        <input name="reminder_date" type="date" placeholder="Aviso">
+        <input name="notes" placeholder="Observações">
+        <button>Salvar</button>
+    </form>
+    <table><tr><th>Fornecedor</th><th>Vencimento</th><th>Valor</th><th>Parcela</th><th>Situação</th><th>Aviso</th></tr>
+        <?php foreach ($payables as $p): ?><tr><td><?= htmlspecialchars($p['supplier']) ?></td><td><?= $p['due_date'] ?></td><td><?= money((float) $p['amount']) ?></td><td><?= htmlspecialchars((string) $p['installment']) ?></td><td><span class="badge <?= $p['display_status'] ?>"><?= $p['display_status'] ?></span></td><td><?= $p['reminder_date'] ?></td></tr><?php endforeach; ?>
+    </table>
+<?php elseif ($module === 'receber'): ?>
+    <h3>Contas a Receber</h3>
+    <form method="post">
+        <input name="customer" placeholder="Cliente" required>
+        <input name="due_date" type="date" required>
+        <input name="amount" type="number" step="0.01" placeholder="Valor total" required>
+        <input name="amount_received" type="number" step="0.01" placeholder="Recebido" value="0">
+        <input name="installment" placeholder="Parcela">
+        <label><input type="checkbox" name="is_credit_sale"> Fiado</label>
+        <input name="notes" placeholder="Observações">
+        <button>Salvar</button>
+    </form>
+    <table><tr><th>Cliente</th><th>Vencimento</th><th>Total</th><th>Recebido</th><th>Parcela</th><th>Fiado</th><th>Situação</th></tr>
+        <?php foreach ($receivables as $r): ?><tr><td><?= htmlspecialchars($r['customer']) ?></td><td><?= $r['due_date'] ?></td><td><?= money((float) $r['amount']) ?></td><td><?= money((float) $r['amount_received']) ?></td><td><?= htmlspecialchars((string) $r['installment']) ?></td><td><?= $r['is_credit_sale'] ? 'Sim' : 'Não' ?></td><td><span class="badge <?= $r['display_status'] ?>"><?= $r['display_status'] ?></span></td></tr><?php endforeach; ?>
+    </table>
+<?php elseif ($module === 'cartoes'): ?>
+    <h3>Controle de Cartões</h3>
+    <form method="post">
+        <input name="machine" placeholder="Máquina" required><input name="brand" placeholder="Bandeira" required>
+        <select name="card_type"><option value="debito">Débito</option><option value="credito_avista">Crédito à vista</option><option value="credito_parcelado">Crédito parcelado</option></select>
+        <input name="fee_percent" type="number" step="0.01" placeholder="Taxa %" required>
+        <input name="gross_value" type="number" step="0.01" placeholder="Valor bruto" required>
+        <input name="sale_date" type="date" required><input name="expected_release_date" type="date" required>
+        <label><input type="checkbox" name="received"> Baixa quando receber</label>
+        <button>Salvar</button>
+    </form>
+    <table><tr><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Taxa</th><th>Bruto</th><th>Líquido</th><th>Venda</th><th>Liberação</th><th>Recebido</th></tr>
+        <?php foreach ($cards as $c): ?><tr><td><?= htmlspecialchars($c['machine']) ?></td><td><?= htmlspecialchars($c['brand']) ?></td><td><?= $c['card_type'] ?></td><td><?= $c['fee_percent'] ?>%</td><td><?= money((float) $c['gross_value']) ?></td><td><?= money((float) $c['net_value']) ?></td><td><?= $c['sale_date'] ?></td><td><?= $c['expected_release_date'] ?></td><td><?= $c['received'] ? 'Sim' : 'Não' ?></td></tr><?php endforeach; ?>
+    </table>
+<?php elseif ($module === 'cheques'): ?>
+    <h3>Controle de Cheques</h3>
+    <form method="post">
+        <select name="check_type"><option value="avista">À vista</option><option value="parcelado">Parcelado</option></select>
+        <input name="customer" placeholder="Cliente" required><input name="bank" placeholder="Banco" required><input name="check_number" placeholder="Número" required>
+        <input name="due_date" type="date" required><input name="amount" type="number" step="0.01" placeholder="Valor" required>
+        <label><input type="checkbox" name="cleared"> Baixa</label><label><input type="checkbox" name="compensated"> Compensado</label><label><input type="checkbox" name="returned"> Devolvido</label>
+        <button>Salvar</button>
+    </form>
+    <table><tr><th>Tipo</th><th>Cliente</th><th>Banco</th><th>Número</th><th>Vencimento</th><th>Valor</th><th>Baixa</th><th>Compensado</th><th>Devolvido</th></tr>
+        <?php foreach ($checks as $c): ?><tr><td><?= $c['check_type'] ?></td><td><?= htmlspecialchars($c['customer']) ?></td><td><?= htmlspecialchars($c['bank']) ?></td><td><?= htmlspecialchars($c['check_number']) ?></td><td><?= $c['due_date'] ?></td><td><?= money((float) $c['amount']) ?></td><td><?= $c['cleared'] ? 'Sim' : 'Não' ?></td><td><?= $c['compensated'] ? 'Sim' : 'Não' ?></td><td><?= $c['returned'] ? 'Sim' : 'Não' ?></td></tr><?php endforeach; ?>
+    </table>
+<?php elseif ($module === 'conciliacao'): ?>
+    <h3>Conciliação Bancária</h3>
+    <form method="post">
+        <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= htmlspecialchars($b['name']) ?></option><?php endforeach; ?></select>
+        <input name="movement_date" type="date" required>
+        <input name="description" placeholder="Descrição">
+        <input name="system_amount" type="number" step="0.01" placeholder="Sistema" required>
+        <input name="bank_amount" type="number" step="0.01" placeholder="Banco" required>
+        <label><input type="checkbox" name="reconciled"> Conciliado</label>
+        <button>Salvar</button>
+    </form>
+    <table><tr><th>Conta</th><th>Data</th><th>Descrição</th><th>Sistema</th><th>Banco</th><th>Status</th></tr>
+        <?php foreach ($reconciliations as $r): ?><tr><td><?= htmlspecialchars($r['bank_name']) ?></td><td><?= $r['movement_date'] ?></td><td><?= htmlspecialchars((string) $r['description']) ?></td><td><?= money((float) $r['system_amount']) ?></td><td><?= money((float) $r['bank_amount']) ?></td><td><?= $r['reconciled'] ? 'Conciliado' : 'Não conciliado' ?></td></tr><?php endforeach; ?>
+    </table>
+<?php elseif ($module === 'dre'): ?>
+    <h3>DRE Gerencial</h3>
+    <p class="small">Visão mensal (<?= date('m/Y') ?>) - para visão anual, agregue por mês nos relatórios.</p>
+    <table>
+        <tr><th>Linha</th><th>Valor</th></tr>
+        <tr><td>Receitas</td><td><?= money($dre['receitas']) ?></td></tr>
+        <tr><td>Custos</td><td><?= money($dre['custos']) ?></td></tr>
+        <tr><td>Despesas Fixas</td><td><?= money($dre['despesas_fixas']) ?></td></tr>
+        <tr><td>Despesas Variáveis</td><td><?= money($dre['despesas_variaveis']) ?></td></tr>
+        <tr><td>Resultado Operacional</td><td><?= money($dre['resultado_operacional']) ?></td></tr>
+        <tr><td>Lucro Líquido</td><td><?= money($dre['lucro_liquido']) ?></td></tr>
+    </table>
+<?php elseif ($module === 'fechamento'): ?>
+    <h3>Fechamento de Caixa</h3>
+    <form method="post">
+        <input name="opening_date" type="date" required>
+        <input name="opening_amount" type="number" step="0.01" placeholder="Abertura do caixa" required>
+        <input name="total_entries" type="number" step="0.01" placeholder="Entradas do dia" required>
+        <input name="total_exits" type="number" step="0.01" placeholder="Saídas do dia" required>
+        <input name="counted_amount" type="number" step="0.01" placeholder="Valor conferido" required>
+        <textarea name="notes" placeholder="Observações"></textarea>
+        <button>Fechar</button>
+    </form>
+    <table><tr><th>Data</th><th>Abertura</th><th>Entradas</th><th>Saídas</th><th>Conferido</th><th>Diferença</th><th>Obs.</th></tr>
+        <?php foreach ($closings as $f): ?><tr><td><?= $f['opening_date'] ?></td><td><?= money((float) $f['opening_amount']) ?></td><td><?= money((float) $f['total_entries']) ?></td><td><?= money((float) $f['total_exits']) ?></td><td><?= money((float) $f['counted_amount']) ?></td><td><?= money((float) $f['cash_difference']) ?></td><td><?= htmlspecialchars((string) $f['notes']) ?></td></tr><?php endforeach; ?>
+    </table>
+<?php elseif ($module === 'relatorios'): ?>
+    <h3>Relatórios</h3>
+    <form method="get">
+        <input type="hidden" name="module" value="relatorios">
+        <select name="tipo_relatorio">
+            <option value="diario">Diário</option><option value="semanal">Semanal</option><option value="mensal">Mensal</option>
+            <option value="categoria">Por categoria</option><option value="conta">Por conta</option><option value="cliente">Por cliente</option>
+            <option value="vendedor">Por vendedor</option><option value="forma">Por forma de pagamento</option>
+        </select>
+        <button>Gerar</button>
+    </form>
+    <table><tr><th>Agrupamento</th><th>Entradas</th><th>Saídas/Recebido</th><th>Saldo</th></tr>
+        <?php foreach ($reportRows as $r): $saldo = (float)$r['entradas'] - (float)$r['saidas']; ?>
+        <tr><td><?= htmlspecialchars((string)$r['periodo']) ?></td><td><?= money((float)$r['entradas']) ?></td><td><?= money((float)$r['saidas']) ?></td><td><?= money($saldo) ?></td></tr>
+        <?php endforeach; ?>
+    </table>
+<?php endif; ?>
+</div>
+</body>
+</html>
