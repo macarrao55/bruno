@@ -1,0 +1,6 @@
+ID,Data de vencimento,Fornecedor,Descrição,Categoria,Valor (R$),Status,Data de pagamento,Meio de pagamento,Centro de custo,Observações
+1,2026-04-05,Empresa de Energia,Conta de luz,Matriz,450.00,Pendente,,,Administrativo,
+2,2026-04-10,Operadora Internet,Internet escritório,Tecnologia,320.00,Pendente,,,TI,
+3,2026-04-15,Fornecedor ABC,Compra de insumos,Compras,1280.50,Pendente,,,Produção,
+4,2026-04-20,Imobiliária XYZ,Aluguel mensal,Infraestrutura,5500.00,Pendente,,,Administrativo,
+5,2026-04-25,Serviços Contábeis LTDA,Honorários contábeis,Serviços,900.00,Pendente,,,Financeiro,
