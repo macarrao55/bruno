@@ -544,11 +544,27 @@ $banks = fetchAll($pdo, 'SELECT * FROM bank_accounts ORDER BY name');
 $reconciliations = fetchAll($pdo, 'SELECT br.*, ba.name bank_name FROM bank_reconciliation br JOIN bank_accounts ba ON ba.id=br.bank_account_id ORDER BY movement_date DESC');
 $closings = fetchAll($pdo, 'SELECT * FROM cash_closing ORDER BY opening_date DESC');
 
+function dreCategorySum(PDO $pdo, string $monthStart, array $labels): float
+{
+    $clauses = [];
+    $params = [':m' => $monthStart];
+    foreach ($labels as $idx => $label) {
+        $key = ':label' . $idx;
+        $clauses[] = "LOWER(TRIM(category)) = $key";
+        $params[$key] = mb_strtolower(trim($label), 'UTF-8');
+    }
+
+    $sql = "SELECT COALESCE(SUM(amount),0) FROM transactions
+        WHERE movement_type='saida' AND occurred_on>=:m AND (" . implode(' OR ', $clauses) . ')';
+
+    return sumValue($pdo, $sql, $params);
+}
+
 $dre = [
     'receitas' => $monthEntries,
-    'custos' => sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='saida' AND category='custos' AND occurred_on>=:m", [':m' => $monthStart]),
-    'despesas_fixas' => sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='saida' AND category='despesas_fixas' AND occurred_on>=:m", [':m' => $monthStart]),
-    'despesas_variaveis' => sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='saida' AND category='despesas_variaveis' AND occurred_on>=:m", [':m' => $monthStart]),
+    'custos' => dreCategorySum($pdo, $monthStart, ['custos', 'custo']),
+    'despesas_fixas' => dreCategorySum($pdo, $monthStart, ['despesas fixas', 'despesas_fixas']),
+    'despesas_variaveis' => dreCategorySum($pdo, $monthStart, ['despesas variáveis', 'despesas variaveis', 'despesas_variaveis']),
 ];
 $dre['resultado_operacional'] = $dre['receitas'] - $dre['custos'] - $dre['despesas_fixas'] - $dre['despesas_variaveis'];
 $dre['lucro_liquido'] = $dre['resultado_operacional'];
