@@ -21,14 +21,23 @@ CREATE TABLE transactions (
 
 CREATE TABLE accounts_payable (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company TEXT,
     supplier TEXT NOT NULL,
     due_date TEXT NOT NULL,
     amount REAL NOT NULL,
     installment TEXT,
     status TEXT NOT NULL CHECK (status IN ('aberto', 'pago', 'atrasado')),
     reminder_date TEXT,
+    paid_on TEXT,
+    payment_method TEXT,
+    bank_account_id INTEGER,
+    discount REAL NOT NULL DEFAULT 0,
+    addition REAL NOT NULL DEFAULT 0,
+    late_interest REAL NOT NULL DEFAULT 0,
+    paid_amount REAL,
     notes TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id)
 );
 
 CREATE TABLE accounts_receivable (

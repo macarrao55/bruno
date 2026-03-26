@@ -32,17 +32,104 @@ function handlePost(PDO $pdo, string $module): void
             break;
 
         case 'pagar':
-            $stmt = $pdo->prepare('INSERT INTO accounts_payable (supplier, due_date, amount, installment, status, reminder_date, notes)
-                VALUES (:supplier,:due_date,:amount,:installment,:status,:reminder_date,:notes)');
-            $stmt->execute([
-                ':supplier' => trim($_POST['supplier']),
-                ':due_date' => $_POST['due_date'],
-                ':amount' => (float) $_POST['amount'],
-                ':installment' => trim($_POST['installment']),
-                ':status' => $_POST['status'],
-                ':reminder_date' => $_POST['reminder_date'] ?: null,
-                ':notes' => trim($_POST['notes']),
-            ]);
+            $action = $_POST['action'] ?? 'create';
+
+            if ($action === 'create') {
+                $stmt = $pdo->prepare('INSERT INTO accounts_payable (company, supplier, due_date, amount, installment, status, reminder_date, notes)
+                    VALUES (:company,:supplier,:due_date,:amount,:installment,:status,:reminder_date,:notes)');
+                $stmt->execute([
+                    ':company' => trim($_POST['company']),
+                    ':supplier' => trim($_POST['supplier']),
+                    ':due_date' => $_POST['due_date'],
+                    ':amount' => (float) $_POST['amount'],
+                    ':installment' => trim($_POST['installment']),
+                    ':status' => $_POST['status'],
+                    ':reminder_date' => $_POST['reminder_date'] ?: null,
+                    ':notes' => trim($_POST['notes']),
+                ]);
+            }
+
+            if ($action === 'edit') {
+                $stmt = $pdo->prepare('UPDATE accounts_payable
+                    SET company=:company, supplier=:supplier, due_date=:due_date, amount=:amount, installment=:installment, status=:status, reminder_date=:reminder_date, notes=:notes
+                    WHERE id=:id');
+                $stmt->execute([
+                    ':id' => (int) $_POST['id'],
+                    ':company' => trim($_POST['company']),
+                    ':supplier' => trim($_POST['supplier']),
+                    ':due_date' => $_POST['due_date'],
+                    ':amount' => (float) $_POST['amount'],
+                    ':installment' => trim($_POST['installment']),
+                    ':status' => $_POST['status'],
+                    ':reminder_date' => $_POST['reminder_date'] ?: null,
+                    ':notes' => trim($_POST['notes']),
+                ]);
+            }
+
+            if ($action === 'settle') {
+                $id = (int) $_POST['id'];
+                $payable = $pdo->prepare('SELECT * FROM accounts_payable WHERE id=:id');
+                $payable->execute([':id' => $id]);
+                $item = $payable->fetch();
+                if (!$item) {
+                    break;
+                }
+
+                $discount = (float) $_POST['discount'];
+                $addition = (float) $_POST['addition'];
+                $lateInterest = (float) $_POST['late_interest'];
+                $paidAmount = (float) $item['amount'] - $discount + $addition + $lateInterest;
+                $bankAccountId = (int) $_POST['bank_account_id'];
+
+                $stmt = $pdo->prepare('UPDATE accounts_payable
+                    SET status=\'pago\', paid_on=:paid_on, payment_method=:payment_method, bank_account_id=:bank_account_id, discount=:discount, addition=:addition, late_interest=:late_interest, paid_amount=:paid_amount
+                    WHERE id=:id');
+                $stmt->execute([
+                    ':id' => $id,
+                    ':paid_on' => $_POST['paid_on'],
+                    ':payment_method' => trim($_POST['payment_method']),
+                    ':bank_account_id' => $bankAccountId > 0 ? $bankAccountId : null,
+                    ':discount' => $discount,
+                    ':addition' => $addition,
+                    ':late_interest' => $lateInterest,
+                    ':paid_amount' => $paidAmount,
+                ]);
+
+                $description = 'Baixa conta a pagar: ' . $item['supplier'];
+                $originAccount = 'caixa';
+                $bankName = '';
+
+                if ($bankAccountId > 0) {
+                    $bankStmt = $pdo->prepare('SELECT name FROM bank_accounts WHERE id=:id');
+                    $bankStmt->execute([':id' => $bankAccountId]);
+                    $bank = $bankStmt->fetch();
+                    $bankName = (string) ($bank['name'] ?? 'Banco');
+                    $originAccount = $bankName;
+
+                    $pdo->prepare('UPDATE bank_accounts SET current_balance = current_balance - :amount WHERE id=:id')
+                        ->execute([':amount' => $paidAmount, ':id' => $bankAccountId]);
+
+                    $pdo->prepare('INSERT INTO bank_reconciliation (bank_account_id, movement_date, description, system_amount, bank_amount, reconciled)
+                        VALUES (:bank_account_id, :movement_date, :description, :system_amount, :bank_amount, 1)')
+                        ->execute([
+                            ':bank_account_id' => $bankAccountId,
+                            ':movement_date' => $_POST['paid_on'],
+                            ':description' => $description . ' (' . $bankName . ')',
+                            ':system_amount' => -$paidAmount,
+                            ':bank_amount' => -$paidAmount,
+                        ]);
+                }
+
+                $transaction = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                    VALUES (\'saida\', :amount, \'contas_a_pagar\', :subcategory, :origin_account, \'fornecedor\', :description, :occurred_on)');
+                $transaction->execute([
+                    ':amount' => $paidAmount,
+                    ':subcategory' => (string) ($item['company'] ?: 'sem_empresa'),
+                    ':origin_account' => $originAccount,
+                    ':description' => $description,
+                    ':occurred_on' => $_POST['paid_on'],
+                ]);
+            }
             break;
 
         case 'receber':
@@ -230,6 +317,12 @@ $filterEnd = $transactionFilter === 'periodo' ? ($_GET['fim'] ?? date('Y-m-d')) 
 $transactions = fetchAll($pdo, 'SELECT * FROM transactions WHERE occurred_on BETWEEN :s AND :e ORDER BY occurred_on DESC, id DESC', [':s' => $filterStart, ':e' => $filterEnd]);
 
 $payables = fetchAll($pdo, 'SELECT *, CASE WHEN status = "aberto" AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_payable ORDER BY due_date ASC', [':today' => $today]);
+$editingPayable = null;
+if ($module === 'pagar' && isset($_GET['edit_id'])) {
+    $stmtEdit = $pdo->prepare('SELECT * FROM accounts_payable WHERE id=:id');
+    $stmtEdit->execute([':id' => (int) $_GET['edit_id']]);
+    $editingPayable = $stmtEdit->fetch() ?: null;
+}
 $receivables = fetchAll($pdo, 'SELECT *, CASE WHEN status IN ("aberto","parcial") AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_receivable ORDER BY due_date ASC', [':today' => $today]);
 $cards = fetchAll($pdo, 'SELECT * FROM card_receivables ORDER BY sale_date DESC');
 $checks = fetchAll($pdo, 'SELECT * FROM checks_control ORDER BY due_date ASC');
@@ -341,8 +434,18 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <option value="<?= htmlspecialchars($subcategory['name']) ?>"><?= htmlspecialchars($subcategory['parent_name'] . ' > ' . $subcategory['name']) ?></option>
             <?php endforeach; ?>
         </select>
-        <input name="origin_account" placeholder="Conta origem">
-        <input name="destination_account" placeholder="Conta destino">
+        <select name="origin_account">
+            <option value="caixa">Caixa</option>
+            <?php foreach ($banks as $bank): ?>
+                <option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <select name="destination_account">
+            <option value="caixa">Caixa</option>
+            <?php foreach ($banks as $bank): ?>
+                <option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
         <input name="occurred_on" type="date" value="<?= $today ?>" required>
         <input name="description" placeholder="Histórico">
         <button>Lançar</button>
@@ -366,18 +469,77 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 <?php elseif ($module === 'pagar'): ?>
     <h3>Contas a Pagar</h3>
     <form method="post">
-        <input name="supplier" placeholder="Fornecedor" required>
-        <input name="due_date" type="date" required>
-        <input name="amount" type="number" step="0.01" placeholder="Valor" required>
-        <input name="installment" placeholder="Parcela">
-        <select name="status"><option>aberto</option><option>pago</option><option>atrasado</option></select>
-        <input name="reminder_date" type="date" placeholder="Aviso">
-        <input name="notes" placeholder="Observações">
-        <button>Salvar</button>
+        <input type="hidden" name="action" value="<?= $editingPayable ? 'edit' : 'create' ?>">
+        <?php if ($editingPayable): ?>
+            <input type="hidden" name="id" value="<?= $editingPayable['id'] ?>">
+        <?php endif; ?>
+        <input name="company" placeholder="Empresa" value="<?= htmlspecialchars((string) ($editingPayable['company'] ?? '')) ?>">
+        <input name="supplier" placeholder="Fornecedor" value="<?= htmlspecialchars((string) ($editingPayable['supplier'] ?? '')) ?>" required>
+        <input name="due_date" type="date" value="<?= htmlspecialchars((string) ($editingPayable['due_date'] ?? '')) ?>" required>
+        <input name="amount" type="number" step="0.01" placeholder="Valor" value="<?= htmlspecialchars((string) ($editingPayable['amount'] ?? '')) ?>" required>
+        <input name="installment" placeholder="Parcela" value="<?= htmlspecialchars((string) ($editingPayable['installment'] ?? '')) ?>">
+        <?php $currentPayableStatus = (string) ($editingPayable['status'] ?? 'aberto'); ?>
+        <select name="status">
+            <option value="aberto" <?= $currentPayableStatus === 'aberto' ? 'selected' : '' ?>>aberto</option>
+            <option value="pago" <?= $currentPayableStatus === 'pago' ? 'selected' : '' ?>>pago</option>
+            <option value="atrasado" <?= $currentPayableStatus === 'atrasado' ? 'selected' : '' ?>>atrasado</option>
+        </select>
+        <input name="reminder_date" type="date" value="<?= htmlspecialchars((string) ($editingPayable['reminder_date'] ?? '')) ?>" placeholder="Aviso">
+        <input name="notes" placeholder="Observações" value="<?= htmlspecialchars((string) ($editingPayable['notes'] ?? '')) ?>">
+        <button><?= $editingPayable ? 'Atualizar lançamento' : 'Salvar' ?></button>
+        <?php if ($editingPayable): ?>
+            <a href="?module=pagar">Cancelar edição</a>
+        <?php endif; ?>
     </form>
-    <table><tr><th>Fornecedor</th><th>Vencimento</th><th>Valor</th><th>Parcela</th><th>Situação</th><th>Aviso</th></tr>
-        <?php foreach ($payables as $p): ?><tr><td><?= htmlspecialchars($p['supplier']) ?></td><td><?= $p['due_date'] ?></td><td><?= money((float) $p['amount']) ?></td><td><?= htmlspecialchars((string) $p['installment']) ?></td><td><span class="badge <?= $p['display_status'] ?>"><?= $p['display_status'] ?></span></td><td><?= $p['reminder_date'] ?></td></tr><?php endforeach; ?>
+    <table><tr><th>Empresa</th><th>Fornecedor</th><th>Vencimento</th><th>Valor</th><th>Parcela</th><th>Situação</th><th>Aviso</th><th>Ações</th></tr>
+        <?php foreach ($payables as $p): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $p['company']) ?></td>
+                <td><?= htmlspecialchars($p['supplier']) ?></td>
+                <td><?= $p['due_date'] ?></td>
+                <td><?= money((float) $p['amount']) ?></td>
+                <td><?= htmlspecialchars((string) $p['installment']) ?></td>
+                <td><span class="badge <?= $p['display_status'] ?>"><?= $p['display_status'] ?></span></td>
+                <td><?= $p['reminder_date'] ?></td>
+                <td>
+                    <a href="?module=pagar&edit_id=<?= $p['id'] ?>">Editar</a>
+                    <?php if ($p['status'] !== 'pago'): ?>
+                        <button type="button" onclick="openSettleModal(<?= $p['id'] ?>, <?= (float) $p['amount'] ?>)">Dar baixa</button>
+                    <?php endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
     </table>
+
+    <dialog id="settleModal">
+        <form method="post">
+            <input type="hidden" name="action" value="settle">
+            <input type="hidden" name="id" id="settle_id">
+            <label>Dia do pagamento: <input type="date" name="paid_on" value="<?= $today ?>" required></label><br>
+            <label>Forma de pagamento: <input name="payment_method" placeholder="Pix, boleto, TED..." required></label><br>
+            <label>Banco:
+                <select name="bank_account_id">
+                    <option value="0">Caixa</option>
+                    <?php foreach ($banks as $bank): ?>
+                        <option value="<?= $bank['id'] ?>"><?= htmlspecialchars($bank['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label><br>
+            <label>Desconto: <input type="number" step="0.01" name="discount" value="0"></label><br>
+            <label>Acrescimento: <input type="number" step="0.01" name="addition" value="0"></label><br>
+            <label>Juros de atraso: <input type="number" step="0.01" name="late_interest" value="0"></label><br>
+            <p class="small">Valor original: <span id="settle_amount">R$ 0,00</span></p>
+            <button>Confirmar baixa</button>
+            <button type="button" onclick="document.getElementById('settleModal').close()">Fechar</button>
+        </form>
+    </dialog>
+    <script>
+        function openSettleModal(id, amount) {
+            document.getElementById('settle_id').value = id;
+            document.getElementById('settle_amount').textContent = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
+            document.getElementById('settleModal').showModal();
+        }
+    </script>
 <?php elseif ($module === 'receber'): ?>
     <h3>Contas a Receber</h3>
     <form method="post">

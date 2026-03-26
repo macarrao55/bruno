@@ -59,6 +59,22 @@ function runMigrations(PDO $pdo): void
         $pdo->exec('UPDATE bank_accounts SET initial_balance = current_balance WHERE initial_balance = 0');
     }
 
+    $payableColumns = $pdo->query("PRAGMA table_info(accounts_payable)")->fetchAll();
+    $payableColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $payableColumns);
+    $addPayableColumn = static function (PDO $conn, string $name, string $type) use ($payableColumnNames): void {
+        if (!in_array($name, $payableColumnNames, true)) {
+            $conn->exec("ALTER TABLE accounts_payable ADD COLUMN $name $type");
+        }
+    };
+    $addPayableColumn($pdo, 'company', 'TEXT');
+    $addPayableColumn($pdo, 'paid_on', 'TEXT');
+    $addPayableColumn($pdo, 'payment_method', 'TEXT');
+    $addPayableColumn($pdo, 'bank_account_id', 'INTEGER');
+    $addPayableColumn($pdo, 'discount', 'REAL NOT NULL DEFAULT 0');
+    $addPayableColumn($pdo, 'addition', 'REAL NOT NULL DEFAULT 0');
+    $addPayableColumn($pdo, 'late_interest', 'REAL NOT NULL DEFAULT 0');
+    $addPayableColumn($pdo, 'paid_amount', 'REAL');
+
     $categoryTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='cashflow_categories'")->fetch();
     if (!$categoryTable) {
         $pdo->exec('CREATE TABLE cashflow_categories (
