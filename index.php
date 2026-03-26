@@ -35,11 +35,21 @@ function handlePost(PDO $pdo, string $module): void
             $action = $_POST['action'] ?? 'create';
 
             if ($action === 'create') {
-                $stmt = $pdo->prepare('INSERT INTO accounts_payable (company, supplier, due_date, amount, installment, status, reminder_date, notes)
-                    VALUES (:company,:supplier,:due_date,:amount,:installment,:status,:reminder_date,:notes)');
+                $supplierId = (int) ($_POST['supplier_id'] ?? 0);
+                $supplierName = trim((string) ($_POST['supplier_name'] ?? $_POST['supplier']));
+                if ($supplierId > 0) {
+                    $supplierStmt = $pdo->prepare('SELECT name FROM suppliers WHERE id=:id');
+                    $supplierStmt->execute([':id' => $supplierId]);
+                    $supplier = $supplierStmt->fetch();
+                    $supplierName = (string) ($supplier['name'] ?? $supplierName);
+                }
+                $stmt = $pdo->prepare('INSERT INTO accounts_payable (company, supplier_id, supplier, boleto_number, due_date, amount, installment, status, reminder_date, notes)
+                    VALUES (:company,:supplier_id,:supplier,:boleto_number,:due_date,:amount,:installment,:status,:reminder_date,:notes)');
                 $stmt->execute([
                     ':company' => trim($_POST['company']),
-                    ':supplier' => trim($_POST['supplier']),
+                    ':supplier_id' => $supplierId > 0 ? $supplierId : null,
+                    ':supplier' => $supplierName,
+                    ':boleto_number' => trim((string) $_POST['boleto_number']),
                     ':due_date' => $_POST['due_date'],
                     ':amount' => (float) $_POST['amount'],
                     ':installment' => trim($_POST['installment']),
@@ -50,13 +60,23 @@ function handlePost(PDO $pdo, string $module): void
             }
 
             if ($action === 'edit') {
+                $supplierId = (int) ($_POST['supplier_id'] ?? 0);
+                $supplierName = trim((string) ($_POST['supplier_name'] ?? $_POST['supplier']));
+                if ($supplierId > 0) {
+                    $supplierStmt = $pdo->prepare('SELECT name FROM suppliers WHERE id=:id');
+                    $supplierStmt->execute([':id' => $supplierId]);
+                    $supplier = $supplierStmt->fetch();
+                    $supplierName = (string) ($supplier['name'] ?? $supplierName);
+                }
                 $stmt = $pdo->prepare('UPDATE accounts_payable
-                    SET company=:company, supplier=:supplier, due_date=:due_date, amount=:amount, installment=:installment, status=:status, reminder_date=:reminder_date, notes=:notes
+                    SET company=:company, supplier_id=:supplier_id, supplier=:supplier, boleto_number=:boleto_number, due_date=:due_date, amount=:amount, installment=:installment, status=:status, reminder_date=:reminder_date, notes=:notes
                     WHERE id=:id');
                 $stmt->execute([
                     ':id' => (int) $_POST['id'],
                     ':company' => trim($_POST['company']),
-                    ':supplier' => trim($_POST['supplier']),
+                    ':supplier_id' => $supplierId > 0 ? $supplierId : null,
+                    ':supplier' => $supplierName,
+                    ':boleto_number' => trim((string) $_POST['boleto_number']),
                     ':due_date' => $_POST['due_date'],
                     ':amount' => (float) $_POST['amount'],
                     ':installment' => trim($_POST['installment']),
@@ -121,13 +141,29 @@ function handlePost(PDO $pdo, string $module): void
                 }
 
                 $transaction = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                    VALUES (\'saida\', :amount, \'contas_a_pagar\', :subcategory, :origin_account, \'fornecedor\', :description, :occurred_on)');
+                    VALUES (\'saida\', :amount, :category, :subcategory, :origin_account, \'fornecedor\', :description, :occurred_on)');
                 $transaction->execute([
                     ':amount' => $paidAmount,
-                    ':subcategory' => (string) ($item['company'] ?: 'sem_empresa'),
+                    ':category' => trim((string) ($_POST['settle_category'] ?: 'contas_a_pagar')),
+                    ':subcategory' => trim((string) ($_POST['settle_subcategory'] ?: (string) ($item['company'] ?: 'sem_empresa'))),
                     ':origin_account' => $originAccount,
                     ':description' => $description,
                     ':occurred_on' => $_POST['paid_on'],
+                ]);
+            }
+
+            if ($action === 'supplier_add') {
+                $stmt = $pdo->prepare('INSERT INTO suppliers (name, cnpj, email, contact_number, salesperson, cep, state, city)
+                    VALUES (:name, :cnpj, :email, :contact_number, :salesperson, :cep, :state, :city)');
+                $stmt->execute([
+                    ':name' => trim($_POST['name']),
+                    ':cnpj' => trim((string) $_POST['cnpj']),
+                    ':email' => trim((string) $_POST['email']),
+                    ':contact_number' => trim((string) $_POST['contact_number']),
+                    ':salesperson' => trim((string) $_POST['salesperson']),
+                    ':cep' => trim((string) $_POST['cep']),
+                    ':state' => trim((string) $_POST['state']),
+                    ':city' => trim((string) $_POST['city']),
                 ]);
             }
             break;
@@ -260,6 +296,24 @@ function handlePost(PDO $pdo, string $module): void
                     ':name' => trim($_POST['name']),
                 ]);
             }
+
+            if ($action === 'payment_method_add') {
+                $stmt = $pdo->prepare('INSERT INTO payment_methods (name) VALUES (:name)');
+                $stmt->execute([':name' => trim($_POST['name'])]);
+            }
+
+            if ($action === 'payment_method_update') {
+                $stmt = $pdo->prepare('UPDATE payment_methods SET name=:name WHERE id=:id');
+                $stmt->execute([
+                    ':id' => (int) $_POST['id'],
+                    ':name' => trim($_POST['name']),
+                ]);
+            }
+
+            if ($action === 'payment_method_delete') {
+                $stmt = $pdo->prepare('DELETE FROM payment_methods WHERE id=:id');
+                $stmt->execute([':id' => (int) $_POST['id']]);
+            }
             break;
     }
 }
@@ -317,6 +371,8 @@ $filterEnd = $transactionFilter === 'periodo' ? ($_GET['fim'] ?? date('Y-m-d')) 
 $transactions = fetchAll($pdo, 'SELECT * FROM transactions WHERE occurred_on BETWEEN :s AND :e ORDER BY occurred_on DESC, id DESC', [':s' => $filterStart, ':e' => $filterEnd]);
 
 $payables = fetchAll($pdo, 'SELECT *, CASE WHEN status = "aberto" AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_payable ORDER BY due_date ASC', [':today' => $today]);
+$suppliers = fetchAll($pdo, 'SELECT * FROM suppliers ORDER BY name');
+$paymentMethods = fetchAll($pdo, 'SELECT * FROM payment_methods ORDER BY name');
 $editingPayable = null;
 if ($module === 'pagar' && isset($_GET['edit_id'])) {
     $stmtEdit = $pdo->prepare('SELECT * FROM accounts_payable WHERE id=:id');
@@ -474,7 +530,14 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <input type="hidden" name="id" value="<?= $editingPayable['id'] ?>">
         <?php endif; ?>
         <input name="company" placeholder="Empresa" value="<?= htmlspecialchars((string) ($editingPayable['company'] ?? '')) ?>">
-        <input name="supplier" placeholder="Fornecedor" value="<?= htmlspecialchars((string) ($editingPayable['supplier'] ?? '')) ?>" required>
+        <select name="supplier_id">
+            <option value="0">Fornecedor avulso</option>
+            <?php foreach ($suppliers as $supplier): ?>
+                <option value="<?= $supplier['id'] ?>" <?= (int) ($editingPayable['supplier_id'] ?? 0) === (int) $supplier['id'] ? 'selected' : '' ?>><?= htmlspecialchars($supplier['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <input name="supplier_name" placeholder="Nome fornecedor (avulso)" value="<?= htmlspecialchars((string) ($editingPayable['supplier'] ?? '')) ?>">
+        <input name="boleto_number" placeholder="Número do boleto" value="<?= htmlspecialchars((string) ($editingPayable['boleto_number'] ?? '')) ?>">
         <input name="due_date" type="date" value="<?= htmlspecialchars((string) ($editingPayable['due_date'] ?? '')) ?>" required>
         <input name="amount" type="number" step="0.01" placeholder="Valor" value="<?= htmlspecialchars((string) ($editingPayable['amount'] ?? '')) ?>" required>
         <input name="installment" placeholder="Parcela" value="<?= htmlspecialchars((string) ($editingPayable['installment'] ?? '')) ?>">
@@ -487,15 +550,17 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <input name="reminder_date" type="date" value="<?= htmlspecialchars((string) ($editingPayable['reminder_date'] ?? '')) ?>" placeholder="Aviso">
         <input name="notes" placeholder="Observações" value="<?= htmlspecialchars((string) ($editingPayable['notes'] ?? '')) ?>">
         <button><?= $editingPayable ? 'Atualizar lançamento' : 'Salvar' ?></button>
+        <button type="button" onclick="document.getElementById('supplierModal').showModal()">Cadastro de fornecedores</button>
         <?php if ($editingPayable): ?>
             <a href="?module=pagar">Cancelar edição</a>
         <?php endif; ?>
     </form>
-    <table><tr><th>Empresa</th><th>Fornecedor</th><th>Vencimento</th><th>Valor</th><th>Parcela</th><th>Situação</th><th>Aviso</th><th>Ações</th></tr>
+    <table><tr><th>Empresa</th><th>Fornecedor</th><th>Boleto</th><th>Vencimento</th><th>Valor</th><th>Parcela</th><th>Situação</th><th>Aviso</th><th>Ações</th></tr>
         <?php foreach ($payables as $p): ?>
             <tr>
                 <td><?= htmlspecialchars((string) $p['company']) ?></td>
                 <td><?= htmlspecialchars($p['supplier']) ?></td>
+                <td><?= htmlspecialchars((string) $p['boleto_number']) ?></td>
                 <td><?= $p['due_date'] ?></td>
                 <td><?= money((float) $p['amount']) ?></td>
                 <td><?= htmlspecialchars((string) $p['installment']) ?></td>
@@ -516,7 +581,13 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <input type="hidden" name="action" value="settle">
             <input type="hidden" name="id" id="settle_id">
             <label>Dia do pagamento: <input type="date" name="paid_on" value="<?= $today ?>" required></label><br>
-            <label>Forma de pagamento: <input name="payment_method" placeholder="Pix, boleto, TED..." required></label><br>
+            <label>Forma de pagamento:
+                <select name="payment_method" required>
+                    <?php foreach ($paymentMethods as $method): ?>
+                        <option value="<?= htmlspecialchars($method['name']) ?>"><?= htmlspecialchars($method['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label><br>
             <label>Banco:
                 <select name="bank_account_id">
                     <option value="0">Caixa</option>
@@ -528,9 +599,39 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <label>Desconto: <input type="number" step="0.01" name="discount" value="0"></label><br>
             <label>Acrescimento: <input type="number" step="0.01" name="addition" value="0"></label><br>
             <label>Juros de atraso: <input type="number" step="0.01" name="late_interest" value="0"></label><br>
+            <label>Categoria:
+                <select name="settle_category">
+                    <?php foreach ($categories as $category): ?>
+                        <option value="<?= htmlspecialchars($category['name']) ?>"><?= htmlspecialchars($category['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label><br>
+            <label>Subcategoria:
+                <select name="settle_subcategory">
+                    <option value="">Selecionar</option>
+                    <?php foreach ($subcategories as $subcategory): ?>
+                        <option value="<?= htmlspecialchars($subcategory['name']) ?>"><?= htmlspecialchars($subcategory['parent_name'] . ' > ' . $subcategory['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label><br>
             <p class="small">Valor original: <span id="settle_amount">R$ 0,00</span></p>
             <button>Confirmar baixa</button>
             <button type="button" onclick="document.getElementById('settleModal').close()">Fechar</button>
+        </form>
+    </dialog>
+    <dialog id="supplierModal">
+        <form method="post">
+            <input type="hidden" name="action" value="supplier_add">
+            <input name="name" placeholder="Nome do fornecedor" required><br>
+            <input name="cnpj" placeholder="CNPJ"><br>
+            <input name="email" placeholder="Email"><br>
+            <input name="contact_number" placeholder="Número de contato"><br>
+            <input name="salesperson" placeholder="Vendedor"><br>
+            <input name="cep" placeholder="CEP"><br>
+            <input name="state" placeholder="Estado"><br>
+            <input name="city" placeholder="Cidade"><br>
+            <button>Salvar fornecedor</button>
+            <button type="button" onclick="document.getElementById('supplierModal').close()">Fechar</button>
         </form>
     </dialog>
     <script>
@@ -703,6 +804,36 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <tr>
                 <td><?= htmlspecialchars($subcategory['parent_name']) ?></td>
                 <td><?= htmlspecialchars($subcategory['name']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Formas de pagamento</h4>
+    <form method="post">
+        <input type="hidden" name="action" value="payment_method_add">
+        <input name="name" placeholder="Nova forma de pagamento" required>
+        <button>Adicionar forma</button>
+    </form>
+    <table>
+        <tr><th>Forma</th><th>Editar</th><th>Excluir</th></tr>
+        <?php foreach ($paymentMethods as $method): ?>
+            <tr>
+                <td><?= htmlspecialchars($method['name']) ?></td>
+                <td>
+                    <form method="post" style="display:inline;">
+                        <input type="hidden" name="action" value="payment_method_update">
+                        <input type="hidden" name="id" value="<?= $method['id'] ?>">
+                        <input name="name" value="<?= htmlspecialchars($method['name']) ?>" required>
+                        <button>Salvar</button>
+                    </form>
+                </td>
+                <td>
+                    <form method="post" onsubmit="return confirm('Excluir forma de pagamento?')" style="display:inline;">
+                        <input type="hidden" name="action" value="payment_method_delete">
+                        <input type="hidden" name="id" value="<?= $method['id'] ?>">
+                        <button>Excluir</button>
+                    </form>
+                </td>
             </tr>
         <?php endforeach; ?>
     </table>

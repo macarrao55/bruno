@@ -22,7 +22,9 @@ CREATE TABLE transactions (
 CREATE TABLE accounts_payable (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     company TEXT,
+    supplier_id INTEGER,
     supplier TEXT NOT NULL,
+    boleto_number TEXT,
     due_date TEXT NOT NULL,
     amount REAL NOT NULL,
     installment TEXT,
@@ -37,7 +39,8 @@ CREATE TABLE accounts_payable (
     paid_amount REAL,
     notes TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id)
+    FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id),
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
 );
 
 CREATE TABLE accounts_receivable (
@@ -112,6 +115,25 @@ CREATE TABLE cashflow_categories (
     FOREIGN KEY (parent_id) REFERENCES cashflow_categories(id)
 );
 
+CREATE TABLE payment_methods (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE suppliers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    cnpj TEXT,
+    email TEXT,
+    contact_number TEXT,
+    salesperson TEXT,
+    cep TEXT,
+    state TEXT,
+    city TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 INSERT INTO bank_accounts (name, initial_balance, current_balance) VALUES
 ('Banco Principal', 10000, 10000),
 ('Banco Reserva', 2500, 2500);
@@ -130,3 +152,10 @@ INSERT INTO cashflow_categories (name, parent_id)
 SELECT 'Fornecedores', id FROM cashflow_categories WHERE name='Custos';
 INSERT INTO cashflow_categories (name, parent_id)
 SELECT 'Aluguel', id FROM cashflow_categories WHERE name='Despesas Fixas';
+
+INSERT INTO payment_methods (name) VALUES
+('Pix'),
+('Boleto'),
+('Transferência'),
+('Cartão de Crédito'),
+('Dinheiro');

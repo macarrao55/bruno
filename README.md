@@ -6,6 +6,7 @@ Aplicação simples (sem framework) para controle financeiro com SQLite, cobrind
 - Fluxo de caixa (entradas/saídas) com filtros e saldo acumulado.
 - Contas a pagar/receber.
 - Contas a pagar com edição e baixa financeira conciliada.
+- Cadastro de fornecedores e formas de pagamento configuráveis.
 - Controle de cartões e cheques.
 - Conciliação bancária.
 - DRE gerencial.

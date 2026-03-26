@@ -67,9 +67,11 @@ function runMigrations(PDO $pdo): void
         }
     };
     $addPayableColumn($pdo, 'company', 'TEXT');
+    $addPayableColumn($pdo, 'supplier_id', 'INTEGER');
     $addPayableColumn($pdo, 'paid_on', 'TEXT');
     $addPayableColumn($pdo, 'payment_method', 'TEXT');
     $addPayableColumn($pdo, 'bank_account_id', 'INTEGER');
+    $addPayableColumn($pdo, 'boleto_number', 'TEXT');
     $addPayableColumn($pdo, 'discount', 'REAL NOT NULL DEFAULT 0');
     $addPayableColumn($pdo, 'addition', 'REAL NOT NULL DEFAULT 0');
     $addPayableColumn($pdo, 'late_interest', 'REAL NOT NULL DEFAULT 0');
@@ -98,5 +100,36 @@ function runMigrations(PDO $pdo): void
             SELECT 'Fornecedores', id FROM cashflow_categories WHERE name='Custos'");
         $pdo->exec("INSERT INTO cashflow_categories (name, parent_id)
             SELECT 'Aluguel', id FROM cashflow_categories WHERE name='Despesas Fixas'");
+    }
+
+    $paymentMethodTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='payment_methods'")->fetch();
+    if (!$paymentMethodTable) {
+        $pdo->exec('CREATE TABLE payment_methods (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+
+    $supplierTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='suppliers'")->fetch();
+    if (!$supplierTable) {
+        $pdo->exec('CREATE TABLE suppliers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            cnpj TEXT,
+            email TEXT,
+            contact_number TEXT,
+            salesperson TEXT,
+            cep TEXT,
+            state TEXT,
+            city TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+
+    $paymentMethodsCount = (int) ($pdo->query('SELECT COUNT(*) FROM payment_methods')->fetchColumn() ?: 0);
+    if ($paymentMethodsCount === 0) {
+        $pdo->exec("INSERT INTO payment_methods (name) VALUES
+            ('Pix'), ('Boleto'), ('Transferência'), ('Cartão de Crédito'), ('Dinheiro')");
     }
 }
