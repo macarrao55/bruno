@@ -13,6 +13,7 @@ Aplicação simples (sem framework) para controle financeiro com SQLite, cobrind
 - DRE gerencial.
 - Fechamento de caixa.
 - Relatórios.
+- Módulo de fornecedores com análise prévia financeira.
 - Configurações para bancos/saldos iniciais e categorias/subcategorias do fluxo.
 
 ## Requisitos

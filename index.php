@@ -431,6 +431,28 @@ $suppliers = fetchAll($pdo, 'SELECT * FROM suppliers ORDER BY name');
 $paymentMethods = fetchAll($pdo, 'SELECT * FROM payment_methods ORDER BY name');
 $companies = fetchAll($pdo, 'SELECT * FROM companies ORDER BY name');
 $payableTypes = fetchAll($pdo, 'SELECT * FROM payable_types ORDER BY name');
+$supplierAnalysis = fetchAll($pdo, "SELECT
+    s.id,
+    s.name,
+    s.cnpj,
+    s.city,
+    COUNT(ap.id) AS total_titles,
+    COALESCE(SUM(ap.amount), 0) AS total_amount,
+    COALESCE(SUM(CASE WHEN ap.status='pago' THEN COALESCE(ap.paid_amount, ap.amount) ELSE 0 END), 0) AS paid_amount,
+    COALESCE(SUM(CASE WHEN ap.status='aberto' AND ap.due_date < :today THEN ap.amount ELSE 0 END), 0) AS overdue_amount,
+    COALESCE(AVG(CASE WHEN ap.status='pago' AND ap.paid_on IS NOT NULL AND ap.paid_on > ap.due_date
+        THEN julianday(ap.paid_on) - julianday(ap.due_date) ELSE NULL END), 0) AS avg_delay_days
+    FROM suppliers s
+    LEFT JOIN accounts_payable ap ON ap.supplier_id = s.id
+    GROUP BY s.id, s.name, s.cnpj, s.city
+    ORDER BY overdue_amount DESC, total_amount DESC", [':today' => $today]);
+
+$supplierSummary = [
+    'total_suppliers' => (int) count($suppliers),
+    'active_suppliers' => (int) array_reduce($supplierAnalysis, fn($c, $r) => $c + ((int) $r['total_titles'] > 0 ? 1 : 0), 0),
+    'suppliers_with_overdue' => (int) array_reduce($supplierAnalysis, fn($c, $r) => $c + ((float) $r['overdue_amount'] > 0 ? 1 : 0), 0),
+    'total_overdue' => (float) array_reduce($supplierAnalysis, fn($c, $r) => $c + (float) $r['overdue_amount'], 0),
+];
 $editingPayable = null;
 if ($module === 'pagar' && isset($_GET['edit_id'])) {
     $stmtEdit = $pdo->prepare('SELECT * FROM accounts_payable WHERE id=:id');
@@ -490,6 +512,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <a href="?module=dre">DRE</a>
         <a href="?module=fechamento">Fechamento</a>
         <a href="?module=relatorios">Relatórios</a>
+        <a href="?module=fornecedores">Fornecedores</a>
         <a href="?module=configuracoes">Configurações</a>
     </nav>
 </header>
@@ -806,6 +829,42 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <table><tr><th>Agrupamento</th><th>Entradas</th><th>Saídas/Recebido</th><th>Saldo</th></tr>
         <?php foreach ($reportRows as $r): $saldo = (float)$r['entradas'] - (float)$r['saidas']; ?>
         <tr><td><?= htmlspecialchars((string)$r['periodo']) ?></td><td><?= money((float)$r['entradas']) ?></td><td><?= money((float)$r['saidas']) ?></td><td><?= money($saldo) ?></td></tr>
+        <?php endforeach; ?>
+    </table>
+<?php elseif ($module === 'fornecedores'): ?>
+    <h3>Fornecedores</h3>
+    <div class="cards">
+        <div class="card"><h4>Fornecedores cadastrados</h4><p><?= $supplierSummary['total_suppliers'] ?></p></div>
+        <div class="card"><h4>Fornecedores ativos</h4><p><?= $supplierSummary['active_suppliers'] ?></p></div>
+        <div class="card"><h4>Com títulos em atraso</h4><p><?= $supplierSummary['suppliers_with_overdue'] ?></p></div>
+        <div class="card"><h4>Total em atraso</h4><p><?= money($supplierSummary['total_overdue']) ?></p></div>
+    </div>
+    <p class="small">Análise prévia baseada em histórico financeiro de contas a pagar por fornecedor.</p>
+    <table>
+        <tr><th>Fornecedor</th><th>CNPJ</th><th>Cidade</th><th>Títulos</th><th>Volume total</th><th>Pago</th><th>Em atraso</th><th>Média atraso (dias)</th><th>Risco prévio</th></tr>
+        <?php foreach ($supplierAnalysis as $row): ?>
+            <?php
+                $avgDelay = (float) $row['avg_delay_days'];
+                $overdue = (float) $row['overdue_amount'];
+                $risk = 'Baixo';
+                if ($overdue > 0 || $avgDelay > 7) {
+                    $risk = 'Médio';
+                }
+                if ($overdue > 5000 || $avgDelay > 15) {
+                    $risk = 'Alto';
+                }
+            ?>
+            <tr>
+                <td><?= htmlspecialchars($row['name']) ?></td>
+                <td><?= htmlspecialchars((string) $row['cnpj']) ?></td>
+                <td><?= htmlspecialchars((string) $row['city']) ?></td>
+                <td><?= (int) $row['total_titles'] ?></td>
+                <td><?= money((float) $row['total_amount']) ?></td>
+                <td><?= money((float) $row['paid_amount']) ?></td>
+                <td><?= money($overdue) ?></td>
+                <td><?= number_format($avgDelay, 1, ',', '.') ?></td>
+                <td><span class="badge"><?= $risk ?></span></td>
+            </tr>
         <?php endforeach; ?>
     </table>
 <?php elseif ($module === 'configuracoes'): ?>
