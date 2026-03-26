@@ -483,6 +483,26 @@ $filterStart = match ($transactionFilter) {
 };
 $filterEnd = $transactionFilter === 'periodo' ? ($_GET['fim'] ?? date('Y-m-d')) : date('Y-m-d');
 $transactions = fetchAll($pdo, 'SELECT * FROM transactions WHERE occurred_on BETWEEN :s AND :e ORDER BY occurred_on DESC, id DESC', [':s' => $filterStart, ':e' => $filterEnd]);
+$cashflowByCategory = fetchAll($pdo, "SELECT
+    COALESCE(NULLIF(category, ''), 'Sem categoria') AS category,
+    SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) AS entradas,
+    SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) AS saidas,
+    SUM(CASE WHEN movement_type='entrada' THEN amount ELSE -amount END) AS saldo
+    FROM transactions
+    WHERE occurred_on BETWEEN :s AND :e
+    GROUP BY category
+    ORDER BY saldo DESC", [':s' => $filterStart, ':e' => $filterEnd]);
+
+$cashflowBySubcategory = fetchAll($pdo, "SELECT
+    COALESCE(NULLIF(category, ''), 'Sem categoria') AS category,
+    COALESCE(NULLIF(subcategory, ''), 'Sem subcategoria') AS subcategory,
+    SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) AS entradas,
+    SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) AS saidas,
+    SUM(CASE WHEN movement_type='entrada' THEN amount ELSE -amount END) AS saldo
+    FROM transactions
+    WHERE occurred_on BETWEEN :s AND :e
+    GROUP BY category, subcategory
+    ORDER BY category, saldo DESC", [':s' => $filterStart, ':e' => $filterEnd]);
 
 $payables = fetchAll($pdo, 'SELECT *, CASE WHEN status = "aberto" AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_payable ORDER BY due_date ASC', [':today' => $today]);
 $suppliers = fetchAll($pdo, 'SELECT * FROM suppliers ORDER BY name');
@@ -659,6 +679,33 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <tr><th>Data</th><th>Tipo</th><th>Valor</th><th>Categoria</th><th>Subcategoria</th><th>Origem</th><th>Destino</th><th>Histórico</th></tr>
         <?php foreach ($transactions as $t): ?>
             <tr><td><?= $t['occurred_on'] ?></td><td><?= $t['movement_type'] ?></td><td><?= money((float) $t['amount']) ?></td><td><?= htmlspecialchars($t['category']) ?></td><td><?= htmlspecialchars((string) $t['subcategory']) ?></td><td><?= htmlspecialchars((string) $t['origin_account']) ?></td><td><?= htmlspecialchars((string) $t['destination_account']) ?></td><td><?= htmlspecialchars((string) $t['description']) ?></td></tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Análise do fluxo por categoria</h4>
+    <table>
+        <tr><th>Categoria</th><th>Entradas</th><th>Saídas</th><th>Saldo</th></tr>
+        <?php foreach ($cashflowByCategory as $row): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $row['category']) ?></td>
+                <td><?= money((float) $row['entradas']) ?></td>
+                <td><?= money((float) $row['saidas']) ?></td>
+                <td><?= money((float) $row['saldo']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Análise do fluxo por subcategoria</h4>
+    <table>
+        <tr><th>Categoria</th><th>Subcategoria</th><th>Entradas</th><th>Saídas</th><th>Saldo</th></tr>
+        <?php foreach ($cashflowBySubcategory as $row): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $row['category']) ?></td>
+                <td><?= htmlspecialchars((string) $row['subcategory']) ?></td>
+                <td><?= money((float) $row['entradas']) ?></td>
+                <td><?= money((float) $row['saidas']) ?></td>
+                <td><?= money((float) $row['saldo']) ?></td>
+            </tr>
         <?php endforeach; ?>
     </table>
 <?php elseif ($module === 'pagar'): ?>

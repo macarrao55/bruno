@@ -4,6 +4,7 @@ Aplicação simples (sem framework) para controle financeiro com SQLite, cobrind
 
 - Dashboard com indicadores e gráfico por período.
 - Fluxo de caixa (entradas/saídas) com filtros e saldo acumulado.
+- Análise de fluxo de caixa por categoria e subcategoria.
 - Contas a pagar/receber.
 - Contas a pagar com edição e baixa financeira conciliada.
 - Cadastro de fornecedores e formas de pagamento configuráveis.
