@@ -30,14 +30,57 @@ function initializeDatabase(PDO $pdo): void
     $pdo->exec('PRAGMA foreign_keys = ON;');
 
     $exists = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'")->fetch();
-    if ($exists) {
-        return;
+    if (!$exists) {
+        $schema = file_get_contents(__DIR__ . '/schema.sql');
+        if ($schema === false) {
+            throw new RuntimeException('Não foi possível carregar schema.sql');
+        }
+
+        $pdo->exec($schema);
     }
 
-    $schema = file_get_contents(__DIR__ . '/schema.sql');
-    if ($schema === false) {
-        throw new RuntimeException('Não foi possível carregar schema.sql');
+    runMigrations($pdo);
+}
+
+function runMigrations(PDO $pdo): void
+{
+    $columns = $pdo->query("PRAGMA table_info(bank_accounts)")->fetchAll();
+    $hasInitialBalance = false;
+
+    foreach ($columns as $column) {
+        if (($column['name'] ?? '') === 'initial_balance') {
+            $hasInitialBalance = true;
+            break;
+        }
     }
 
-    $pdo->exec($schema);
+    if (!$hasInitialBalance) {
+        $pdo->exec('ALTER TABLE bank_accounts ADD COLUMN initial_balance REAL NOT NULL DEFAULT 0');
+        $pdo->exec('UPDATE bank_accounts SET initial_balance = current_balance WHERE initial_balance = 0');
+    }
+
+    $categoryTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='cashflow_categories'")->fetch();
+    if (!$categoryTable) {
+        $pdo->exec('CREATE TABLE cashflow_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            parent_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (parent_id) REFERENCES cashflow_categories(id)
+        )');
+    }
+
+    $totalCategories = (int) ($pdo->query('SELECT COUNT(*) FROM cashflow_categories')->fetchColumn() ?: 0);
+    if ($totalCategories === 0) {
+        $pdo->exec("INSERT INTO cashflow_categories (name, parent_id) VALUES
+            ('Receitas', NULL), ('Custos', NULL), ('Despesas Fixas', NULL), ('Despesas Variáveis', NULL)");
+        $pdo->exec("INSERT INTO cashflow_categories (name, parent_id)
+            SELECT 'Vendas', id FROM cashflow_categories WHERE name='Receitas'");
+        $pdo->exec("INSERT INTO cashflow_categories (name, parent_id)
+            SELECT 'Serviços', id FROM cashflow_categories WHERE name='Receitas'");
+        $pdo->exec("INSERT INTO cashflow_categories (name, parent_id)
+            SELECT 'Fornecedores', id FROM cashflow_categories WHERE name='Custos'");
+        $pdo->exec("INSERT INTO cashflow_categories (name, parent_id)
+            SELECT 'Aluguel', id FROM cashflow_categories WHERE name='Despesas Fixas'");
+    }
 }

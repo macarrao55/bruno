@@ -130,6 +130,50 @@ function handlePost(PDO $pdo, string $module): void
                 ':notes' => trim($_POST['notes']),
             ]);
             break;
+
+        case 'configuracoes':
+            $action = $_POST['action'] ?? '';
+            if ($action === 'bank_add') {
+                $initial = (float) $_POST['initial_balance'];
+                $stmt = $pdo->prepare('INSERT INTO bank_accounts (name, initial_balance, current_balance) VALUES (:name, :initial_balance, :current_balance)');
+                $stmt->execute([
+                    ':name' => trim($_POST['name']),
+                    ':initial_balance' => $initial,
+                    ':current_balance' => $initial,
+                ]);
+            }
+
+            if ($action === 'bank_update') {
+                $stmt = $pdo->prepare('UPDATE bank_accounts SET name=:name, initial_balance=:initial_balance, current_balance=:current_balance WHERE id=:id');
+                $stmt->execute([
+                    ':id' => (int) $_POST['id'],
+                    ':name' => trim($_POST['name']),
+                    ':initial_balance' => (float) $_POST['initial_balance'],
+                    ':current_balance' => (float) $_POST['current_balance'],
+                ]);
+            }
+
+            if ($action === 'category_add') {
+                $stmt = $pdo->prepare('INSERT INTO cashflow_categories (name, parent_id) VALUES (:name, NULL)');
+                $stmt->execute([':name' => trim($_POST['name'])]);
+            }
+
+            if ($action === 'subcategory_add') {
+                $stmt = $pdo->prepare('INSERT INTO cashflow_categories (name, parent_id) VALUES (:name, :parent_id)');
+                $stmt->execute([
+                    ':name' => trim($_POST['name']),
+                    ':parent_id' => (int) $_POST['parent_id'],
+                ]);
+            }
+
+            if ($action === 'category_update') {
+                $stmt = $pdo->prepare('UPDATE cashflow_categories SET name=:name WHERE id=:id');
+                $stmt->execute([
+                    ':id' => (int) $_POST['id'],
+                    ':name' => trim($_POST['name']),
+                ]);
+            }
+            break;
     }
 }
 
@@ -214,6 +258,8 @@ $reportSql = match ($reportType) {
     default => "SELECT strftime('%Y-%m', occurred_on) periodo, SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas, SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas FROM transactions GROUP BY periodo ORDER BY periodo DESC LIMIT 12"
 };
 $reportRows = fetchAll($pdo, $reportSql);
+$categories = fetchAll($pdo, 'SELECT id, name FROM cashflow_categories WHERE parent_id IS NULL ORDER BY name');
+$subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS parent_name FROM cashflow_categories c LEFT JOIN cashflow_categories p ON p.id=c.parent_id WHERE c.parent_id IS NOT NULL ORDER BY p.name, c.name');
 
 ?><!doctype html>
 <html lang="pt-br">
@@ -237,6 +283,7 @@ $reportRows = fetchAll($pdo, $reportSql);
         <a href="?module=dre">DRE</a>
         <a href="?module=fechamento">Fechamento</a>
         <a href="?module=relatorios">Relatórios</a>
+        <a href="?module=configuracoes">Configurações</a>
     </nav>
 </header>
 <div class="container">
@@ -282,8 +329,18 @@ $reportRows = fetchAll($pdo, $reportSql);
     <form method="post">
         <select name="movement_type"><option value="entrada">Entrada</option><option value="saida">Saída</option></select>
         <input name="amount" type="number" step="0.01" placeholder="Valor" required>
-        <input name="category" placeholder="Categoria" required>
-        <input name="subcategory" placeholder="Subcategoria">
+        <select name="category" required>
+            <option value="">Categoria</option>
+            <?php foreach ($categories as $category): ?>
+                <option value="<?= htmlspecialchars($category['name']) ?>"><?= htmlspecialchars($category['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <select name="subcategory">
+            <option value="">Subcategoria</option>
+            <?php foreach ($subcategories as $subcategory): ?>
+                <option value="<?= htmlspecialchars($subcategory['name']) ?>"><?= htmlspecialchars($subcategory['parent_name'] . ' > ' . $subcategory['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
         <input name="origin_account" placeholder="Conta origem">
         <input name="destination_account" placeholder="Conta destino">
         <input name="occurred_on" type="date" value="<?= $today ?>" required>
@@ -416,6 +473,75 @@ $reportRows = fetchAll($pdo, $reportSql);
     <table><tr><th>Agrupamento</th><th>Entradas</th><th>Saídas/Recebido</th><th>Saldo</th></tr>
         <?php foreach ($reportRows as $r): $saldo = (float)$r['entradas'] - (float)$r['saidas']; ?>
         <tr><td><?= htmlspecialchars((string)$r['periodo']) ?></td><td><?= money((float)$r['entradas']) ?></td><td><?= money((float)$r['saidas']) ?></td><td><?= money($saldo) ?></td></tr>
+        <?php endforeach; ?>
+    </table>
+<?php elseif ($module === 'configuracoes'): ?>
+    <h3>Configurações</h3>
+
+    <h4>Bancos e saldos iniciais</h4>
+    <form method="post">
+        <input type="hidden" name="action" value="bank_add">
+        <input name="name" placeholder="Nome do banco" required>
+        <input name="initial_balance" type="number" step="0.01" placeholder="Saldo inicial" required>
+        <button>Adicionar banco</button>
+    </form>
+    <table>
+        <tr><th>Banco</th><th>Saldo Inicial</th><th>Saldo Atual</th><th>Salvar</th></tr>
+        <?php foreach ($banks as $b): ?>
+            <tr>
+                <td>
+                    <form method="post">
+                        <input type="hidden" name="action" value="bank_update">
+                        <input type="hidden" name="id" value="<?= $b['id'] ?>">
+                        <input name="name" value="<?= htmlspecialchars($b['name']) ?>" required>
+                </td>
+                <td><input name="initial_balance" type="number" step="0.01" value="<?= $b['initial_balance'] ?>"></td>
+                <td><input name="current_balance" type="number" step="0.01" value="<?= $b['current_balance'] ?>"></td>
+                <td><button>Atualizar</button></form></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Categorias do fluxo de caixa</h4>
+    <form method="post">
+        <input type="hidden" name="action" value="category_add">
+        <input name="name" placeholder="Nova categoria" required>
+        <button>Adicionar categoria</button>
+    </form>
+    <table>
+        <tr><th>Categoria</th><th>Salvar</th></tr>
+        <?php foreach ($categories as $category): ?>
+            <tr>
+                <td>
+                    <form method="post">
+                        <input type="hidden" name="action" value="category_update">
+                        <input type="hidden" name="id" value="<?= $category['id'] ?>">
+                        <input name="name" value="<?= htmlspecialchars($category['name']) ?>" required>
+                </td>
+                <td><button>Atualizar</button></form></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Subcategorias do fluxo de caixa</h4>
+    <form method="post">
+        <input type="hidden" name="action" value="subcategory_add">
+        <input name="name" placeholder="Nova subcategoria" required>
+        <select name="parent_id" required>
+            <option value="">Categoria pai</option>
+            <?php foreach ($categories as $category): ?>
+                <option value="<?= $category['id'] ?>"><?= htmlspecialchars($category['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <button>Adicionar subcategoria</button>
+    </form>
+    <table>
+        <tr><th>Categoria</th><th>Subcategoria</th></tr>
+        <?php foreach ($subcategories as $subcategory): ?>
+            <tr>
+                <td><?= htmlspecialchars($subcategory['parent_name']) ?></td>
+                <td><?= htmlspecialchars($subcategory['name']) ?></td>
+            </tr>
         <?php endforeach; ?>
     </table>
 <?php endif; ?>

@@ -1,6 +1,7 @@
 CREATE TABLE bank_accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
+    initial_balance REAL NOT NULL DEFAULT 0,
     current_balance REAL NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -94,6 +95,29 @@ CREATE TABLE cash_closing (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO bank_accounts (name, current_balance) VALUES
-('Banco Principal', 10000),
-('Banco Reserva', 2500);
+CREATE TABLE cashflow_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    parent_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (parent_id) REFERENCES cashflow_categories(id)
+);
+
+INSERT INTO bank_accounts (name, initial_balance, current_balance) VALUES
+('Banco Principal', 10000, 10000),
+('Banco Reserva', 2500, 2500);
+
+INSERT INTO cashflow_categories (name, parent_id) VALUES
+('Receitas', NULL),
+('Custos', NULL),
+('Despesas Fixas', NULL),
+('Despesas Variáveis', NULL);
+
+INSERT INTO cashflow_categories (name, parent_id)
+SELECT 'Vendas', id FROM cashflow_categories WHERE name='Receitas';
+INSERT INTO cashflow_categories (name, parent_id)
+SELECT 'Serviços', id FROM cashflow_categories WHERE name='Receitas';
+INSERT INTO cashflow_categories (name, parent_id)
+SELECT 'Fornecedores', id FROM cashflow_categories WHERE name='Custos';
+INSERT INTO cashflow_categories (name, parent_id)
+SELECT 'Aluguel', id FROM cashflow_categories WHERE name='Despesas Fixas';
