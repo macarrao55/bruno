@@ -106,6 +106,64 @@ function handlePost(PDO $pdo, string $module): void
                 ]);
             }
 
+            if ($action === 'edit_full') {
+                $supplierId = (int) ($_POST['supplier_id'] ?? 0);
+                $supplierName = trim((string) ($_POST['supplier_name'] ?? $_POST['supplier']));
+                $companyId = (int) ($_POST['company_id'] ?? 0);
+                $companyName = '';
+
+                if ($supplierId > 0) {
+                    $supplierStmt = $pdo->prepare('SELECT name FROM suppliers WHERE id=:id');
+                    $supplierStmt->execute([':id' => $supplierId]);
+                    $supplier = $supplierStmt->fetch();
+                    $supplierName = (string) ($supplier['name'] ?? $supplierName);
+                }
+
+                if ($companyId > 0) {
+                    $companyStmt = $pdo->prepare('SELECT name FROM companies WHERE id=:id');
+                    $companyStmt->execute([':id' => $companyId]);
+                    $company = $companyStmt->fetch();
+                    $companyName = (string) ($company['name'] ?? '');
+                }
+
+                $discount = (float) ($_POST['discount'] ?? 0);
+                $addition = (float) ($_POST['addition'] ?? 0);
+                $lateInterest = (float) ($_POST['late_interest'] ?? 0);
+                $amount = (float) $_POST['amount'];
+                $paidAmount = (float) ($_POST['paid_amount'] ?? 0);
+                if ($paidAmount <= 0 && ($_POST['status'] ?? '') === 'pago') {
+                    $paidAmount = $amount - $discount + $addition + $lateInterest;
+                }
+
+                $stmt = $pdo->prepare('UPDATE accounts_payable
+                    SET company_id=:company_id, company=:company, supplier_id=:supplier_id, supplier=:supplier, payable_type=:payable_type, boleto_number=:boleto_number,
+                        due_date=:due_date, amount=:amount, installment=:installment, status=:status, reminder_date=:reminder_date, notes=:notes,
+                        paid_on=:paid_on, payment_method=:payment_method, bank_account_id=:bank_account_id, discount=:discount, addition=:addition, late_interest=:late_interest, paid_amount=:paid_amount
+                    WHERE id=:id');
+                $stmt->execute([
+                    ':id' => (int) $_POST['id'],
+                    ':company_id' => $companyId > 0 ? $companyId : null,
+                    ':company' => $companyName,
+                    ':supplier_id' => $supplierId > 0 ? $supplierId : null,
+                    ':supplier' => $supplierName,
+                    ':payable_type' => trim((string) $_POST['payable_type']),
+                    ':boleto_number' => trim((string) $_POST['boleto_number']),
+                    ':due_date' => $_POST['due_date'],
+                    ':amount' => $amount,
+                    ':installment' => trim($_POST['installment']),
+                    ':status' => $_POST['status'],
+                    ':reminder_date' => $_POST['reminder_date'] ?: null,
+                    ':notes' => trim($_POST['notes']),
+                    ':paid_on' => $_POST['paid_on'] ?: null,
+                    ':payment_method' => trim((string) $_POST['payment_method']) ?: null,
+                    ':bank_account_id' => ((int) ($_POST['bank_account_id'] ?? 0)) > 0 ? (int) $_POST['bank_account_id'] : null,
+                    ':discount' => $discount,
+                    ':addition' => $addition,
+                    ':late_interest' => $lateInterest,
+                    ':paid_amount' => $paidAmount > 0 ? $paidAmount : null,
+                ]);
+            }
+
             if ($action === 'settle') {
                 $id = (int) $_POST['id'];
                 $payable = $pdo->prepare('SELECT * FROM accounts_payable WHERE id=:id');
@@ -660,7 +718,31 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <td><span class="badge <?= $p['display_status'] ?>"><?= $p['display_status'] ?></span></td>
                 <td><?= $p['reminder_date'] ?></td>
                 <td>
-                    <a href="?module=pagar&edit_id=<?= $p['id'] ?>">Editar</a>
+                    <button
+                        type="button"
+                        onclick='openEditPayableModal(<?= json_encode([
+                            'id' => $p['id'],
+                            'company_id' => $p['company_id'],
+                            'supplier_id' => $p['supplier_id'],
+                            'supplier' => $p['supplier'],
+                            'payable_type' => $p['payable_type'],
+                            'boleto_number' => $p['boleto_number'],
+                            'due_date' => $p['due_date'],
+                            'amount' => $p['amount'],
+                            'installment' => $p['installment'],
+                            'status' => $p['status'],
+                            'reminder_date' => $p['reminder_date'],
+                            'notes' => $p['notes'],
+                            'paid_on' => $p['paid_on'],
+                            'payment_method' => $p['payment_method'],
+                            'bank_account_id' => $p['bank_account_id'],
+                            'discount' => $p['discount'],
+                            'addition' => $p['addition'],
+                            'late_interest' => $p['late_interest'],
+                            'paid_amount' => $p['paid_amount'],
+                        ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                        Editar
+                    </button>
                     <?php if ($p['status'] !== 'pago'): ?>
                         <button type="button" onclick="openSettleModal(<?= $p['id'] ?>, <?= (float) $p['amount'] ?>)">Dar baixa</button>
                     <?php endif; ?>
@@ -712,6 +794,64 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" onclick="document.getElementById('settleModal').close()">Fechar</button>
         </form>
     </dialog>
+    <dialog id="editPayableModal">
+        <form method="post" id="editPayableForm">
+            <input type="hidden" name="action" value="edit_full">
+            <input type="hidden" name="id" id="edit_id">
+            <h4>Editar dados da conta</h4>
+            <select name="company_id" id="edit_company_id">
+                <option value="0">Sem empresa</option>
+                <?php foreach ($companies as $company): ?>
+                    <option value="<?= $company['id'] ?>"><?= htmlspecialchars($company['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <select name="supplier_id" id="edit_supplier_id">
+                <option value="0">Fornecedor avulso</option>
+                <?php foreach ($suppliers as $supplier): ?>
+                    <option value="<?= $supplier['id'] ?>"><?= htmlspecialchars($supplier['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <input name="supplier_name" id="edit_supplier_name" placeholder="Fornecedor avulso"><br>
+            <input name="boleto_number" id="edit_boleto_number" placeholder="Número do boleto">
+            <select name="payable_type" id="edit_payable_type">
+                <option value="">Tipo</option>
+                <?php foreach ($payableTypes as $type): ?>
+                    <option value="<?= htmlspecialchars($type['name']) ?>"><?= htmlspecialchars($type['name']) ?></option>
+                <?php endforeach; ?>
+            </select><br>
+            <input name="due_date" id="edit_due_date" type="date" required>
+            <input name="amount" id="edit_amount" type="number" step="0.01" required>
+            <input name="installment" id="edit_installment" placeholder="Parcela"><br>
+            <select name="status" id="edit_status">
+                <option value="aberto">aberto</option>
+                <option value="pago">pago</option>
+                <option value="atrasado">atrasado</option>
+            </select>
+            <input name="reminder_date" id="edit_reminder_date" type="date">
+            <input name="notes" id="edit_notes" placeholder="Observações"><br>
+
+            <h4>Dados de baixa</h4>
+            <input name="paid_on" id="edit_paid_on" type="date">
+            <select name="payment_method" id="edit_payment_method">
+                <option value="">Forma de pagamento</option>
+                <?php foreach ($paymentMethods as $method): ?>
+                    <option value="<?= htmlspecialchars($method['name']) ?>"><?= htmlspecialchars($method['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <select name="bank_account_id" id="edit_bank_account_id">
+                <option value="0">Caixa</option>
+                <?php foreach ($banks as $bank): ?>
+                    <option value="<?= $bank['id'] ?>"><?= htmlspecialchars($bank['name']) ?></option>
+                <?php endforeach; ?>
+            </select><br>
+            <input name="discount" id="edit_discount" type="number" step="0.01" placeholder="Desconto">
+            <input name="addition" id="edit_addition" type="number" step="0.01" placeholder="Acrescimento">
+            <input name="late_interest" id="edit_late_interest" type="number" step="0.01" placeholder="Juros"><br>
+            <input name="paid_amount" id="edit_paid_amount" type="number" step="0.01" placeholder="Valor pago">
+            <button>Salvar edição</button>
+            <button type="button" onclick="document.getElementById('editPayableModal').close()">Fechar</button>
+        </form>
+    </dialog>
     <dialog id="supplierModal">
         <form method="post">
             <input type="hidden" name="action" value="supplier_add">
@@ -732,6 +872,29 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('settle_id').value = id;
             document.getElementById('settle_amount').textContent = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
             document.getElementById('settleModal').showModal();
+        }
+
+        function openEditPayableModal(data) {
+            document.getElementById('edit_id').value = data.id ?? '';
+            document.getElementById('edit_company_id').value = data.company_id ?? 0;
+            document.getElementById('edit_supplier_id').value = data.supplier_id ?? 0;
+            document.getElementById('edit_supplier_name').value = data.supplier ?? '';
+            document.getElementById('edit_boleto_number').value = data.boleto_number ?? '';
+            document.getElementById('edit_payable_type').value = data.payable_type ?? '';
+            document.getElementById('edit_due_date').value = data.due_date ?? '';
+            document.getElementById('edit_amount').value = data.amount ?? '';
+            document.getElementById('edit_installment').value = data.installment ?? '';
+            document.getElementById('edit_status').value = data.status ?? 'aberto';
+            document.getElementById('edit_reminder_date').value = data.reminder_date ?? '';
+            document.getElementById('edit_notes').value = data.notes ?? '';
+            document.getElementById('edit_paid_on').value = data.paid_on ?? '';
+            document.getElementById('edit_payment_method').value = data.payment_method ?? '';
+            document.getElementById('edit_bank_account_id').value = data.bank_account_id ?? 0;
+            document.getElementById('edit_discount').value = data.discount ?? 0;
+            document.getElementById('edit_addition').value = data.addition ?? 0;
+            document.getElementById('edit_late_interest').value = data.late_interest ?? 0;
+            document.getElementById('edit_paid_amount').value = data.paid_amount ?? '';
+            document.getElementById('editPayableModal').showModal();
         }
     </script>
 <?php elseif ($module === 'receber'): ?>
