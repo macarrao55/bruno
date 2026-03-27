@@ -220,6 +220,11 @@ function handlePost(PDO $pdo, string $module): void
                 ]);
             }
 
+            if ($action === 'delete') {
+                $pdo->prepare('DELETE FROM accounts_payable WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id']]);
+            }
+
             if ($action === 'settle') {
                 $id = (int) $_POST['id'];
                 $payable = $pdo->prepare('SELECT * FROM accounts_payable WHERE id=:id');
@@ -1106,6 +1111,11 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                         ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
                         Editar
                     </button>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir este lançamento?')">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" value="<?= (int) $p['id'] ?>">
+                        <button class="btn-danger">Excluir</button>
+                    </form>
                     <?php if ($p['status'] !== 'pago'): ?>
                         <button type="button" onclick="openSettleModal(<?= $p['id'] ?>, <?= (float) $p['amount'] ?>)">Dar baixa</button>
                     <?php endif; ?>
