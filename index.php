@@ -69,6 +69,62 @@ function handlePost(PDO $pdo, string $module): void
                 ]);
             }
 
+            if ($action === 'create_installments') {
+                $supplierId = (int) ($_POST['supplier_id'] ?? 0);
+                $supplierName = trim((string) ($_POST['supplier_name'] ?? $_POST['supplier']));
+                $companyId = (int) ($_POST['company_id'] ?? 0);
+                $companyName = '';
+                if ($supplierId > 0) {
+                    $supplierStmt = $pdo->prepare('SELECT name FROM suppliers WHERE id=:id');
+                    $supplierStmt->execute([':id' => $supplierId]);
+                    $supplier = $supplierStmt->fetch();
+                    $supplierName = (string) ($supplier['name'] ?? $supplierName);
+                }
+                if ($companyId > 0) {
+                    $companyStmt = $pdo->prepare('SELECT name FROM companies WHERE id=:id');
+                    $companyStmt->execute([':id' => $companyId]);
+                    $company = $companyStmt->fetch();
+                    $companyName = (string) ($company['name'] ?? '');
+                }
+
+                $installmentsCount = max(1, (int) ($_POST['installments_count'] ?? 1));
+                $payload = json_decode((string) ($_POST['installments_payload'] ?? '[]'), true);
+                if (!is_array($payload)) {
+                    $payload = [];
+                }
+                if ($installmentsCount < 3 || count($payload) !== $installmentsCount) {
+                    break;
+                }
+
+                $totalAmount = (float) $_POST['amount'];
+                $baseAmount = round($totalAmount / $installmentsCount, 2);
+                $sumAmounts = 0.0;
+
+                $stmt = $pdo->prepare('INSERT INTO accounts_payable (company_id, company, supplier_id, supplier, payable_type, boleto_number, due_date, amount, installment, status, reminder_date, notes)
+                    VALUES (:company_id,:company,:supplier_id,:supplier,:payable_type,:boleto_number,:due_date,:amount,:installment,:status,:reminder_date,:notes)');
+
+                for ($i = 0; $i < $installmentsCount; $i++) {
+                    $item = is_array($payload[$i] ?? null) ? $payload[$i] : [];
+                    $amount = $i === $installmentsCount - 1 ? round($totalAmount - $sumAmounts, 2) : $baseAmount;
+                    $sumAmounts += $amount;
+
+                    $stmt->execute([
+                        ':company_id' => $companyId > 0 ? $companyId : null,
+                        ':company' => $companyName,
+                        ':supplier_id' => $supplierId > 0 ? $supplierId : null,
+                        ':supplier' => $supplierName,
+                        ':payable_type' => trim((string) $_POST['payable_type']),
+                        ':boleto_number' => trim((string) ($item['boleto_number'] ?? $_POST['boleto_number'] ?? '')),
+                        ':due_date' => (string) ($item['due_date'] ?? $_POST['due_date']),
+                        ':amount' => $amount,
+                        ':installment' => ($i + 1) . '/' . $installmentsCount,
+                        ':status' => $_POST['status'],
+                        ':reminder_date' => $_POST['reminder_date'] ?: null,
+                        ':notes' => trim((string) ($item['notes'] ?? $_POST['notes'] ?? '')),
+                    ]);
+                }
+            }
+
             if ($action === 'edit') {
                 $supplierId = (int) ($_POST['supplier_id'] ?? 0);
                 $supplierName = trim((string) ($_POST['supplier_name'] ?? $_POST['supplier']));
@@ -960,8 +1016,8 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </table>
 <?php elseif ($module === 'pagar'): ?>
     <h3>Contas a Pagar</h3>
-    <form method="post">
-        <input type="hidden" name="action" value="<?= $editingPayable ? 'edit' : 'create' ?>">
+    <form method="post" id="payableForm">
+        <input type="hidden" name="action" id="payable_action" value="<?= $editingPayable ? 'edit' : 'create' ?>">
         <?php if ($editingPayable): ?>
             <input type="hidden" name="id" value="<?= $editingPayable['id'] ?>">
         <?php endif; ?>
@@ -987,7 +1043,17 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         </select>
         <input name="due_date" type="date" value="<?= htmlspecialchars((string) ($editingPayable['due_date'] ?? '')) ?>" required>
         <input name="amount" type="number" step="0.01" placeholder="Valor" value="<?= htmlspecialchars((string) ($editingPayable['amount'] ?? '')) ?>" required>
-        <input name="installment" placeholder="Parcela" value="<?= htmlspecialchars((string) ($editingPayable['installment'] ?? '')) ?>">
+        <?php if ($editingPayable): ?>
+            <input name="installment" placeholder="Parcela" value="<?= htmlspecialchars((string) ($editingPayable['installment'] ?? '')) ?>">
+        <?php else: ?>
+            <select name="installments_count" id="payable_installments_count">
+                <?php for ($n = 1; $n <= 24; $n++): ?>
+                    <option value="<?= $n ?>"><?= $n ?> parcela<?= $n > 1 ? 's' : '' ?></option>
+                <?php endfor; ?>
+            </select>
+            <input type="hidden" name="installment" id="payable_installment_label" value="1/1">
+            <input type="hidden" name="installments_payload" id="installments_payload" value="">
+        <?php endif; ?>
         <?php $currentPayableStatus = (string) ($editingPayable['status'] ?? 'aberto'); ?>
         <select name="status">
             <option value="aberto" <?= $currentPayableStatus === 'aberto' ? 'selected' : '' ?>>aberto</option>
@@ -1164,6 +1230,15 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" onclick="document.getElementById('supplierModal').close()">Fechar</button>
         </form>
     </dialog>
+    <dialog id="installmentsModal">
+        <form method="dialog" id="installmentsDialogForm">
+            <h4>Parcelamento automático</h4>
+            <p class="small">Informe vencimento, número do documento e observação de cada parcela.</p>
+            <div id="installmentsContainer"></div>
+            <button type="submit" class="btn-success">Salvar parcelas</button>
+            <button type="button" onclick="document.getElementById('installmentsModal').close()">Cancelar</button>
+        </form>
+    </dialog>
     <script>
         function openSettleModal(id, amount) {
             document.getElementById('settle_id').value = id;
@@ -1193,6 +1268,76 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('edit_paid_amount').value = data.paid_amount ?? '';
             document.getElementById('editPayableModal').showModal();
         }
+
+        (function () {
+            const form = document.getElementById('payableForm');
+            const installmentsSelect = document.getElementById('payable_installments_count');
+            const installmentLabel = document.getElementById('payable_installment_label');
+            const actionField = document.getElementById('payable_action');
+            const payloadField = document.getElementById('installments_payload');
+            const modal = document.getElementById('installmentsModal');
+            const container = document.getElementById('installmentsContainer');
+            const baseDueDate = form?.querySelector('input[name="due_date"]');
+            const baseBoleto = form?.querySelector('input[name="boleto_number"]');
+            const baseNotes = form?.querySelector('input[name="notes"]');
+            if (!form || !installmentsSelect || !installmentLabel || !actionField || !payloadField || !modal || !container) {
+                return;
+            }
+
+            const updateInstallmentLabel = () => {
+                const count = parseInt(installmentsSelect.value || '1', 10);
+                installmentLabel.value = count > 1 ? `1/${count}` : '1/1';
+            };
+
+            const openInstallmentsModal = (count) => {
+                const dueDateValue = baseDueDate?.value || '';
+                const boletoValue = baseBoleto?.value || '';
+                const notesValue = baseNotes?.value || '';
+                container.innerHTML = '';
+                for (let i = 1; i <= count; i++) {
+                    const block = document.createElement('div');
+                    block.innerHTML = `
+                        <p><strong>Parcela ${i}/${count}</strong></p>
+                        <label>Vencimento: <input type="date" data-field="due_date" data-index="${i}" value="${dueDateValue}" required></label>
+                        <label>Documento: <input data-field="boleto_number" data-index="${i}" value="${boletoValue}"></label>
+                        <label>Observação: <input data-field="notes" data-index="${i}" value="${notesValue}"></label>
+                        <hr>
+                    `;
+                    container.appendChild(block);
+                }
+                modal.showModal();
+            };
+
+            installmentsSelect.addEventListener('change', updateInstallmentLabel);
+            updateInstallmentLabel();
+
+            form.addEventListener('submit', (event) => {
+                const count = parseInt(installmentsSelect.value || '1', 10);
+                if (count <= 2) {
+                    actionField.value = 'create';
+                    payloadField.value = '';
+                    return;
+                }
+                event.preventDefault();
+                openInstallmentsModal(count);
+            });
+
+            document.getElementById('installmentsDialogForm').addEventListener('submit', (event) => {
+                event.preventDefault();
+                const count = parseInt(installmentsSelect.value || '1', 10);
+                const payload = [];
+                for (let i = 1; i <= count; i++) {
+                    const dueDate = container.querySelector(`input[data-field="due_date"][data-index="${i}"]`)?.value || '';
+                    const boletoNumber = container.querySelector(`input[data-field="boleto_number"][data-index="${i}"]`)?.value || '';
+                    const notes = container.querySelector(`input[data-field="notes"][data-index="${i}"]`)?.value || '';
+                    payload.push({ due_date: dueDate, boleto_number: boletoNumber, notes: notes });
+                }
+                payloadField.value = JSON.stringify(payload);
+                actionField.value = 'create_installments';
+                modal.close();
+                form.submit();
+            });
+        })();
     </script>
 <?php elseif ($module === 'receber'): ?>
     <h3>Contas a Receber</h3>
