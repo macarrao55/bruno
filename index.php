@@ -457,20 +457,29 @@ function handlePost(PDO $pdo, string $module): void
 
             if ($action === 'card_payment_config_add') {
                 $defaultDays = str_contains(mb_strtolower((string) $_POST['name'], 'UTF-8'), 'debito') ? 1 : 30;
-                $pdo->prepare('INSERT INTO card_payment_configs (name, fee_percent, release_days) VALUES (:name,0,:days)')
-                    ->execute([
-                        ':name' => trim($_POST['name']),
-                        ':days' => $defaultDays,
-                    ]);
+                $name = trim((string) $_POST['name']);
+                $exists = (int) sumValue($pdo, 'SELECT COUNT(*) FROM card_payment_configs WHERE LOWER(name)=LOWER(:name)', [':name' => $name]);
+                if ($exists === 0) {
+                    $pdo->prepare('INSERT INTO card_payment_configs (name, fee_percent, release_days) VALUES (:name,0,:days)')
+                        ->execute([
+                            ':name' => $name,
+                            ':days' => $defaultDays,
+                        ]);
+                }
             }
             if ($action === 'card_payment_config_update') {
                 $defaultDays = str_contains(mb_strtolower((string) $_POST['name'], 'UTF-8'), 'debito') ? 1 : 30;
-                $pdo->prepare('UPDATE card_payment_configs SET name=:name, release_days=:days WHERE id=:id')
-                    ->execute([
-                        ':id' => (int) $_POST['id'],
-                        ':name' => trim($_POST['name']),
-                        ':days' => $defaultDays,
-                    ]);
+                $id = (int) $_POST['id'];
+                $name = trim((string) $_POST['name']);
+                $exists = (int) sumValue($pdo, 'SELECT COUNT(*) FROM card_payment_configs WHERE LOWER(name)=LOWER(:name) AND id<>:id', [':name' => $name, ':id' => $id]);
+                if ($exists === 0) {
+                    $pdo->prepare('UPDATE card_payment_configs SET name=:name, release_days=:days WHERE id=:id')
+                        ->execute([
+                            ':id' => $id,
+                            ':name' => $name,
+                            ':days' => $defaultDays,
+                        ]);
+                }
             }
             if ($action === 'card_payment_config_delete') {
                 $pdo->prepare('DELETE FROM card_payment_configs WHERE id=:id')
