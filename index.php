@@ -325,6 +325,8 @@ function handlePost(PDO $pdo, string $module): void
                     $discount = (float) ($_POST['anticipation_discount'] ?? 0);
                     $isCanceled = isset($_POST['canceled']) ? 1 : 0;
                     $receivedAmount = max(0, (float) $card['net_value'] - $discount);
+                    $settleSubcategory = trim((string) (($_POST['settle_subcategory'] ?? '') ?: (string) $card['card_type']));
+                    $settleCategory = trim((string) ($_POST['settle_category'] ?? ''));
 
                     $pdo->prepare('UPDATE card_receivables SET received=:received, canceled=:canceled, anticipation_discount=:anticipation_discount WHERE id=:id')
                         ->execute([
@@ -339,15 +341,15 @@ function handlePost(PDO $pdo, string $module): void
                             VALUES (\'entrada\', :amount, \'cartoes_recebidos\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
                             ->execute([
                                 ':amount' => $receivedAmount,
-                                ':subcategory' => trim((string) ($_POST['settle_subcategory'] ?: (string) $card['card_type'])),
+                                ':subcategory' => $settleSubcategory,
                                 ':origin_account' => (string) $card['machine'],
                                 ':destination_account' => trim((string) ($_POST['destination_account'] ?? 'caixa')),
                                 ':description' => 'Baixa de cartão ' . $card['brand'],
                                 ':occurred_on' => $_POST['received_on'] ?: date('Y-m-d'),
                             ]);
-                        if (!empty($_POST['settle_category'])) {
+                        if ($settleCategory !== '') {
                             $pdo->prepare("UPDATE transactions SET category=:category WHERE id=last_insert_rowid()")
-                                ->execute([':category' => trim((string) $_POST['settle_category'])]);
+                                ->execute([':category' => $settleCategory]);
                         }
                     }
                 }
@@ -1226,7 +1228,15 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                         <button>Excluir</button>
                     </form>
                     <?php if (!(int) $c['received'] && !(int) $c['canceled']): ?>
-                        <button type="button" onclick="openCardSettleModal(<?= (int) $c['id'] ?>)">Dar baixa</button>
+                        <form method="post" style="display:inline;" onsubmit="return confirm('Confirmar baixa deste cartão?')">
+                            <input type="hidden" name="action" value="settle">
+                            <input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
+                            <input type="hidden" name="received_on" value="<?= $today ?>">
+                            <input type="hidden" name="anticipation_discount" value="0">
+                            <input type="hidden" name="destination_account" value="caixa">
+                            <button>Dar baixa</button>
+                        </form>
+                        <button type="button" onclick="openCardSettleModal(<?= (int) $c['id'] ?>)">Baixa detalhada</button>
                     <?php endif; ?>
                 </td>
             </tr>
