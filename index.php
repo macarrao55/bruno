@@ -322,7 +322,8 @@ function handlePost(PDO $pdo, string $module): void
                 $cardStmt->execute([':id' => $id]);
                 $card = $cardStmt->fetch();
                 if ($card) {
-                    $discount = (float) ($_POST['anticipation_discount'] ?? 0);
+                    $anticipationFeePercent = max(0, (float) ($_POST['anticipation_fee_percent'] ?? 0));
+                    $discount = ((float) $card['net_value'] * $anticipationFeePercent) / 100;
                     $isCanceled = isset($_POST['canceled']) ? 1 : 0;
                     $receivedAmount = max(0, (float) $card['net_value'] - $discount);
                     $settleSubcategory = trim((string) (($_POST['settle_subcategory'] ?? '') ?: (string) $card['card_type']));
@@ -1228,15 +1229,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                         <button>Excluir</button>
                     </form>
                     <?php if (!(int) $c['received'] && !(int) $c['canceled']): ?>
-                        <form method="post" style="display:inline;" onsubmit="return confirm('Confirmar baixa deste cartão?')">
-                            <input type="hidden" name="action" value="settle">
-                            <input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
-                            <input type="hidden" name="received_on" value="<?= $today ?>">
-                            <input type="hidden" name="anticipation_discount" value="0">
-                            <input type="hidden" name="destination_account" value="caixa">
-                            <button>Dar baixa</button>
-                        </form>
-                        <button type="button" onclick="openCardSettleModal(<?= (int) $c['id'] ?>)">Baixa detalhada</button>
+                        <button type="button" class="btn-success" onclick="openCardSettleModal(<?= (int) $c['id'] ?>)">Dar baixa</button>
                     <?php endif; ?>
                 </td>
             </tr>
@@ -1274,7 +1267,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <input type="hidden" name="action" value="settle">
             <input type="hidden" name="id" id="card_settle_id">
             <label>Data recebimento: <input name="received_on" type="date" value="<?= $today ?>" required></label>
-            <label>Desconto por antecipação: <input name="anticipation_discount" type="number" step="0.01" value="0"></label>
+            <label>Taxa por antecipação (%): <input name="anticipation_fee_percent" type="number" step="0.01" min="0" value="0"></label>
             <label>Categoria:
                 <select name="settle_category">
                     <option value="">cartoes_recebidos</option>

@@ -9,6 +9,8 @@ nav a { color: #fff; margin-right: 12px; text-decoration: none; font-size: 14px;
 form { background: #fff; padding: 12px; border-radius: 10px; margin-bottom: 16px; }
 input, select, button, textarea { margin: 4px; padding: 8px; }
 button { background: #1f3c88; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+.btn-success { background: #1f9d55; }
+.btn-success:hover { background: #178b49; }
 table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; }
 th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; font-size: 14px; }
 .badge { padding: 3px 8px; border-radius: 10px; font-size: 12px; }
