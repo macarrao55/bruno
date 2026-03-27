@@ -14,6 +14,7 @@ Aplicação simples (sem framework) para controle financeiro com SQLite, cobrind
 - Regras de taxa por combinação máquina + bandeira + forma de pagamento.
 - Lançamentos de cartão com ações de editar, excluir e dar baixa.
 - Baixa de cartão com desconto por antecipação e opção de cancelamento.
+- Local da venda em cartões (configurável em configurações).
 - Conciliação bancária.
 - DRE gerencial.
 - Fechamento de caixa.

@@ -284,6 +284,8 @@ function handlePost(PDO $pdo, string $module): void
                     ':expected_release_date' => $_POST['expected_release_date'],
                     ':received' => isset($_POST['received']) ? 1 : 0,
                 ]);
+                $pdo->prepare('UPDATE card_receivables SET sale_location=:sale_location WHERE id=last_insert_rowid()')
+                    ->execute([':sale_location' => trim((string) ($_POST['sale_location'] ?? ''))]);
             }
 
             if ($action === 'edit') {
@@ -292,7 +294,7 @@ function handlePost(PDO $pdo, string $module): void
                 $net = $gross - ($gross * $fee / 100);
                 $cardType = normalizeCardType((string) $_POST['card_type']);
                 $stmt = $pdo->prepare('UPDATE card_receivables
-                    SET machine=:machine, brand=:brand, card_type=:card_type, fee_percent=:fee_percent, gross_value=:gross_value, net_value=:net_value, sale_date=:sale_date, expected_release_date=:expected_release_date, received=:received
+                    SET machine=:machine, brand=:brand, card_type=:card_type, fee_percent=:fee_percent, gross_value=:gross_value, net_value=:net_value, sale_date=:sale_date, expected_release_date=:expected_release_date, received=:received, sale_location=:sale_location
                     WHERE id=:id');
                 $stmt->execute([
                     ':id' => (int) $_POST['id'],
@@ -305,6 +307,7 @@ function handlePost(PDO $pdo, string $module): void
                     ':sale_date' => $_POST['sale_date'],
                     ':expected_release_date' => $_POST['expected_release_date'],
                     ':received' => isset($_POST['received']) ? 1 : 0,
+                    ':sale_location' => trim((string) ($_POST['sale_location'] ?? '')),
                 ]);
             }
 
@@ -336,12 +339,16 @@ function handlePost(PDO $pdo, string $module): void
                             VALUES (\'entrada\', :amount, \'cartoes_recebidos\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
                             ->execute([
                                 ':amount' => $receivedAmount,
-                                ':subcategory' => (string) $card['card_type'],
+                                ':subcategory' => trim((string) ($_POST['settle_subcategory'] ?: (string) $card['card_type'])),
                                 ':origin_account' => (string) $card['machine'],
                                 ':destination_account' => trim((string) ($_POST['destination_account'] ?? 'caixa')),
                                 ':description' => 'Baixa de cartão ' . $card['brand'],
                                 ':occurred_on' => $_POST['received_on'] ?: date('Y-m-d'),
                             ]);
+                        if (!empty($_POST['settle_category'])) {
+                            $pdo->prepare("UPDATE transactions SET category=:category WHERE id=last_insert_rowid()")
+                                ->execute([':category' => trim((string) $_POST['settle_category'])]);
+                        }
                     }
                 }
             }
@@ -576,6 +583,19 @@ function handlePost(PDO $pdo, string $module): void
                 $pdo->prepare('DELETE FROM card_rate_rules WHERE id=:id')
                     ->execute([':id' => (int) $_POST['id']]);
             }
+
+            if ($action === 'sale_location_add') {
+                $pdo->prepare('INSERT INTO sale_locations (name) VALUES (:name)')
+                    ->execute([':name' => trim($_POST['name'])]);
+            }
+            if ($action === 'sale_location_update') {
+                $pdo->prepare('UPDATE sale_locations SET name=:name WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id'], ':name' => trim($_POST['name'])]);
+            }
+            if ($action === 'sale_location_delete') {
+                $pdo->prepare('DELETE FROM sale_locations WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id']]);
+            }
             break;
     }
 }
@@ -673,6 +693,7 @@ $payableTypes = fetchAll($pdo, 'SELECT * FROM payable_types ORDER BY name');
 $cardMachines = fetchAll($pdo, 'SELECT * FROM card_machines ORDER BY name');
 $cardBrands = fetchAll($pdo, 'SELECT * FROM card_brands ORDER BY name');
 $cardPaymentConfigs = fetchAll($pdo, 'SELECT * FROM card_payment_configs ORDER BY name');
+$saleLocations = fetchAll($pdo, 'SELECT * FROM sale_locations ORDER BY name');
 $cardRateRules = fetchAll($pdo, 'SELECT r.*, m.name AS machine_name, b.name AS brand_name, p.name AS payment_name FROM card_rate_rules r
     JOIN card_machines m ON m.id=r.machine_id
     JOIN card_brands b ON b.id=r.brand_id
@@ -1173,17 +1194,24 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <?php endforeach; ?>
         </select>
         <input name="fee_percent" id="card_fee_percent" type="number" step="0.01" placeholder="Taxa %" required>
+        <select name="sale_location" required>
+            <option value="">Local da venda</option>
+            <?php foreach ($saleLocations as $location): ?>
+                <option value="<?= htmlspecialchars($location['name']) ?>"><?= htmlspecialchars($location['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
         <input name="gross_value" type="number" step="0.01" placeholder="Valor bruto" required>
         <input name="sale_date" id="card_sale_date" type="date" required><input name="expected_release_date" id="card_expected_release_date" type="date" required>
         <label><input type="checkbox" name="received"> Baixa quando receber</label>
         <button>Salvar</button>
     </form>
-    <table><tr><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Taxa</th><th>Bruto</th><th>Líquido</th><th>Venda</th><th>Liberação</th><th>Recebido</th><th>Ações</th></tr>
+    <table><tr><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Local</th><th>Taxa</th><th>Bruto</th><th>Líquido</th><th>Venda</th><th>Liberação</th><th>Recebido</th><th>Ações</th></tr>
         <?php foreach ($cards as $c): ?>
             <tr>
                 <td><?= htmlspecialchars($c['machine']) ?></td>
                 <td><?= htmlspecialchars($c['brand']) ?></td>
                 <td><?= $c['card_type'] ?></td>
+                <td><?= htmlspecialchars((string) $c['sale_location']) ?></td>
                 <td><?= $c['fee_percent'] ?>%</td>
                 <td><?= money((float) $c['gross_value']) ?></td>
                 <td><?= money((float) $c['net_value']) ?></td>
@@ -1218,6 +1246,9 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <select name="card_type" id="card_edit_type" required>
                 <?php foreach ($cardPaymentConfigs as $config): ?><option value="<?= htmlspecialchars($config['name']) ?>"><?= htmlspecialchars($config['name']) ?></option><?php endforeach; ?>
             </select>
+            <select name="sale_location" id="card_edit_sale_location" required>
+                <?php foreach ($saleLocations as $location): ?><option value="<?= htmlspecialchars($location['name']) ?>"><?= htmlspecialchars($location['name']) ?></option><?php endforeach; ?>
+            </select>
             <input name="fee_percent" id="card_edit_fee" type="number" step="0.01" required>
             <input name="gross_value" id="card_edit_gross" type="number" step="0.01" required>
             <input name="sale_date" id="card_edit_sale" type="date" required>
@@ -1234,6 +1265,18 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <input type="hidden" name="id" id="card_settle_id">
             <label>Data recebimento: <input name="received_on" type="date" value="<?= $today ?>" required></label>
             <label>Desconto por antecipação: <input name="anticipation_discount" type="number" step="0.01" value="0"></label>
+            <label>Categoria:
+                <select name="settle_category">
+                    <option value="">cartoes_recebidos</option>
+                    <?php foreach ($categories as $category): ?><option value="<?= htmlspecialchars($category['name']) ?>"><?= htmlspecialchars($category['name']) ?></option><?php endforeach; ?>
+                </select>
+            </label>
+            <label>Subcategoria:
+                <select name="settle_subcategory">
+                    <option value="">automática</option>
+                    <?php foreach ($subcategories as $subcategory): ?><option value="<?= htmlspecialchars($subcategory['name']) ?>"><?= htmlspecialchars($subcategory['parent_name'] . ' > ' . $subcategory['name']) ?></option><?php endforeach; ?>
+                </select>
+            </label>
             <label>Conta destino:
                 <select name="destination_account">
                     <option value="caixa">Caixa</option>
@@ -1301,6 +1344,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('card_edit_machine').value = card.machine;
             document.getElementById('card_edit_brand').value = card.brand;
             document.getElementById('card_edit_type').value = card.card_type;
+            document.getElementById('card_edit_sale_location').value = card.sale_location || '';
             document.getElementById('card_edit_fee').value = card.fee_percent;
             document.getElementById('card_edit_gross').value = card.gross_value;
             document.getElementById('card_edit_sale').value = card.sale_date;
@@ -1631,6 +1675,36 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                     <form method="post" style="display:inline;" onsubmit="return confirm('Excluir bandeira?')">
                         <input type="hidden" name="action" value="card_brand_delete">
                         <input type="hidden" name="id" value="<?= $brand['id'] ?>">
+                        <button>Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Locais de venda</h4>
+    <form method="post">
+        <input type="hidden" name="action" value="sale_location_add">
+        <input name="name" placeholder="Novo local" required>
+        <button>Adicionar local</button>
+    </form>
+    <table>
+        <tr><th>Local</th><th>Editar</th><th>Excluir</th></tr>
+        <?php foreach ($saleLocations as $location): ?>
+            <tr>
+                <td><?= htmlspecialchars($location['name']) ?></td>
+                <td>
+                    <form method="post" style="display:inline;">
+                        <input type="hidden" name="action" value="sale_location_update">
+                        <input type="hidden" name="id" value="<?= $location['id'] ?>">
+                        <input name="name" value="<?= htmlspecialchars($location['name']) ?>" required>
+                        <button>Salvar</button>
+                    </form>
+                </td>
+                <td>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir local?')">
+                        <input type="hidden" name="action" value="sale_location_delete">
+                        <input type="hidden" name="id" value="<?= $location['id'] ?>">
                         <button>Excluir</button>
                     </form>
                 </td>

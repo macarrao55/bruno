@@ -64,6 +64,7 @@ CREATE TABLE card_receivables (
     machine TEXT NOT NULL,
     brand TEXT NOT NULL,
     card_type TEXT NOT NULL CHECK (card_type IN ('debito', 'credito_avista', 'credito_parcelado')),
+    sale_location TEXT,
     fee_percent REAL NOT NULL,
     gross_value REAL NOT NULL,
     net_value REAL NOT NULL,
@@ -184,6 +185,12 @@ CREATE TABLE card_rate_rules (
     FOREIGN KEY (payment_config_id) REFERENCES card_payment_configs(id)
 );
 
+CREATE TABLE sale_locations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 INSERT INTO bank_accounts (name, initial_balance, current_balance) VALUES
 ('Banco Principal', 10000, 10000),
 ('Banco Reserva', 2500, 2500);
@@ -241,3 +248,8 @@ INSERT INTO card_rate_rules (machine_id, brand_id, payment_config_id, fee_percen
 SELECT m.id, b.id, p.id, 1.33, 1
 FROM card_machines m, card_brands b, card_payment_configs p
 WHERE m.name='PagSeguro' AND b.name='Elo' AND p.name='debito';
+
+INSERT INTO sale_locations (name) VALUES
+('Caixa Loja'),
+('Financeiro'),
+('Caixa Parafuso');

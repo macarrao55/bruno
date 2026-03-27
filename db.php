@@ -88,6 +88,7 @@ function runMigrations(PDO $pdo): void
     };
     $addCardColumn($pdo, 'anticipation_discount', 'REAL NOT NULL DEFAULT 0');
     $addCardColumn($pdo, 'canceled', 'INTEGER NOT NULL DEFAULT 0');
+    $addCardColumn($pdo, 'sale_location', 'TEXT');
 
     $categoryTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='cashflow_categories'")->fetch();
     if (!$categoryTable) {
@@ -242,5 +243,19 @@ function runMigrations(PDO $pdo): void
             SELECT m.id, b.id, p.id, 1.33, 1
             FROM card_machines m, card_brands b, card_payment_configs p
             WHERE m.name='PagSeguro' AND b.name='Elo' AND p.name='debito'");
+    }
+
+    $saleLocationTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='sale_locations'")->fetch();
+    if (!$saleLocationTable) {
+        $pdo->exec('CREATE TABLE sale_locations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+
+    $saleLocationCount = (int) ($pdo->query('SELECT COUNT(*) FROM sale_locations')->fetchColumn() ?: 0);
+    if ($saleLocationCount === 0) {
+        $pdo->exec("INSERT INTO sale_locations (name) VALUES ('Caixa Loja'), ('Financeiro'), ('Caixa Parafuso')");
     }
 }
