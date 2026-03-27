@@ -428,6 +428,54 @@ function handlePost(PDO $pdo, string $module): void
                 $stmt = $pdo->prepare('DELETE FROM payable_types WHERE id=:id');
                 $stmt->execute([':id' => (int) $_POST['id']]);
             }
+
+            if ($action === 'card_machine_add') {
+                $pdo->prepare('INSERT INTO card_machines (name) VALUES (:name)')
+                    ->execute([':name' => trim($_POST['name'])]);
+            }
+            if ($action === 'card_machine_update') {
+                $pdo->prepare('UPDATE card_machines SET name=:name WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id'], ':name' => trim($_POST['name'])]);
+            }
+            if ($action === 'card_machine_delete') {
+                $pdo->prepare('DELETE FROM card_machines WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id']]);
+            }
+
+            if ($action === 'card_brand_add') {
+                $pdo->prepare('INSERT INTO card_brands (name) VALUES (:name)')
+                    ->execute([':name' => trim($_POST['name'])]);
+            }
+            if ($action === 'card_brand_update') {
+                $pdo->prepare('UPDATE card_brands SET name=:name WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id'], ':name' => trim($_POST['name'])]);
+            }
+            if ($action === 'card_brand_delete') {
+                $pdo->prepare('DELETE FROM card_brands WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id']]);
+            }
+
+            if ($action === 'card_payment_config_add') {
+                $pdo->prepare('INSERT INTO card_payment_configs (name, fee_percent, release_days) VALUES (:name,:fee,:days)')
+                    ->execute([
+                        ':name' => trim($_POST['name']),
+                        ':fee' => (float) $_POST['fee_percent'],
+                        ':days' => (int) $_POST['release_days'],
+                    ]);
+            }
+            if ($action === 'card_payment_config_update') {
+                $pdo->prepare('UPDATE card_payment_configs SET name=:name, fee_percent=:fee, release_days=:days WHERE id=:id')
+                    ->execute([
+                        ':id' => (int) $_POST['id'],
+                        ':name' => trim($_POST['name']),
+                        ':fee' => (float) $_POST['fee_percent'],
+                        ':days' => (int) $_POST['release_days'],
+                    ]);
+            }
+            if ($action === 'card_payment_config_delete') {
+                $pdo->prepare('DELETE FROM card_payment_configs WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id']]);
+            }
             break;
     }
 }
@@ -509,6 +557,9 @@ $suppliers = fetchAll($pdo, 'SELECT * FROM suppliers ORDER BY name');
 $paymentMethods = fetchAll($pdo, 'SELECT * FROM payment_methods ORDER BY name');
 $companies = fetchAll($pdo, 'SELECT * FROM companies ORDER BY name');
 $payableTypes = fetchAll($pdo, 'SELECT * FROM payable_types ORDER BY name');
+$cardMachines = fetchAll($pdo, 'SELECT * FROM card_machines ORDER BY name');
+$cardBrands = fetchAll($pdo, 'SELECT * FROM card_brands ORDER BY name');
+$cardPaymentConfigs = fetchAll($pdo, 'SELECT * FROM card_payment_configs ORDER BY name');
 $supplierAnalysis = fetchAll($pdo, "SELECT
     s.id,
     s.name,
@@ -978,17 +1029,67 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 <?php elseif ($module === 'cartoes'): ?>
     <h3>Controle de Cartões</h3>
     <form method="post">
-        <input name="machine" placeholder="Máquina" required><input name="brand" placeholder="Bandeira" required>
-        <select name="card_type"><option value="debito">Débito</option><option value="credito_avista">Crédito à vista</option><option value="credito_parcelado">Crédito parcelado</option></select>
-        <input name="fee_percent" type="number" step="0.01" placeholder="Taxa %" required>
+        <select name="machine" required>
+            <option value="">Máquina</option>
+            <?php foreach ($cardMachines as $machine): ?>
+                <option value="<?= htmlspecialchars($machine['name']) ?>"><?= htmlspecialchars($machine['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <select name="brand" required>
+            <option value="">Bandeira</option>
+            <?php foreach ($cardBrands as $brand): ?>
+                <option value="<?= htmlspecialchars($brand['name']) ?>"><?= htmlspecialchars($brand['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <select name="card_type" id="card_type_select" required>
+            <option value="">Forma de pagamento</option>
+            <?php foreach ($cardPaymentConfigs as $config): ?>
+                <option
+                    value="<?= htmlspecialchars($config['name']) ?>"
+                    data-fee="<?= (float) $config['fee_percent'] ?>"
+                    data-days="<?= (int) $config['release_days'] ?>">
+                    <?= htmlspecialchars($config['name']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <input name="fee_percent" id="card_fee_percent" type="number" step="0.01" placeholder="Taxa %" required>
         <input name="gross_value" type="number" step="0.01" placeholder="Valor bruto" required>
-        <input name="sale_date" type="date" required><input name="expected_release_date" type="date" required>
+        <input name="sale_date" id="card_sale_date" type="date" required><input name="expected_release_date" id="card_expected_release_date" type="date" required>
         <label><input type="checkbox" name="received"> Baixa quando receber</label>
         <button>Salvar</button>
     </form>
     <table><tr><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Taxa</th><th>Bruto</th><th>Líquido</th><th>Venda</th><th>Liberação</th><th>Recebido</th></tr>
         <?php foreach ($cards as $c): ?><tr><td><?= htmlspecialchars($c['machine']) ?></td><td><?= htmlspecialchars($c['brand']) ?></td><td><?= $c['card_type'] ?></td><td><?= $c['fee_percent'] ?>%</td><td><?= money((float) $c['gross_value']) ?></td><td><?= money((float) $c['net_value']) ?></td><td><?= $c['sale_date'] ?></td><td><?= $c['expected_release_date'] ?></td><td><?= $c['received'] ? 'Sim' : 'Não' ?></td></tr><?php endforeach; ?>
     </table>
+    <script>
+        (function () {
+            const paymentType = document.getElementById('card_type_select');
+            const feeField = document.getElementById('card_fee_percent');
+            const saleDateField = document.getElementById('card_sale_date');
+            const releaseDateField = document.getElementById('card_expected_release_date');
+
+            function updateCardFields() {
+                const selected = paymentType.options[paymentType.selectedIndex];
+                if (!selected) return;
+
+                const fee = selected.dataset.fee || '';
+                const days = parseInt(selected.dataset.days || '0', 10);
+                feeField.value = fee;
+
+                if (saleDateField.value && Number.isFinite(days)) {
+                    const date = new Date(saleDateField.value + 'T00:00:00');
+                    date.setDate(date.getDate() + days);
+                    const yyyy = date.getFullYear();
+                    const mm = String(date.getMonth() + 1).padStart(2, '0');
+                    const dd = String(date.getDate()).padStart(2, '0');
+                    releaseDateField.value = `${yyyy}-${mm}-${dd}`;
+                }
+            }
+
+            paymentType.addEventListener('change', updateCardFields);
+            saleDateField.addEventListener('change', updateCardFields);
+        })();
+    </script>
 <?php elseif ($module === 'cheques'): ?>
     <h3>Controle de Cheques</h3>
     <form method="post">
@@ -1246,6 +1347,98 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                     <form method="post" onsubmit="return confirm('Excluir forma de pagamento?')" style="display:inline;">
                         <input type="hidden" name="action" value="payment_method_delete">
                         <input type="hidden" name="id" value="<?= $method['id'] ?>">
+                        <button>Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Máquinas de cartão</h4>
+    <form method="post">
+        <input type="hidden" name="action" value="card_machine_add">
+        <input name="name" placeholder="Nova máquina" required>
+        <button>Adicionar máquina</button>
+    </form>
+    <table>
+        <tr><th>Máquina</th><th>Editar</th><th>Excluir</th></tr>
+        <?php foreach ($cardMachines as $machine): ?>
+            <tr>
+                <td><?= htmlspecialchars($machine['name']) ?></td>
+                <td>
+                    <form method="post" style="display:inline;">
+                        <input type="hidden" name="action" value="card_machine_update">
+                        <input type="hidden" name="id" value="<?= $machine['id'] ?>">
+                        <input name="name" value="<?= htmlspecialchars($machine['name']) ?>" required>
+                        <button>Salvar</button>
+                    </form>
+                </td>
+                <td>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir máquina?')">
+                        <input type="hidden" name="action" value="card_machine_delete">
+                        <input type="hidden" name="id" value="<?= $machine['id'] ?>">
+                        <button>Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Bandeiras de cartão</h4>
+    <form method="post">
+        <input type="hidden" name="action" value="card_brand_add">
+        <input name="name" placeholder="Nova bandeira" required>
+        <button>Adicionar bandeira</button>
+    </form>
+    <table>
+        <tr><th>Bandeira</th><th>Editar</th><th>Excluir</th></tr>
+        <?php foreach ($cardBrands as $brand): ?>
+            <tr>
+                <td><?= htmlspecialchars($brand['name']) ?></td>
+                <td>
+                    <form method="post" style="display:inline;">
+                        <input type="hidden" name="action" value="card_brand_update">
+                        <input type="hidden" name="id" value="<?= $brand['id'] ?>">
+                        <input name="name" value="<?= htmlspecialchars($brand['name']) ?>" required>
+                        <button>Salvar</button>
+                    </form>
+                </td>
+                <td>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir bandeira?')">
+                        <input type="hidden" name="action" value="card_brand_delete">
+                        <input type="hidden" name="id" value="<?= $brand['id'] ?>">
+                        <button>Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Formas de pagamento de cartão (taxa e vencimento)</h4>
+    <form method="post">
+        <input type="hidden" name="action" value="card_payment_config_add">
+        <input name="name" placeholder="Forma (ex: debito)" required>
+        <input name="fee_percent" type="number" step="0.01" placeholder="Taxa %" required>
+        <input name="release_days" type="number" step="1" placeholder="Dias para vencimento" required>
+        <button>Adicionar forma cartão</button>
+    </form>
+    <table>
+        <tr><th>Forma</th><th>Taxa %</th><th>Dias vencimento</th><th>Salvar</th><th>Excluir</th></tr>
+        <?php foreach ($cardPaymentConfigs as $config): ?>
+            <tr>
+                <td>
+                    <form method="post" style="display:inline;">
+                        <input type="hidden" name="action" value="card_payment_config_update">
+                        <input type="hidden" name="id" value="<?= $config['id'] ?>">
+                        <input name="name" value="<?= htmlspecialchars($config['name']) ?>" required>
+                </td>
+                <td><input name="fee_percent" type="number" step="0.01" value="<?= $config['fee_percent'] ?>" required></td>
+                <td><input name="release_days" type="number" step="1" value="<?= $config['release_days'] ?>" required></td>
+                <td><button>Salvar</button></form></td>
+                <td>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir forma de cartão?')">
+                        <input type="hidden" name="action" value="card_payment_config_delete">
+                        <input type="hidden" name="id" value="<?= $config['id'] ?>">
                         <button>Excluir</button>
                     </form>
                 </td>

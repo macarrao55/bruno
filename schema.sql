@@ -149,6 +149,26 @@ CREATE TABLE payable_types (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE card_machines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE card_brands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE card_payment_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    fee_percent REAL NOT NULL DEFAULT 0,
+    release_days INTEGER NOT NULL DEFAULT 30,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 INSERT INTO bank_accounts (name, initial_balance, current_balance) VALUES
 ('Banco Principal', 10000, 10000),
 ('Banco Reserva', 2500, 2500);
@@ -181,3 +201,18 @@ INSERT INTO payable_types (name) VALUES
 ('Cheque'),
 ('Cartão de Credito'),
 ('Notinha ( fiado)');
+
+INSERT INTO card_machines (name) VALUES
+('Stone'),
+('Cielo'),
+('PagSeguro');
+
+INSERT INTO card_brands (name) VALUES
+('Visa'),
+('Mastercard'),
+('Elo');
+
+INSERT INTO card_payment_configs (name, fee_percent, release_days) VALUES
+('debito', 1.99, 1),
+('credito_avista', 3.49, 30),
+('credito_parcelado', 4.99, 30);

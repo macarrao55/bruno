@@ -158,4 +158,51 @@ function runMigrations(PDO $pdo): void
         $pdo->exec("INSERT INTO payable_types (name) VALUES
             ('Boleto'), ('DDA'), ('Cheque'), ('Cartão de Credito'), ('Notinha ( fiado)')");
     }
+
+    $cardMachineTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='card_machines'")->fetch();
+    if (!$cardMachineTable) {
+        $pdo->exec('CREATE TABLE card_machines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+
+    $cardBrandTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='card_brands'")->fetch();
+    if (!$cardBrandTable) {
+        $pdo->exec('CREATE TABLE card_brands (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+
+    $cardPaymentConfigTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='card_payment_configs'")->fetch();
+    if (!$cardPaymentConfigTable) {
+        $pdo->exec('CREATE TABLE card_payment_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            fee_percent REAL NOT NULL DEFAULT 0,
+            release_days INTEGER NOT NULL DEFAULT 30,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+
+    $cardMachineCount = (int) ($pdo->query('SELECT COUNT(*) FROM card_machines')->fetchColumn() ?: 0);
+    if ($cardMachineCount === 0) {
+        $pdo->exec("INSERT INTO card_machines (name) VALUES ('Stone'), ('Cielo'), ('PagSeguro')");
+    }
+
+    $cardBrandCount = (int) ($pdo->query('SELECT COUNT(*) FROM card_brands')->fetchColumn() ?: 0);
+    if ($cardBrandCount === 0) {
+        $pdo->exec("INSERT INTO card_brands (name) VALUES ('Visa'), ('Mastercard'), ('Elo')");
+    }
+
+    $cardPaymentConfigCount = (int) ($pdo->query('SELECT COUNT(*) FROM card_payment_configs')->fetchColumn() ?: 0);
+    if ($cardPaymentConfigCount === 0) {
+        $pdo->exec("INSERT INTO card_payment_configs (name, fee_percent, release_days) VALUES
+            ('debito', 1.99, 1),
+            ('credito_avista', 3.49, 30),
+            ('credito_parcelado', 4.99, 30)");
+    }
 }
