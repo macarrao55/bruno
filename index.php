@@ -599,6 +599,47 @@ function handlePost(PDO $pdo, string $module): void
                 $pdo->prepare('DELETE FROM sale_locations WHERE id=:id')
                     ->execute([':id' => (int) $_POST['id']]);
             }
+
+            if ($action === 'system_reset') {
+                $targets = array_map('strval', $_POST['reset_targets'] ?? []);
+                $resetMap = [
+                    'transactions' => [
+                        'DELETE FROM transactions',
+                        'UPDATE bank_accounts SET current_balance=initial_balance',
+                    ],
+                    'payables' => ['DELETE FROM accounts_payable'],
+                    'receivables' => ['DELETE FROM accounts_receivable'],
+                    'cards' => ['DELETE FROM card_receivables'],
+                    'checks' => ['DELETE FROM checks_control'],
+                    'reconciliation' => ['DELETE FROM bank_reconciliation'],
+                    'closing' => ['DELETE FROM cash_closing'],
+                    'suppliers' => ['DELETE FROM suppliers'],
+                    'settings' => [
+                        'DELETE FROM card_rate_rules',
+                        'DELETE FROM sale_locations',
+                        'DELETE FROM card_payment_configs',
+                        'DELETE FROM card_brands',
+                        'DELETE FROM card_machines',
+                        'DELETE FROM payable_types',
+                        'DELETE FROM companies',
+                        'DELETE FROM payment_methods',
+                        'DELETE FROM cashflow_categories',
+                        'DELETE FROM bank_accounts',
+                    ],
+                ];
+
+                $pdo->beginTransaction();
+                try {
+                    foreach ($targets as $target) {
+                        foreach ($resetMap[$target] ?? [] as $sql) {
+                            $pdo->exec($sql);
+                        }
+                    }
+                    $pdo->commit();
+                } catch (Throwable $exception) {
+                    $pdo->rollBack();
+                }
+            }
             break;
     }
 }
@@ -1467,6 +1508,26 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </table>
 <?php elseif ($module === 'configuracoes'): ?>
     <h3>Configurações</h3>
+    <button type="button" class="btn-danger" onclick="document.getElementById('resetSystemModal').showModal()">Resetar sistema</button>
+
+    <dialog id="resetSystemModal">
+        <form method="post">
+            <input type="hidden" name="action" value="system_reset">
+            <h4>Selecione os dados para excluir</h4>
+            <label><input type="checkbox" name="reset_targets[]" value="transactions"> Fluxo de caixa / transações</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="payables"> Contas a pagar</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="receivables"> Contas a receber</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="cards"> Cartões</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="checks"> Cheques</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="reconciliation"> Conciliação bancária</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="closing"> Fechamento de caixa</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="suppliers"> Fornecedores</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="settings"> Cadastros de configurações</label><br>
+            <p class="small">Atenção: esta ação exclui permanentemente os registros selecionados.</p>
+            <button class="btn-danger" onclick="return confirm('Confirma o reset dos dados selecionados?')">Excluir selecionados</button>
+            <button type="button" onclick="document.getElementById('resetSystemModal').close()">Cancelar</button>
+        </form>
+    </dialog>
 
     <h4>Bancos e saldos iniciais</h4>
     <form method="post">
