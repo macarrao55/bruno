@@ -476,6 +476,33 @@ function handlePost(PDO $pdo, string $module): void
                 $pdo->prepare('DELETE FROM card_payment_configs WHERE id=:id')
                     ->execute([':id' => (int) $_POST['id']]);
             }
+
+            if ($action === 'card_rate_rule_add') {
+                $pdo->prepare('INSERT INTO card_rate_rules (machine_id, brand_id, payment_config_id, fee_percent, release_days)
+                    VALUES (:machine_id,:brand_id,:payment_config_id,:fee_percent,:release_days)')
+                    ->execute([
+                        ':machine_id' => (int) $_POST['machine_id'],
+                        ':brand_id' => (int) $_POST['brand_id'],
+                        ':payment_config_id' => (int) $_POST['payment_config_id'],
+                        ':fee_percent' => (float) $_POST['fee_percent'],
+                        ':release_days' => (int) $_POST['release_days'],
+                    ]);
+            }
+            if ($action === 'card_rate_rule_update') {
+                $pdo->prepare('UPDATE card_rate_rules SET machine_id=:machine_id, brand_id=:brand_id, payment_config_id=:payment_config_id, fee_percent=:fee_percent, release_days=:release_days WHERE id=:id')
+                    ->execute([
+                        ':id' => (int) $_POST['id'],
+                        ':machine_id' => (int) $_POST['machine_id'],
+                        ':brand_id' => (int) $_POST['brand_id'],
+                        ':payment_config_id' => (int) $_POST['payment_config_id'],
+                        ':fee_percent' => (float) $_POST['fee_percent'],
+                        ':release_days' => (int) $_POST['release_days'],
+                    ]);
+            }
+            if ($action === 'card_rate_rule_delete') {
+                $pdo->prepare('DELETE FROM card_rate_rules WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id']]);
+            }
             break;
     }
 }
@@ -560,6 +587,11 @@ $payableTypes = fetchAll($pdo, 'SELECT * FROM payable_types ORDER BY name');
 $cardMachines = fetchAll($pdo, 'SELECT * FROM card_machines ORDER BY name');
 $cardBrands = fetchAll($pdo, 'SELECT * FROM card_brands ORDER BY name');
 $cardPaymentConfigs = fetchAll($pdo, 'SELECT * FROM card_payment_configs ORDER BY name');
+$cardRateRules = fetchAll($pdo, 'SELECT r.*, m.name AS machine_name, b.name AS brand_name, p.name AS payment_name FROM card_rate_rules r
+    JOIN card_machines m ON m.id=r.machine_id
+    JOIN card_brands b ON b.id=r.brand_id
+    JOIN card_payment_configs p ON p.id=r.payment_config_id
+    ORDER BY m.name, b.name, p.name');
 $supplierAnalysis = fetchAll($pdo, "SELECT
     s.id,
     s.name,
@@ -1029,16 +1061,16 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 <?php elseif ($module === 'cartoes'): ?>
     <h3>Controle de Cartões</h3>
     <form method="post">
-        <select name="machine" required>
+        <select name="machine" id="card_machine_select" required>
             <option value="">Máquina</option>
             <?php foreach ($cardMachines as $machine): ?>
-                <option value="<?= htmlspecialchars($machine['name']) ?>"><?= htmlspecialchars($machine['name']) ?></option>
+                <option value="<?= htmlspecialchars($machine['name']) ?>" data-id="<?= $machine['id'] ?>"><?= htmlspecialchars($machine['name']) ?></option>
             <?php endforeach; ?>
         </select>
-        <select name="brand" required>
+        <select name="brand" id="card_brand_select" required>
             <option value="">Bandeira</option>
             <?php foreach ($cardBrands as $brand): ?>
-                <option value="<?= htmlspecialchars($brand['name']) ?>"><?= htmlspecialchars($brand['name']) ?></option>
+                <option value="<?= htmlspecialchars($brand['name']) ?>" data-id="<?= $brand['id'] ?>"><?= htmlspecialchars($brand['name']) ?></option>
             <?php endforeach; ?>
         </select>
         <select name="card_type" id="card_type_select" required>
@@ -1046,6 +1078,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <?php foreach ($cardPaymentConfigs as $config): ?>
                 <option
                     value="<?= htmlspecialchars($config['name']) ?>"
+                    data-id="<?= $config['id'] ?>"
                     data-fee="<?= (float) $config['fee_percent'] ?>"
                     data-days="<?= (int) $config['release_days'] ?>">
                     <?= htmlspecialchars($config['name']) ?>
@@ -1063,17 +1096,33 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </table>
     <script>
         (function () {
+            const machineSelect = document.getElementById('card_machine_select');
+            const brandSelect = document.getElementById('card_brand_select');
             const paymentType = document.getElementById('card_type_select');
             const feeField = document.getElementById('card_fee_percent');
             const saleDateField = document.getElementById('card_sale_date');
             const releaseDateField = document.getElementById('card_expected_release_date');
+            const rateRules = <?= json_encode(array_map(static fn(array $r): array => [
+                'machine_id' => (int) $r['machine_id'],
+                'brand_id' => (int) $r['brand_id'],
+                'payment_config_id' => (int) $r['payment_config_id'],
+                'fee_percent' => (float) $r['fee_percent'],
+                'release_days' => (int) $r['release_days'],
+            ], $cardRateRules)) ?>;
 
             function updateCardFields() {
+                const selectedMachine = machineSelect.options[machineSelect.selectedIndex];
+                const selectedBrand = brandSelect.options[brandSelect.selectedIndex];
                 const selected = paymentType.options[paymentType.selectedIndex];
                 if (!selected) return;
 
-                const fee = selected.dataset.fee || '';
-                const days = parseInt(selected.dataset.days || '0', 10);
+                const machineId = parseInt(selectedMachine?.dataset.id || '0', 10);
+                const brandId = parseInt(selectedBrand?.dataset.id || '0', 10);
+                const paymentId = parseInt(selected.dataset.id || '0', 10);
+                const rule = rateRules.find((r) => r.machine_id === machineId && r.brand_id === brandId && r.payment_config_id === paymentId);
+
+                const fee = rule ? rule.fee_percent : (selected.dataset.fee || '');
+                const days = rule ? parseInt(rule.release_days, 10) : parseInt(selected.dataset.days || '0', 10);
                 feeField.value = fee;
 
                 if (saleDateField.value && Number.isFinite(days)) {
@@ -1086,6 +1135,8 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 }
             }
 
+            machineSelect.addEventListener('change', updateCardFields);
+            brandSelect.addEventListener('change', updateCardFields);
             paymentType.addEventListener('change', updateCardFields);
             saleDateField.addEventListener('change', updateCardFields);
         })();
@@ -1439,6 +1490,73 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                     <form method="post" style="display:inline;" onsubmit="return confirm('Excluir forma de cartão?')">
                         <input type="hidden" name="action" value="card_payment_config_delete">
                         <input type="hidden" name="id" value="<?= $config['id'] ?>">
+                        <button>Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Taxas específicas por máquina + bandeira + forma</h4>
+    <form method="post">
+        <input type="hidden" name="action" value="card_rate_rule_add">
+        <select name="machine_id" required>
+            <option value="">Máquina</option>
+            <?php foreach ($cardMachines as $machine): ?>
+                <option value="<?= $machine['id'] ?>"><?= htmlspecialchars($machine['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <select name="brand_id" required>
+            <option value="">Bandeira</option>
+            <?php foreach ($cardBrands as $brand): ?>
+                <option value="<?= $brand['id'] ?>"><?= htmlspecialchars($brand['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <select name="payment_config_id" required>
+            <option value="">Forma</option>
+            <?php foreach ($cardPaymentConfigs as $config): ?>
+                <option value="<?= $config['id'] ?>"><?= htmlspecialchars($config['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <input name="fee_percent" type="number" step="0.01" placeholder="Taxa %" required>
+        <input name="release_days" type="number" step="1" placeholder="Dias vencimento" required>
+        <button>Adicionar regra</button>
+    </form>
+    <table>
+        <tr><th>Máquina</th><th>Bandeira</th><th>Forma</th><th>Taxa %</th><th>Dias</th><th>Salvar</th><th>Excluir</th></tr>
+        <?php foreach ($cardRateRules as $rule): ?>
+            <tr>
+                <td>
+                    <form method="post" style="display:inline;">
+                        <input type="hidden" name="action" value="card_rate_rule_update">
+                        <input type="hidden" name="id" value="<?= $rule['id'] ?>">
+                        <select name="machine_id" required>
+                            <?php foreach ($cardMachines as $machine): ?>
+                                <option value="<?= $machine['id'] ?>" <?= (int) $rule['machine_id'] === (int) $machine['id'] ? 'selected' : '' ?>><?= htmlspecialchars($machine['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                </td>
+                <td>
+                        <select name="brand_id" required>
+                            <?php foreach ($cardBrands as $brand): ?>
+                                <option value="<?= $brand['id'] ?>" <?= (int) $rule['brand_id'] === (int) $brand['id'] ? 'selected' : '' ?>><?= htmlspecialchars($brand['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                </td>
+                <td>
+                        <select name="payment_config_id" required>
+                            <?php foreach ($cardPaymentConfigs as $config): ?>
+                                <option value="<?= $config['id'] ?>" <?= (int) $rule['payment_config_id'] === (int) $config['id'] ? 'selected' : '' ?>><?= htmlspecialchars($config['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                </td>
+                <td><input name="fee_percent" type="number" step="0.01" value="<?= $rule['fee_percent'] ?>" required></td>
+                <td><input name="release_days" type="number" step="1" value="<?= $rule['release_days'] ?>" required></td>
+                <td><button>Salvar</button></form></td>
+                <td>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir regra de taxa?')">
+                        <input type="hidden" name="action" value="card_rate_rule_delete">
+                        <input type="hidden" name="id" value="<?= $rule['id'] ?>">
                         <button>Excluir</button>
                     </form>
                 </td>

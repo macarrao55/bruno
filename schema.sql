@@ -169,6 +169,19 @@ CREATE TABLE card_payment_configs (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE card_rate_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    machine_id INTEGER NOT NULL,
+    brand_id INTEGER NOT NULL,
+    payment_config_id INTEGER NOT NULL,
+    fee_percent REAL NOT NULL,
+    release_days INTEGER NOT NULL DEFAULT 30,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (machine_id) REFERENCES card_machines(id),
+    FOREIGN KEY (brand_id) REFERENCES card_brands(id),
+    FOREIGN KEY (payment_config_id) REFERENCES card_payment_configs(id)
+);
+
 INSERT INTO bank_accounts (name, initial_balance, current_balance) VALUES
 ('Banco Principal', 10000, 10000),
 ('Banco Reserva', 2500, 2500);
@@ -216,3 +229,13 @@ INSERT INTO card_payment_configs (name, fee_percent, release_days) VALUES
 ('debito', 1.99, 1),
 ('credito_avista', 3.49, 30),
 ('credito_parcelado', 4.99, 30);
+
+INSERT INTO card_rate_rules (machine_id, brand_id, payment_config_id, fee_percent, release_days)
+SELECT m.id, b.id, p.id, 0.99, 1
+FROM card_machines m, card_brands b, card_payment_configs p
+WHERE m.name='Cielo' AND b.name='Elo' AND p.name='debito';
+
+INSERT INTO card_rate_rules (machine_id, brand_id, payment_config_id, fee_percent, release_days)
+SELECT m.id, b.id, p.id, 1.33, 1
+FROM card_machines m, card_brands b, card_payment_configs p
+WHERE m.name='PagSeguro' AND b.name='Elo' AND p.name='debito';

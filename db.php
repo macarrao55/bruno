@@ -205,4 +205,32 @@ function runMigrations(PDO $pdo): void
             ('credito_avista', 3.49, 30),
             ('credito_parcelado', 4.99, 30)");
     }
+
+    $cardRateRuleTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='card_rate_rules'")->fetch();
+    if (!$cardRateRuleTable) {
+        $pdo->exec('CREATE TABLE card_rate_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            machine_id INTEGER NOT NULL,
+            brand_id INTEGER NOT NULL,
+            payment_config_id INTEGER NOT NULL,
+            fee_percent REAL NOT NULL,
+            release_days INTEGER NOT NULL DEFAULT 30,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (machine_id) REFERENCES card_machines(id),
+            FOREIGN KEY (brand_id) REFERENCES card_brands(id),
+            FOREIGN KEY (payment_config_id) REFERENCES card_payment_configs(id)
+        )');
+    }
+
+    $cardRateRuleCount = (int) ($pdo->query('SELECT COUNT(*) FROM card_rate_rules')->fetchColumn() ?: 0);
+    if ($cardRateRuleCount === 0) {
+        $pdo->exec("INSERT INTO card_rate_rules (machine_id, brand_id, payment_config_id, fee_percent, release_days)
+            SELECT m.id, b.id, p.id, 0.99, 1
+            FROM card_machines m, card_brands b, card_payment_configs p
+            WHERE m.name='Cielo' AND b.name='Elo' AND p.name='debito'");
+        $pdo->exec("INSERT INTO card_rate_rules (machine_id, brand_id, payment_config_id, fee_percent, release_days)
+            SELECT m.id, b.id, p.id, 1.33, 1
+            FROM card_machines m, card_brands b, card_payment_configs p
+            WHERE m.name='PagSeguro' AND b.name='Elo' AND p.name='debito'");
+    }
 }
