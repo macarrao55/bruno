@@ -723,6 +723,20 @@ function money(float $v): string
     return 'R$ ' . number_format($v, 2, ',', '.');
 }
 
+function dateBr(?string $date): string
+{
+    $value = trim((string) $date);
+    if ($value === '') {
+        return '';
+    }
+    $ts = strtotime($value);
+    if ($ts === false) {
+        return $value;
+    }
+
+    return date('d/m/Y', $ts);
+}
+
 function moneyInput(mixed $value): float
 {
     $normalized = trim((string) $value);
@@ -1026,7 +1040,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <table>
         <tr><th>Data</th><th>Tipo</th><th>Valor</th><th>Categoria</th><th>Subcategoria</th><th>Origem</th><th>Destino</th><th>Histórico</th></tr>
         <?php foreach ($transactions as $t): ?>
-            <tr><td><?= $t['occurred_on'] ?></td><td><?= $t['movement_type'] ?></td><td><?= money((float) $t['amount']) ?></td><td><?= htmlspecialchars($t['category']) ?></td><td><?= htmlspecialchars((string) $t['subcategory']) ?></td><td><?= htmlspecialchars((string) $t['origin_account']) ?></td><td><?= htmlspecialchars((string) $t['destination_account']) ?></td><td><?= htmlspecialchars((string) $t['description']) ?></td></tr>
+            <tr><td><?= dateBr((string) $t['occurred_on']) ?></td><td><?= $t['movement_type'] ?></td><td><?= money((float) $t['amount']) ?></td><td><?= htmlspecialchars($t['category']) ?></td><td><?= htmlspecialchars((string) $t['subcategory']) ?></td><td><?= htmlspecialchars((string) $t['origin_account']) ?></td><td><?= htmlspecialchars((string) $t['destination_account']) ?></td><td><?= htmlspecialchars((string) $t['description']) ?></td></tr>
         <?php endforeach; ?>
     </table>
 
@@ -1125,11 +1139,11 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <td><?= htmlspecialchars((string) $p['payable_type']) ?></td>
                 <td><?= htmlspecialchars($p['supplier']) ?></td>
                 <td><?= htmlspecialchars((string) $p['boleto_number']) ?></td>
-                <td><?= $p['due_date'] ?></td>
+                <td><?= dateBr((string) $p['due_date']) ?></td>
                 <td><?= money((float) $p['amount']) ?></td>
                 <td><?= htmlspecialchars((string) $p['installment']) ?></td>
                 <td><span class="badge <?= $p['display_status'] ?>"><?= $p['display_status'] ?></span></td>
-                <td><?= $p['reminder_date'] ?></td>
+                <td><?= dateBr((string) $p['reminder_date']) ?></td>
                 <td><?= htmlspecialchars((string) $p['notes']) ?></td>
                 <td>
                     <button
@@ -1421,7 +1435,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <button>Salvar</button>
     </form>
     <table><tr><th>Cliente</th><th>Vencimento</th><th>Total</th><th>Recebido</th><th>Parcela</th><th>Fiado</th><th>Situação</th></tr>
-        <?php foreach ($receivables as $r): ?><tr><td><?= htmlspecialchars($r['customer']) ?></td><td><?= $r['due_date'] ?></td><td><?= money((float) $r['amount']) ?></td><td><?= money((float) $r['amount_received']) ?></td><td><?= htmlspecialchars((string) $r['installment']) ?></td><td><?= $r['is_credit_sale'] ? 'Sim' : 'Não' ?></td><td><span class="badge <?= $r['display_status'] ?>"><?= $r['display_status'] ?></span></td></tr><?php endforeach; ?>
+        <?php foreach ($receivables as $r): ?><tr><td><?= htmlspecialchars($r['customer']) ?></td><td><?= dateBr((string) $r['due_date']) ?></td><td><?= money((float) $r['amount']) ?></td><td><?= money((float) $r['amount_received']) ?></td><td><?= htmlspecialchars((string) $r['installment']) ?></td><td><?= $r['is_credit_sale'] ? 'Sim' : 'Não' ?></td><td><span class="badge <?= $r['display_status'] ?>"><?= $r['display_status'] ?></span></td></tr><?php endforeach; ?>
     </table>
 <?php elseif ($module === 'cartoes'): ?>
     <h3>Controle de Cartões</h3>
@@ -1473,8 +1487,8 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <td><?= $c['fee_percent'] ?>%</td>
                 <td><?= money((float) $c['gross_value']) ?></td>
                 <td><?= money((float) $c['net_value']) ?></td>
-                <td><?= $c['sale_date'] ?></td>
-                <td><?= $c['expected_release_date'] ?></td>
+                <td><?= dateBr((string) $c['sale_date']) ?></td>
+                <td><?= dateBr((string) $c['expected_release_date']) ?></td>
                 <td><?= (int) $c['canceled'] ? 'Cancelado' : ($c['received'] ? 'Sim' : 'Não') ?></td>
                 <td>
                     <button type="button" onclick='openCardEditModal(<?= json_encode($c, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
@@ -1626,7 +1640,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <button>Salvar</button>
     </form>
     <table><tr><th>Tipo</th><th>Cliente</th><th>Banco</th><th>Número</th><th>Vencimento</th><th>Valor</th><th>Baixa</th><th>Compensado</th><th>Devolvido</th></tr>
-        <?php foreach ($checks as $c): ?><tr><td><?= $c['check_type'] ?></td><td><?= htmlspecialchars($c['customer']) ?></td><td><?= htmlspecialchars($c['bank']) ?></td><td><?= htmlspecialchars($c['check_number']) ?></td><td><?= $c['due_date'] ?></td><td><?= money((float) $c['amount']) ?></td><td><?= $c['cleared'] ? 'Sim' : 'Não' ?></td><td><?= $c['compensated'] ? 'Sim' : 'Não' ?></td><td><?= $c['returned'] ? 'Sim' : 'Não' ?></td></tr><?php endforeach; ?>
+        <?php foreach ($checks as $c): ?><tr><td><?= $c['check_type'] ?></td><td><?= htmlspecialchars($c['customer']) ?></td><td><?= htmlspecialchars($c['bank']) ?></td><td><?= htmlspecialchars($c['check_number']) ?></td><td><?= dateBr((string) $c['due_date']) ?></td><td><?= money((float) $c['amount']) ?></td><td><?= $c['cleared'] ? 'Sim' : 'Não' ?></td><td><?= $c['compensated'] ? 'Sim' : 'Não' ?></td><td><?= $c['returned'] ? 'Sim' : 'Não' ?></td></tr><?php endforeach; ?>
     </table>
 <?php elseif ($module === 'conciliacao'): ?>
     <h3>Conciliação Bancária</h3>
@@ -1640,7 +1654,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <button>Salvar</button>
     </form>
     <table><tr><th>Conta</th><th>Data</th><th>Descrição</th><th>Sistema</th><th>Banco</th><th>Status</th></tr>
-        <?php foreach ($reconciliations as $r): ?><tr><td><?= htmlspecialchars($r['bank_name']) ?></td><td><?= $r['movement_date'] ?></td><td><?= htmlspecialchars((string) $r['description']) ?></td><td><?= money((float) $r['system_amount']) ?></td><td><?= money((float) $r['bank_amount']) ?></td><td><?= $r['reconciled'] ? 'Conciliado' : 'Não conciliado' ?></td></tr><?php endforeach; ?>
+        <?php foreach ($reconciliations as $r): ?><tr><td><?= htmlspecialchars($r['bank_name']) ?></td><td><?= dateBr((string) $r['movement_date']) ?></td><td><?= htmlspecialchars((string) $r['description']) ?></td><td><?= money((float) $r['system_amount']) ?></td><td><?= money((float) $r['bank_amount']) ?></td><td><?= $r['reconciled'] ? 'Conciliado' : 'Não conciliado' ?></td></tr><?php endforeach; ?>
     </table>
 <?php elseif ($module === 'dre'): ?>
     <h3>DRE Gerencial</h3>
@@ -1666,7 +1680,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <button>Fechar</button>
     </form>
     <table><tr><th>Data</th><th>Abertura</th><th>Entradas</th><th>Saídas</th><th>Conferido</th><th>Diferença</th><th>Obs.</th></tr>
-        <?php foreach ($closings as $f): ?><tr><td><?= $f['opening_date'] ?></td><td><?= money((float) $f['opening_amount']) ?></td><td><?= money((float) $f['total_entries']) ?></td><td><?= money((float) $f['total_exits']) ?></td><td><?= money((float) $f['counted_amount']) ?></td><td><?= money((float) $f['cash_difference']) ?></td><td><?= htmlspecialchars((string) $f['notes']) ?></td></tr><?php endforeach; ?>
+        <?php foreach ($closings as $f): ?><tr><td><?= dateBr((string) $f['opening_date']) ?></td><td><?= money((float) $f['opening_amount']) ?></td><td><?= money((float) $f['total_entries']) ?></td><td><?= money((float) $f['total_exits']) ?></td><td><?= money((float) $f['counted_amount']) ?></td><td><?= money((float) $f['cash_difference']) ?></td><td><?= htmlspecialchars((string) $f['notes']) ?></td></tr><?php endforeach; ?>
     </table>
 <?php elseif ($module === 'relatorios'): ?>
     <h3>Relatórios</h3>
