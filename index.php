@@ -819,7 +819,15 @@ $cashflowBySubcategory = fetchAll($pdo, "SELECT
     GROUP BY category, subcategory
     ORDER BY category, saldo DESC", [':s' => $filterStart, ':e' => $filterEnd]);
 
-$payables = fetchAll($pdo, 'SELECT *, CASE WHEN status = "aberto" AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_payable ORDER BY due_date ASC', [':today' => $today]);
+$payableSearch = trim((string) ($_GET['payable_search'] ?? ''));
+$payablesSql = 'SELECT *, CASE WHEN status = "aberto" AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_payable';
+$payablesParams = [':today' => $today];
+if ($payableSearch !== '') {
+    $payablesSql .= ' WHERE company LIKE :q OR supplier LIKE :q OR boleto_number LIKE :q OR payable_type LIKE :q OR notes LIKE :q';
+    $payablesParams[':q'] = '%' . $payableSearch . '%';
+}
+$payablesSql .= ' ORDER BY due_date ASC';
+$payables = fetchAll($pdo, $payablesSql, $payablesParams);
 $suppliers = fetchAll($pdo, 'SELECT * FROM suppliers ORDER BY name');
 $paymentMethods = fetchAll($pdo, 'SELECT * FROM payment_methods ORDER BY name');
 $companies = fetchAll($pdo, 'SELECT * FROM companies ORDER BY name');
@@ -1050,6 +1058,14 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </table>
 <?php elseif ($module === 'pagar'): ?>
     <h3>Contas a Pagar</h3>
+    <form method="get">
+        <input type="hidden" name="module" value="pagar">
+        <input name="payable_search" placeholder="Pesquisar fornecedor, tipo, boleto, observação..." value="<?= htmlspecialchars($payableSearch) ?>">
+        <button>Filtrar</button>
+        <?php if ($payableSearch !== ''): ?>
+            <a href="?module=pagar">Limpar</a>
+        <?php endif; ?>
+    </form>
     <form method="post" id="payableForm">
         <input type="hidden" name="action" id="payable_action" value="<?= $editingPayable ? 'edit' : 'create' ?>">
         <?php if ($editingPayable): ?>
@@ -1102,7 +1118,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <a href="?module=pagar">Cancelar edição</a>
         <?php endif; ?>
     </form>
-    <table><tr><th>Empresa</th><th>Tipo</th><th>Fornecedor</th><th>Boleto</th><th>Vencimento</th><th>Valor</th><th>Parcela</th><th>Situação</th><th>Aviso</th><th>Ações</th></tr>
+    <table><tr><th>Empresa</th><th>Tipo</th><th>Fornecedor</th><th>Boleto</th><th>Vencimento</th><th>Valor</th><th>Parcela</th><th>Situação</th><th>Aviso</th><th>Observação</th><th>Ações</th></tr>
         <?php foreach ($payables as $p): ?>
             <tr>
                 <td><?= htmlspecialchars((string) $p['company']) ?></td>
@@ -1114,6 +1130,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <td><?= htmlspecialchars((string) $p['installment']) ?></td>
                 <td><span class="badge <?= $p['display_status'] ?>"><?= $p['display_status'] ?></span></td>
                 <td><?= $p['reminder_date'] ?></td>
+                <td><?= htmlspecialchars((string) $p['notes']) ?></td>
                 <td>
                     <button
                         type="button"
@@ -1147,7 +1164,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                         <button class="btn-danger">Excluir</button>
                     </form>
                     <?php if ($p['status'] !== 'pago'): ?>
-                        <button type="button" onclick="openSettleModal(<?= $p['id'] ?>, <?= (float) $p['amount'] ?>)">Dar baixa</button>
+                        <button type="button" class="btn-success" onclick="openSettleModal(<?= $p['id'] ?>, <?= (float) $p['amount'] ?>)">Dar baixa</button>
                     <?php endif; ?>
                 </td>
             </tr>
