@@ -221,8 +221,21 @@ function handlePost(PDO $pdo, string $module): void
             }
 
             if ($action === 'delete') {
-                $pdo->prepare('DELETE FROM accounts_payable WHERE id=:id')
-                    ->execute([':id' => (int) $_POST['id']]);
+                $id = (int) $_POST['id'];
+                $deleteCashflow = isset($_POST['delete_cashflow']) && (int) $_POST['delete_cashflow'] === 1;
+
+                $payableStmt = $pdo->prepare('SELECT * FROM accounts_payable WHERE id=:id');
+                $payableStmt->execute([':id' => $id]);
+                $payable = $payableStmt->fetch();
+                if ($payable) {
+                    $pdo->prepare('DELETE FROM accounts_payable WHERE id=:id')
+                        ->execute([':id' => $id]);
+
+                    if ($deleteCashflow) {
+                        $pdo->prepare('DELETE FROM transactions WHERE description LIKE :description')
+                            ->execute([':description' => 'Baixa conta a pagar #' . $id . ':%']);
+                    }
+                }
             }
 
             if ($action === 'settle') {
@@ -254,7 +267,7 @@ function handlePost(PDO $pdo, string $module): void
                     ':paid_amount' => $paidAmount,
                 ]);
 
-                $description = 'Baixa conta a pagar: ' . $item['supplier'];
+                $description = 'Baixa conta a pagar #' . $id . ': ' . $item['supplier'];
                 $originAccount = 'caixa';
                 $bankName = '';
 
@@ -1111,9 +1124,10 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                         ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
                         Editar
                     </button>
-                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir este lançamento?')">
+                    <form method="post" style="display:inline;" onsubmit="return confirmPayableDelete(this)">
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="id" value="<?= (int) $p['id'] ?>">
+                        <input type="hidden" name="delete_cashflow" value="0">
                         <button class="btn-danger">Excluir</button>
                     </form>
                     <?php if ($p['status'] !== 'pago'): ?>
@@ -1277,6 +1291,18 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('edit_late_interest').value = data.late_interest ?? 0;
             document.getElementById('edit_paid_amount').value = data.paid_amount ?? '';
             document.getElementById('editPayableModal').showModal();
+        }
+
+        function confirmPayableDelete(form) {
+            if (!confirm('Excluir este lançamento de contas a pagar?')) {
+                return false;
+            }
+            const removeFromCashflow = confirm('Deseja excluir também o lançamento no fluxo de caixa?');
+            const cashflowField = form.querySelector('input[name="delete_cashflow"]');
+            if (cashflowField) {
+                cashflowField.value = removeFromCashflow ? '1' : '0';
+            }
+            return true;
         }
 
         (function () {
