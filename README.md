@@ -10,7 +10,7 @@ Aplicação simples (sem framework) para controle financeiro com SQLite, cobrind
 - Cadastro de fornecedores e formas de pagamento configuráveis.
 - Empresas e tipos de conta a pagar configuráveis.
 - Controle de cartões e cheques.
-- Controle de cartões com máquina, bandeira, forma, taxa e vencimento configuráveis.
+- Controle de cartões com máquina, bandeira e forma configuráveis.
 - Regras de taxa por combinação máquina + bandeira + forma de pagamento.
 - Conciliação bancária.
 - DRE gerencial.

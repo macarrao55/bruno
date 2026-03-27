@@ -456,20 +456,20 @@ function handlePost(PDO $pdo, string $module): void
             }
 
             if ($action === 'card_payment_config_add') {
-                $pdo->prepare('INSERT INTO card_payment_configs (name, fee_percent, release_days) VALUES (:name,:fee,:days)')
+                $defaultDays = str_contains(mb_strtolower((string) $_POST['name'], 'UTF-8'), 'debito') ? 1 : 30;
+                $pdo->prepare('INSERT INTO card_payment_configs (name, fee_percent, release_days) VALUES (:name,0,:days)')
                     ->execute([
                         ':name' => trim($_POST['name']),
-                        ':fee' => (float) $_POST['fee_percent'],
-                        ':days' => (int) $_POST['release_days'],
+                        ':days' => $defaultDays,
                     ]);
             }
             if ($action === 'card_payment_config_update') {
-                $pdo->prepare('UPDATE card_payment_configs SET name=:name, fee_percent=:fee, release_days=:days WHERE id=:id')
+                $defaultDays = str_contains(mb_strtolower((string) $_POST['name'], 'UTF-8'), 'debito') ? 1 : 30;
+                $pdo->prepare('UPDATE card_payment_configs SET name=:name, release_days=:days WHERE id=:id')
                     ->execute([
                         ':id' => (int) $_POST['id'],
                         ':name' => trim($_POST['name']),
-                        ':fee' => (float) $_POST['fee_percent'],
-                        ':days' => (int) $_POST['release_days'],
+                        ':days' => $defaultDays,
                     ]);
             }
             if ($action === 'card_payment_config_delete') {
@@ -1078,9 +1078,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <?php foreach ($cardPaymentConfigs as $config): ?>
                 <option
                     value="<?= htmlspecialchars($config['name']) ?>"
-                    data-id="<?= $config['id'] ?>"
-                    data-fee="<?= (float) $config['fee_percent'] ?>"
-                    data-days="<?= (int) $config['release_days'] ?>">
+                    data-id="<?= $config['id'] ?>">
                     <?= htmlspecialchars($config['name']) ?>
                 </option>
             <?php endforeach; ?>
@@ -1121,8 +1119,10 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 const paymentId = parseInt(selected.dataset.id || '0', 10);
                 const rule = rateRules.find((r) => r.machine_id === machineId && r.brand_id === brandId && r.payment_config_id === paymentId);
 
-                const fee = rule ? rule.fee_percent : (selected.dataset.fee || '');
-                const days = rule ? parseInt(rule.release_days, 10) : parseInt(selected.dataset.days || '0', 10);
+                const paymentName = (selected.value || '').toLowerCase();
+                const defaultDays = paymentName.includes('debito') ? 1 : 30;
+                const fee = rule ? rule.fee_percent : 0;
+                const days = rule ? parseInt(rule.release_days, 10) : defaultDays;
                 feeField.value = fee;
 
                 if (saleDateField.value && Number.isFinite(days)) {
@@ -1465,16 +1465,14 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <?php endforeach; ?>
     </table>
 
-    <h4>Formas de pagamento de cartão (taxa e vencimento)</h4>
+    <h4>Formas de pagamento de cartão</h4>
     <form method="post">
         <input type="hidden" name="action" value="card_payment_config_add">
         <input name="name" placeholder="Forma (ex: debito)" required>
-        <input name="fee_percent" type="number" step="0.01" placeholder="Taxa %" required>
-        <input name="release_days" type="number" step="1" placeholder="Dias para vencimento" required>
         <button>Adicionar forma cartão</button>
     </form>
     <table>
-        <tr><th>Forma</th><th>Taxa %</th><th>Dias vencimento</th><th>Salvar</th><th>Excluir</th></tr>
+        <tr><th>Forma</th><th>Salvar</th><th>Excluir</th></tr>
         <?php foreach ($cardPaymentConfigs as $config): ?>
             <tr>
                 <td>
@@ -1483,8 +1481,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                         <input type="hidden" name="id" value="<?= $config['id'] ?>">
                         <input name="name" value="<?= htmlspecialchars($config['name']) ?>" required>
                 </td>
-                <td><input name="fee_percent" type="number" step="0.01" value="<?= $config['fee_percent'] ?>" required></td>
-                <td><input name="release_days" type="number" step="1" value="<?= $config['release_days'] ?>" required></td>
                 <td><button>Salvar</button></form></td>
                 <td>
                     <form method="post" style="display:inline;" onsubmit="return confirm('Excluir forma de cartão?')">
