@@ -833,14 +833,56 @@ $cashflowBySubcategory = fetchAll($pdo, "SELECT
     GROUP BY category, subcategory
     ORDER BY category, saldo DESC", [':s' => $filterStart, ':e' => $filterEnd]);
 
-$payableSearch = trim((string) ($_GET['payable_search'] ?? ''));
+$payableDueDateFrom = trim((string) ($_GET['payable_due_date_from'] ?? ''));
+$payableDueDateTo = trim((string) ($_GET['payable_due_date_to'] ?? ''));
+$payableCreatedDateFrom = trim((string) ($_GET['payable_created_date_from'] ?? ''));
+$payableCreatedDateTo = trim((string) ($_GET['payable_created_date_to'] ?? ''));
+$payableSupplierFilter = trim((string) ($_GET['payable_supplier'] ?? ''));
+$payableStatusFilter = trim((string) ($_GET['payable_status'] ?? ''));
+$payableCompanyFilter = trim((string) ($_GET['payable_company'] ?? ''));
+$payableTypeFilter = trim((string) ($_GET['payable_type_filter'] ?? ''));
+
 $payablesSql = 'SELECT *, CASE WHEN status = "aberto" AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_payable';
 $payablesParams = [':today' => $today];
-if ($payableSearch !== '') {
-    $payablesSql .= ' WHERE company LIKE :q OR supplier LIKE :q OR boleto_number LIKE :q OR payable_type LIKE :q OR notes LIKE :q';
-    $payablesParams[':q'] = '%' . $payableSearch . '%';
+$payablesConditions = [];
+
+if ($payableDueDateFrom !== '') {
+    $payablesConditions[] = 'due_date >= :due_from';
+    $payablesParams[':due_from'] = $payableDueDateFrom;
 }
-$payablesSql .= ' ORDER BY due_date ASC';
+if ($payableDueDateTo !== '') {
+    $payablesConditions[] = 'due_date <= :due_to';
+    $payablesParams[':due_to'] = $payableDueDateTo;
+}
+if ($payableCreatedDateFrom !== '') {
+    $payablesConditions[] = 'date(created_at) >= :created_from';
+    $payablesParams[':created_from'] = $payableCreatedDateFrom;
+}
+if ($payableCreatedDateTo !== '') {
+    $payablesConditions[] = 'date(created_at) <= :created_to';
+    $payablesParams[':created_to'] = $payableCreatedDateTo;
+}
+if ($payableSupplierFilter !== '') {
+    $payablesConditions[] = 'supplier LIKE :supplier';
+    $payablesParams[':supplier'] = '%' . $payableSupplierFilter . '%';
+}
+if ($payableStatusFilter !== '') {
+    $payablesConditions[] = 'status = :status';
+    $payablesParams[':status'] = $payableStatusFilter;
+}
+if ($payableCompanyFilter !== '') {
+    $payablesConditions[] = 'company LIKE :company';
+    $payablesParams[':company'] = '%' . $payableCompanyFilter . '%';
+}
+if ($payableTypeFilter !== '') {
+    $payablesConditions[] = 'payable_type LIKE :payable_type';
+    $payablesParams[':payable_type'] = '%' . $payableTypeFilter . '%';
+}
+
+if ($payablesConditions !== []) {
+    $payablesSql .= ' WHERE ' . implode(' AND ', $payablesConditions);
+}
+$payablesSql .= ' ORDER BY due_date ASC, id DESC';
 $payables = fetchAll($pdo, $payablesSql, $payablesParams);
 $suppliers = fetchAll($pdo, 'SELECT * FROM suppliers ORDER BY name');
 $paymentMethods = fetchAll($pdo, 'SELECT * FROM payment_methods ORDER BY name');
@@ -1072,14 +1114,53 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </table>
 <?php elseif ($module === 'pagar'): ?>
     <h3>Contas a Pagar</h3>
-    <form method="get">
-        <input type="hidden" name="module" value="pagar">
-        <input name="payable_search" placeholder="Pesquisar fornecedor, tipo, boleto, observação..." value="<?= htmlspecialchars($payableSearch) ?>">
-        <button>Filtrar</button>
-        <?php if ($payableSearch !== ''): ?>
-            <a href="?module=pagar">Limpar</a>
-        <?php endif; ?>
-    </form>
+    <button type="button" onclick="document.getElementById('payableFilterModal').showModal()">Filtrar</button>
+    <a href="?module=pagar">Limpar filtros</a>
+
+    <dialog id="payableFilterModal">
+        <form method="get">
+            <input type="hidden" name="module" value="pagar">
+            <h4>Filtros de Contas a Pagar</h4>
+            <label>Vencimento de: <input type="date" name="payable_due_date_from" value="<?= htmlspecialchars($payableDueDateFrom) ?>"></label>
+            <label>até: <input type="date" name="payable_due_date_to" value="<?= htmlspecialchars($payableDueDateTo) ?>"></label><br>
+            <label>Lançamento de: <input type="date" name="payable_created_date_from" value="<?= htmlspecialchars($payableCreatedDateFrom) ?>"></label>
+            <label>até: <input type="date" name="payable_created_date_to" value="<?= htmlspecialchars($payableCreatedDateTo) ?>"></label><br>
+            <label>Fornecedor:
+                <select name="payable_supplier">
+                    <option value="">Todos</option>
+                    <?php foreach ($suppliers as $supplier): ?>
+                        <option value="<?= htmlspecialchars($supplier['name']) ?>" <?= $payableSupplierFilter === (string) $supplier['name'] ? 'selected' : '' ?>><?= htmlspecialchars($supplier['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Situação:
+                <select name="payable_status">
+                    <option value="">Todas</option>
+                    <option value="aberto" <?= $payableStatusFilter === 'aberto' ? 'selected' : '' ?>>aberto</option>
+                    <option value="pago" <?= $payableStatusFilter === 'pago' ? 'selected' : '' ?>>pago</option>
+                    <option value="atrasado" <?= $payableStatusFilter === 'atrasado' ? 'selected' : '' ?>>atrasado</option>
+                </select>
+            </label><br>
+            <label>Empresa:
+                <select name="payable_company">
+                    <option value="">Todas</option>
+                    <?php foreach ($companies as $company): ?>
+                        <option value="<?= htmlspecialchars($company['name']) ?>" <?= $payableCompanyFilter === (string) $company['name'] ? 'selected' : '' ?>><?= htmlspecialchars($company['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Tipo:
+                <select name="payable_type_filter">
+                    <option value="">Todos</option>
+                    <?php foreach ($payableTypes as $type): ?>
+                        <option value="<?= htmlspecialchars($type['name']) ?>" <?= $payableTypeFilter === (string) $type['name'] ? 'selected' : '' ?>><?= htmlspecialchars($type['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label><br>
+            <button>Aplicar filtros</button>
+            <button type="button" onclick="document.getElementById('payableFilterModal').close()">Fechar</button>
+        </form>
+    </dialog>
     <form method="post" id="payableForm">
         <input type="hidden" name="action" id="payable_action" value="<?= $editingPayable ? 'edit' : 'create' ?>">
         <?php if ($editingPayable): ?>

@@ -78,6 +78,8 @@ function runMigrations(PDO $pdo): void
     $addPayableColumn($pdo, 'addition', 'REAL NOT NULL DEFAULT 0');
     $addPayableColumn($pdo, 'late_interest', 'REAL NOT NULL DEFAULT 0');
     $addPayableColumn($pdo, 'paid_amount', 'REAL');
+    $addPayableColumn($pdo, 'created_at', 'TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP');
+    $pdo->exec("UPDATE accounts_payable SET created_at = COALESCE(created_at, datetime('now'))");
 
     $cardColumns = $pdo->query("PRAGMA table_info(card_receivables)")->fetchAll();
     $cardColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $cardColumns);
