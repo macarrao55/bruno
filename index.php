@@ -247,10 +247,10 @@ function handlePost(PDO $pdo, string $module): void
                     break;
                 }
 
-                $discount = (float) $_POST['discount'];
-                $addition = (float) $_POST['addition'];
-                $lateInterest = (float) $_POST['late_interest'];
-                $paidAmount = (float) $item['amount'] - $discount + $addition + $lateInterest;
+                $discount = moneyInput($_POST['discount'] ?? 0);
+                $addition = moneyInput($_POST['addition'] ?? 0);
+                $lateInterest = moneyInput($_POST['late_interest'] ?? 0);
+                $paidAmount = round((float) $item['amount'] - $discount + $addition + $lateInterest, 2);
                 $bankAccountId = (int) $_POST['bank_account_id'];
 
                 $stmt = $pdo->prepare('UPDATE accounts_payable
@@ -721,6 +721,22 @@ function handlePost(PDO $pdo, string $module): void
 function money(float $v): string
 {
     return 'R$ ' . number_format($v, 2, ',', '.');
+}
+
+function moneyInput(mixed $value): float
+{
+    $normalized = trim((string) $value);
+    if (str_contains($normalized, ',') && str_contains($normalized, '.')) {
+        $normalized = str_replace('.', '', $normalized);
+        $normalized = str_replace(',', '.', $normalized);
+    } elseif (str_contains($normalized, ',')) {
+        $normalized = str_replace(',', '.', $normalized);
+    }
+    if ($normalized === '' || !is_numeric($normalized)) {
+        return 0.0;
+    }
+
+    return (float) $normalized;
 }
 
 function normalizeCardType(string $value): string
