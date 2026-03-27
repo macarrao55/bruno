@@ -79,6 +79,16 @@ function runMigrations(PDO $pdo): void
     $addPayableColumn($pdo, 'late_interest', 'REAL NOT NULL DEFAULT 0');
     $addPayableColumn($pdo, 'paid_amount', 'REAL');
 
+    $cardColumns = $pdo->query("PRAGMA table_info(card_receivables)")->fetchAll();
+    $cardColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $cardColumns);
+    $addCardColumn = static function (PDO $conn, string $name, string $type) use ($cardColumnNames): void {
+        if (!in_array($name, $cardColumnNames, true)) {
+            $conn->exec("ALTER TABLE card_receivables ADD COLUMN $name $type");
+        }
+    };
+    $addCardColumn($pdo, 'anticipation_discount', 'REAL NOT NULL DEFAULT 0');
+    $addCardColumn($pdo, 'canceled', 'INTEGER NOT NULL DEFAULT 0');
+
     $categoryTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='cashflow_categories'")->fetch();
     if (!$categoryTable) {
         $pdo->exec('CREATE TABLE cashflow_categories (

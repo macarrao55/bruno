@@ -270,12 +270,13 @@ function handlePost(PDO $pdo, string $module): void
                 $gross = (float) $_POST['gross_value'];
                 $fee = (float) $_POST['fee_percent'];
                 $net = $gross - ($gross * $fee / 100);
+                $cardType = normalizeCardType((string) $_POST['card_type']);
                 $stmt = $pdo->prepare('INSERT INTO card_receivables (machine, brand, card_type, fee_percent, gross_value, net_value, sale_date, expected_release_date, received)
                     VALUES (:machine,:brand,:card_type,:fee_percent,:gross_value,:net_value,:sale_date,:expected_release_date,:received)');
                 $stmt->execute([
                     ':machine' => trim($_POST['machine']),
                     ':brand' => trim($_POST['brand']),
-                    ':card_type' => $_POST['card_type'],
+                    ':card_type' => $cardType,
                     ':fee_percent' => $fee,
                     ':gross_value' => $gross,
                     ':net_value' => $net,
@@ -289,6 +290,7 @@ function handlePost(PDO $pdo, string $module): void
                 $gross = (float) $_POST['gross_value'];
                 $fee = (float) $_POST['fee_percent'];
                 $net = $gross - ($gross * $fee / 100);
+                $cardType = normalizeCardType((string) $_POST['card_type']);
                 $stmt = $pdo->prepare('UPDATE card_receivables
                     SET machine=:machine, brand=:brand, card_type=:card_type, fee_percent=:fee_percent, gross_value=:gross_value, net_value=:net_value, sale_date=:sale_date, expected_release_date=:expected_release_date, received=:received
                     WHERE id=:id');
@@ -296,7 +298,7 @@ function handlePost(PDO $pdo, string $module): void
                     ':id' => (int) $_POST['id'],
                     ':machine' => trim($_POST['machine']),
                     ':brand' => trim($_POST['brand']),
-                    ':card_type' => $_POST['card_type'],
+                    ':card_type' => $cardType,
                     ':fee_percent' => $fee,
                     ':gross_value' => $gross,
                     ':net_value' => $net,
@@ -317,17 +319,30 @@ function handlePost(PDO $pdo, string $module): void
                 $cardStmt->execute([':id' => $id]);
                 $card = $cardStmt->fetch();
                 if ($card) {
-                    $pdo->prepare('UPDATE card_receivables SET received=1 WHERE id=:id')->execute([':id' => $id]);
-                    $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                        VALUES (\'entrada\', :amount, \'cartoes_recebidos\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
+                    $discount = (float) ($_POST['anticipation_discount'] ?? 0);
+                    $isCanceled = isset($_POST['canceled']) ? 1 : 0;
+                    $receivedAmount = max(0, (float) $card['net_value'] - $discount);
+
+                    $pdo->prepare('UPDATE card_receivables SET received=:received, canceled=:canceled, anticipation_discount=:anticipation_discount WHERE id=:id')
                         ->execute([
-                            ':amount' => (float) $card['net_value'],
-                            ':subcategory' => (string) $card['card_type'],
-                            ':origin_account' => (string) $card['machine'],
-                            ':destination_account' => trim((string) ($_POST['destination_account'] ?? 'caixa')),
-                            ':description' => 'Baixa de cartão ' . $card['brand'],
-                            ':occurred_on' => $_POST['received_on'] ?: date('Y-m-d'),
+                            ':id' => $id,
+                            ':received' => $isCanceled ? 0 : 1,
+                            ':canceled' => $isCanceled,
+                            ':anticipation_discount' => $discount,
                         ]);
+
+                    if (!$isCanceled) {
+                        $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                            VALUES (\'entrada\', :amount, \'cartoes_recebidos\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
+                            ->execute([
+                                ':amount' => $receivedAmount,
+                                ':subcategory' => (string) $card['card_type'],
+                                ':origin_account' => (string) $card['machine'],
+                                ':destination_account' => trim((string) ($_POST['destination_account'] ?? 'caixa')),
+                                ':description' => 'Baixa de cartão ' . $card['brand'],
+                                ':occurred_on' => $_POST['received_on'] ?: date('Y-m-d'),
+                            ]);
+                    }
                 }
             }
             break;
@@ -568,6 +583,19 @@ function handlePost(PDO $pdo, string $module): void
 function money(float $v): string
 {
     return 'R$ ' . number_format($v, 2, ',', '.');
+}
+
+function normalizeCardType(string $value): string
+{
+    $normalized = mb_strtolower(trim($value), 'UTF-8');
+    if (str_contains($normalized, 'debito')) {
+        return 'debito';
+    }
+    if (str_contains($normalized, 'parcel')) {
+        return 'credito_parcelado';
+    }
+
+    return 'credito_avista';
 }
 
 function sumValue(PDO $pdo, string $sql, array $params = []): float
@@ -1161,7 +1189,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <td><?= money((float) $c['net_value']) ?></td>
                 <td><?= $c['sale_date'] ?></td>
                 <td><?= $c['expected_release_date'] ?></td>
-                <td><?= $c['received'] ? 'Sim' : 'Não' ?></td>
+                <td><?= (int) $c['canceled'] ? 'Cancelado' : ($c['received'] ? 'Sim' : 'Não') ?></td>
                 <td>
                     <button type="button" onclick='openCardEditModal(<?= json_encode($c, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
                     <form method="post" style="display:inline;" onsubmit="return confirm('Excluir lançamento de cartão?')">
@@ -1169,7 +1197,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                         <input type="hidden" name="id" value="<?= $c['id'] ?>">
                         <button>Excluir</button>
                     </form>
-                    <?php if (!(int) $c['received']): ?>
+                    <?php if (!(int) $c['received'] && !(int) $c['canceled']): ?>
                         <button type="button" onclick="openCardSettleModal(<?= (int) $c['id'] ?>)">Dar baixa</button>
                     <?php endif; ?>
                 </td>
@@ -1205,12 +1233,14 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <input type="hidden" name="action" value="settle">
             <input type="hidden" name="id" id="card_settle_id">
             <label>Data recebimento: <input name="received_on" type="date" value="<?= $today ?>" required></label>
+            <label>Desconto por antecipação: <input name="anticipation_discount" type="number" step="0.01" value="0"></label>
             <label>Conta destino:
                 <select name="destination_account">
                     <option value="caixa">Caixa</option>
                     <?php foreach ($banks as $bank): ?><option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option><?php endforeach; ?>
                 </select>
             </label>
+            <label><input type="checkbox" name="canceled"> Cancelamento de cartão</label>
             <button>Confirmar baixa</button>
             <button type="button" onclick="document.getElementById('cardSettleModal').close()">Fechar</button>
         </form>

@@ -69,7 +69,9 @@ CREATE TABLE card_receivables (
     net_value REAL NOT NULL,
     sale_date TEXT NOT NULL,
     expected_release_date TEXT NOT NULL,
+    anticipation_discount REAL NOT NULL DEFAULT 0,
     received INTEGER NOT NULL DEFAULT 0,
+    canceled INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
