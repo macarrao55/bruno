@@ -12,6 +12,7 @@ Aplicação simples (sem framework) para controle financeiro com SQLite, cobrind
 - Controle de cartões e cheques.
 - Controle de cartões com máquina, bandeira e forma configuráveis.
 - Regras de taxa por combinação máquina + bandeira + forma de pagamento.
+- Lançamentos de cartão com ações de editar, excluir e dar baixa.
 - Conciliação bancária.
 - DRE gerencial.
 - Fechamento de caixa.

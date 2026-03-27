@@ -265,22 +265,71 @@ function handlePost(PDO $pdo, string $module): void
             break;
 
         case 'cartoes':
-            $gross = (float) $_POST['gross_value'];
-            $fee = (float) $_POST['fee_percent'];
-            $net = $gross - ($gross * $fee / 100);
-            $stmt = $pdo->prepare('INSERT INTO card_receivables (machine, brand, card_type, fee_percent, gross_value, net_value, sale_date, expected_release_date, received)
-                VALUES (:machine,:brand,:card_type,:fee_percent,:gross_value,:net_value,:sale_date,:expected_release_date,:received)');
-            $stmt->execute([
-                ':machine' => trim($_POST['machine']),
-                ':brand' => trim($_POST['brand']),
-                ':card_type' => $_POST['card_type'],
-                ':fee_percent' => $fee,
-                ':gross_value' => $gross,
-                ':net_value' => $net,
-                ':sale_date' => $_POST['sale_date'],
-                ':expected_release_date' => $_POST['expected_release_date'],
-                ':received' => isset($_POST['received']) ? 1 : 0,
-            ]);
+            $action = $_POST['action'] ?? 'create';
+            if ($action === 'create') {
+                $gross = (float) $_POST['gross_value'];
+                $fee = (float) $_POST['fee_percent'];
+                $net = $gross - ($gross * $fee / 100);
+                $stmt = $pdo->prepare('INSERT INTO card_receivables (machine, brand, card_type, fee_percent, gross_value, net_value, sale_date, expected_release_date, received)
+                    VALUES (:machine,:brand,:card_type,:fee_percent,:gross_value,:net_value,:sale_date,:expected_release_date,:received)');
+                $stmt->execute([
+                    ':machine' => trim($_POST['machine']),
+                    ':brand' => trim($_POST['brand']),
+                    ':card_type' => $_POST['card_type'],
+                    ':fee_percent' => $fee,
+                    ':gross_value' => $gross,
+                    ':net_value' => $net,
+                    ':sale_date' => $_POST['sale_date'],
+                    ':expected_release_date' => $_POST['expected_release_date'],
+                    ':received' => isset($_POST['received']) ? 1 : 0,
+                ]);
+            }
+
+            if ($action === 'edit') {
+                $gross = (float) $_POST['gross_value'];
+                $fee = (float) $_POST['fee_percent'];
+                $net = $gross - ($gross * $fee / 100);
+                $stmt = $pdo->prepare('UPDATE card_receivables
+                    SET machine=:machine, brand=:brand, card_type=:card_type, fee_percent=:fee_percent, gross_value=:gross_value, net_value=:net_value, sale_date=:sale_date, expected_release_date=:expected_release_date, received=:received
+                    WHERE id=:id');
+                $stmt->execute([
+                    ':id' => (int) $_POST['id'],
+                    ':machine' => trim($_POST['machine']),
+                    ':brand' => trim($_POST['brand']),
+                    ':card_type' => $_POST['card_type'],
+                    ':fee_percent' => $fee,
+                    ':gross_value' => $gross,
+                    ':net_value' => $net,
+                    ':sale_date' => $_POST['sale_date'],
+                    ':expected_release_date' => $_POST['expected_release_date'],
+                    ':received' => isset($_POST['received']) ? 1 : 0,
+                ]);
+            }
+
+            if ($action === 'delete') {
+                $pdo->prepare('DELETE FROM card_receivables WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id']]);
+            }
+
+            if ($action === 'settle') {
+                $id = (int) $_POST['id'];
+                $cardStmt = $pdo->prepare('SELECT * FROM card_receivables WHERE id=:id');
+                $cardStmt->execute([':id' => $id]);
+                $card = $cardStmt->fetch();
+                if ($card) {
+                    $pdo->prepare('UPDATE card_receivables SET received=1 WHERE id=:id')->execute([':id' => $id]);
+                    $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                        VALUES (\'entrada\', :amount, \'cartoes_recebidos\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
+                        ->execute([
+                            ':amount' => (float) $card['net_value'],
+                            ':subcategory' => (string) $card['card_type'],
+                            ':origin_account' => (string) $card['machine'],
+                            ':destination_account' => trim((string) ($_POST['destination_account'] ?? 'caixa')),
+                            ':description' => 'Baixa de cartão ' . $card['brand'],
+                            ':occurred_on' => $_POST['received_on'] ?: date('Y-m-d'),
+                        ]);
+                }
+            }
             break;
 
         case 'cheques':
@@ -1070,6 +1119,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 <?php elseif ($module === 'cartoes'): ?>
     <h3>Controle de Cartões</h3>
     <form method="post">
+        <input type="hidden" name="action" value="create">
         <select name="machine" id="card_machine_select" required>
             <option value="">Máquina</option>
             <?php foreach ($cardMachines as $machine): ?>
@@ -1087,7 +1137,9 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <?php foreach ($cardPaymentConfigs as $config): ?>
                 <option
                     value="<?= htmlspecialchars($config['name']) ?>"
-                    data-id="<?= $config['id'] ?>">
+                    data-id="<?= $config['id'] ?>"
+                    data-fee="<?= (float) $config['fee_percent'] ?>"
+                    data-days="<?= (int) $config['release_days'] ?>">
                     <?= htmlspecialchars($config['name']) ?>
                 </option>
             <?php endforeach; ?>
@@ -1098,9 +1150,71 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <label><input type="checkbox" name="received"> Baixa quando receber</label>
         <button>Salvar</button>
     </form>
-    <table><tr><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Taxa</th><th>Bruto</th><th>Líquido</th><th>Venda</th><th>Liberação</th><th>Recebido</th></tr>
-        <?php foreach ($cards as $c): ?><tr><td><?= htmlspecialchars($c['machine']) ?></td><td><?= htmlspecialchars($c['brand']) ?></td><td><?= $c['card_type'] ?></td><td><?= $c['fee_percent'] ?>%</td><td><?= money((float) $c['gross_value']) ?></td><td><?= money((float) $c['net_value']) ?></td><td><?= $c['sale_date'] ?></td><td><?= $c['expected_release_date'] ?></td><td><?= $c['received'] ? 'Sim' : 'Não' ?></td></tr><?php endforeach; ?>
+    <table><tr><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Taxa</th><th>Bruto</th><th>Líquido</th><th>Venda</th><th>Liberação</th><th>Recebido</th><th>Ações</th></tr>
+        <?php foreach ($cards as $c): ?>
+            <tr>
+                <td><?= htmlspecialchars($c['machine']) ?></td>
+                <td><?= htmlspecialchars($c['brand']) ?></td>
+                <td><?= $c['card_type'] ?></td>
+                <td><?= $c['fee_percent'] ?>%</td>
+                <td><?= money((float) $c['gross_value']) ?></td>
+                <td><?= money((float) $c['net_value']) ?></td>
+                <td><?= $c['sale_date'] ?></td>
+                <td><?= $c['expected_release_date'] ?></td>
+                <td><?= $c['received'] ? 'Sim' : 'Não' ?></td>
+                <td>
+                    <button type="button" onclick='openCardEditModal(<?= json_encode($c, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir lançamento de cartão?')">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" value="<?= $c['id'] ?>">
+                        <button>Excluir</button>
+                    </form>
+                    <?php if (!(int) $c['received']): ?>
+                        <button type="button" onclick="openCardSettleModal(<?= (int) $c['id'] ?>)">Dar baixa</button>
+                    <?php endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
     </table>
+
+    <dialog id="cardEditModal">
+        <form method="post">
+            <input type="hidden" name="action" value="edit">
+            <input type="hidden" name="id" id="card_edit_id">
+            <select name="machine" id="card_edit_machine" required>
+                <?php foreach ($cardMachines as $machine): ?><option value="<?= htmlspecialchars($machine['name']) ?>"><?= htmlspecialchars($machine['name']) ?></option><?php endforeach; ?>
+            </select>
+            <select name="brand" id="card_edit_brand" required>
+                <?php foreach ($cardBrands as $brand): ?><option value="<?= htmlspecialchars($brand['name']) ?>"><?= htmlspecialchars($brand['name']) ?></option><?php endforeach; ?>
+            </select>
+            <select name="card_type" id="card_edit_type" required>
+                <?php foreach ($cardPaymentConfigs as $config): ?><option value="<?= htmlspecialchars($config['name']) ?>"><?= htmlspecialchars($config['name']) ?></option><?php endforeach; ?>
+            </select>
+            <input name="fee_percent" id="card_edit_fee" type="number" step="0.01" required>
+            <input name="gross_value" id="card_edit_gross" type="number" step="0.01" required>
+            <input name="sale_date" id="card_edit_sale" type="date" required>
+            <input name="expected_release_date" id="card_edit_release" type="date" required>
+            <label><input type="checkbox" name="received" id="card_edit_received"> Recebido</label>
+            <button>Salvar edição</button>
+            <button type="button" onclick="document.getElementById('cardEditModal').close()">Fechar</button>
+        </form>
+    </dialog>
+
+    <dialog id="cardSettleModal">
+        <form method="post">
+            <input type="hidden" name="action" value="settle">
+            <input type="hidden" name="id" id="card_settle_id">
+            <label>Data recebimento: <input name="received_on" type="date" value="<?= $today ?>" required></label>
+            <label>Conta destino:
+                <select name="destination_account">
+                    <option value="caixa">Caixa</option>
+                    <?php foreach ($banks as $bank): ?><option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option><?php endforeach; ?>
+                </select>
+            </label>
+            <button>Confirmar baixa</button>
+            <button type="button" onclick="document.getElementById('cardSettleModal').close()">Fechar</button>
+        </form>
+    </dialog>
     <script>
         (function () {
             const machineSelect = document.getElementById('card_machine_select');
@@ -1130,8 +1244,10 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 
                 const paymentName = (selected.value || '').toLowerCase();
                 const defaultDays = paymentName.includes('debito') ? 1 : 30;
-                const fee = rule ? rule.fee_percent : 0;
-                const days = rule ? parseInt(rule.release_days, 10) : defaultDays;
+                const fallbackFee = parseFloat(selected.dataset.fee || '0');
+                const fallbackDays = parseInt(selected.dataset.days || String(defaultDays), 10);
+                const fee = rule ? rule.fee_percent : fallbackFee;
+                const days = rule ? parseInt(rule.release_days, 10) : fallbackDays;
                 feeField.value = fee;
 
                 if (saleDateField.value && Number.isFinite(days)) {
@@ -1149,6 +1265,24 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             paymentType.addEventListener('change', updateCardFields);
             saleDateField.addEventListener('change', updateCardFields);
         })();
+
+        function openCardEditModal(card) {
+            document.getElementById('card_edit_id').value = card.id;
+            document.getElementById('card_edit_machine').value = card.machine;
+            document.getElementById('card_edit_brand').value = card.brand;
+            document.getElementById('card_edit_type').value = card.card_type;
+            document.getElementById('card_edit_fee').value = card.fee_percent;
+            document.getElementById('card_edit_gross').value = card.gross_value;
+            document.getElementById('card_edit_sale').value = card.sale_date;
+            document.getElementById('card_edit_release').value = card.expected_release_date;
+            document.getElementById('card_edit_received').checked = Number(card.received) === 1;
+            document.getElementById('cardEditModal').showModal();
+        }
+
+        function openCardSettleModal(id) {
+            document.getElementById('card_settle_id').value = id;
+            document.getElementById('cardSettleModal').showModal();
+        }
     </script>
 <?php elseif ($module === 'cheques'): ?>
     <h3>Controle de Cheques</h3>
