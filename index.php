@@ -927,6 +927,17 @@ if ($module === 'pagar' && isset($_GET['edit_id'])) {
 }
 $receivables = fetchAll($pdo, 'SELECT *, CASE WHEN status IN ("aberto","parcial") AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_receivable ORDER BY due_date ASC', [':today' => $today]);
 $cards = fetchAll($pdo, 'SELECT * FROM card_receivables ORDER BY sale_date DESC');
+$weekStart = date('Y-m-d', strtotime('monday this week'));
+$monthStart = date('Y-m-01');
+$salesToday = fetchAll($pdo, 'SELECT * FROM card_receivables WHERE sale_date=:today ORDER BY id DESC', [':today' => $today]);
+$salesDailyTotal = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value),0) FROM card_receivables WHERE sale_date=:today AND canceled=0', [':today' => $today]);
+$salesWeeklyTotal = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0', [':start' => $weekStart, ':end' => $today]);
+$salesMonthlyTotal = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0', [':start' => $monthStart, ':end' => $today]);
+$salesByLocationToday = fetchAll($pdo, 'SELECT COALESCE(NULLIF(sale_location, \'\'), \'Sem local\') AS sale_location, COUNT(*) AS total_sales, COALESCE(SUM(gross_value),0) AS gross_total, COALESCE(SUM(net_value),0) AS net_total
+    FROM card_receivables
+    WHERE sale_date=:today AND canceled=0
+    GROUP BY sale_location
+    ORDER BY gross_total DESC', [':today' => $today]);
 $checks = fetchAll($pdo, 'SELECT * FROM checks_control ORDER BY due_date ASC');
 $banks = fetchAll($pdo, 'SELECT * FROM bank_accounts ORDER BY name');
 $reconciliations = fetchAll($pdo, 'SELECT br.*, ba.name bank_name FROM bank_reconciliation br JOIN bank_accounts ba ON ba.id=br.bank_account_id ORDER BY movement_date DESC');
@@ -988,6 +999,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <a href="?module=fluxo">Fluxo de Caixa</a>
         <a href="?module=pagar">Contas a Pagar</a>
         <a href="?module=receber">Contas a Receber</a>
+        <a href="?module=vendas">Vendas</a>
         <a href="?module=cartoes">Cartões</a>
         <a href="?module=cheques">Cheques</a>
         <a href="?module=conciliacao">Conciliação Bancária</a>
@@ -1517,6 +1529,43 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </form>
     <table><tr><th>Cliente</th><th>Vencimento</th><th>Total</th><th>Recebido</th><th>Parcela</th><th>Fiado</th><th>Situação</th></tr>
         <?php foreach ($receivables as $r): ?><tr><td><?= htmlspecialchars($r['customer']) ?></td><td><?= dateBr((string) $r['due_date']) ?></td><td><?= money((float) $r['amount']) ?></td><td><?= money((float) $r['amount_received']) ?></td><td><?= htmlspecialchars((string) $r['installment']) ?></td><td><?= $r['is_credit_sale'] ? 'Sim' : 'Não' ?></td><td><span class="badge <?= $r['display_status'] ?>"><?= $r['display_status'] ?></span></td></tr><?php endforeach; ?>
+    </table>
+<?php elseif ($module === 'vendas'): ?>
+    <h3>Vendas</h3>
+    <div class="cards">
+        <div class="card"><h4>Resumo Diário</h4><p><?= money($salesDailyTotal) ?></p></div>
+        <div class="card"><h4>Resumo Semanal</h4><p><?= money($salesWeeklyTotal) ?></p></div>
+        <div class="card"><h4>Resumo Mensal</h4><p><?= money($salesMonthlyTotal) ?></p></div>
+    </div>
+
+    <h4>Vendas do dia (<?= dateBr($today) ?>)</h4>
+    <table>
+        <tr><th>Data</th><th>Local</th><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Bruto</th><th>Líquido</th><th>Status</th></tr>
+        <?php foreach ($salesToday as $sale): ?>
+            <tr>
+                <td><?= dateBr((string) $sale['sale_date']) ?></td>
+                <td><?= htmlspecialchars((string) ($sale['sale_location'] ?: 'Sem local')) ?></td>
+                <td><?= htmlspecialchars((string) $sale['machine']) ?></td>
+                <td><?= htmlspecialchars((string) $sale['brand']) ?></td>
+                <td><?= htmlspecialchars((string) $sale['card_type']) ?></td>
+                <td><?= money((float) $sale['gross_value']) ?></td>
+                <td><?= money((float) $sale['net_value']) ?></td>
+                <td><?= (int) $sale['canceled'] ? 'Cancelada' : ((int) $sale['received'] ? 'Recebida' : 'A receber') ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Resumo diário por local</h4>
+    <table>
+        <tr><th>Local</th><th>Qtd vendas</th><th>Total bruto</th><th>Total líquido</th></tr>
+        <?php foreach ($salesByLocationToday as $row): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $row['sale_location']) ?></td>
+                <td><?= (int) $row['total_sales'] ?></td>
+                <td><?= money((float) $row['gross_total']) ?></td>
+                <td><?= money((float) $row['net_total']) ?></td>
+            </tr>
+        <?php endforeach; ?>
     </table>
 <?php elseif ($module === 'cartoes'): ?>
     <h3>Controle de Cartões</h3>
