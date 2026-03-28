@@ -368,6 +368,23 @@ function handlePost(PDO $pdo, string $module): void
                 ]);
             break;
 
+        case 'vendas_prazo':
+            $totalAmount = moneyInput($_POST['total_amount'] ?? 0);
+            $returnOnCredit = moneyInput($_POST['return_on_credit'] ?? 0);
+            $returnExchangeCredit = moneyInput($_POST['return_exchange_credit'] ?? 0);
+            $netAmount = round($totalAmount - $returnOnCredit - $returnExchangeCredit, 2);
+
+            $pdo->prepare('INSERT INTO credit_sales_totals (sale_date, total_amount, return_on_credit, return_exchange_credit, net_amount)
+                VALUES (:sale_date, :total_amount, :return_on_credit, :return_exchange_credit, :net_amount)')
+                ->execute([
+                    ':sale_date' => $_POST['sale_date'],
+                    ':total_amount' => $totalAmount,
+                    ':return_on_credit' => $returnOnCredit,
+                    ':return_exchange_credit' => $returnExchangeCredit,
+                    ':net_amount' => $netAmount,
+                ]);
+            break;
+
         case 'cartoes':
             $action = $_POST['action'] ?? 'create';
             if ($action === 'create') {
@@ -957,6 +974,7 @@ if ($module === 'pagar' && isset($_GET['edit_id'])) {
 }
 $receivables = fetchAll($pdo, 'SELECT *, CASE WHEN status IN ("aberto","parcial") AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_receivable ORDER BY due_date ASC', [':today' => $today]);
 $customerReceipts = fetchAll($pdo, 'SELECT * FROM customer_receipts ORDER BY receipt_date DESC, id DESC');
+$creditSalesTotals = fetchAll($pdo, 'SELECT * FROM credit_sales_totals ORDER BY sale_date DESC, id DESC');
 $cards = fetchAll($pdo, 'SELECT * FROM card_receivables ORDER BY sale_date DESC');
 $weekStart = date('Y-m-d', strtotime('monday this week'));
 $monthStart = date('Y-m-01');
@@ -1035,6 +1053,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <a href="?module=pagar">Contas a Pagar</a>
                 <a href="?module=receber">Contas a Receber</a>
                 <a href="?module=recebimento_clientes">Recebimento de Clientes</a>
+                <a href="?module=vendas_prazo">Vendas a Prazo</a>
                 <a href="?module=cartoes">Cartões</a>
                 <a href="?module=cheques">Cheques</a>
                 <a href="?module=dre">DRE</a>
@@ -1632,6 +1651,47 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             total?.addEventListener('input', update);
             discount?.addEventListener('input', update);
             interest?.addEventListener('input', update);
+            update();
+        })();
+    </script>
+<?php elseif ($module === 'vendas_prazo'): ?>
+    <h3>Vendas a Prazo</h3>
+    <form method="post" id="creditSalesForm">
+        <label>Data: <input type="date" name="sale_date" value="<?= $today ?>" required></label>
+        <input type="number" step="0.01" min="0" name="total_amount" id="credit_total_amount" placeholder="Valor total" required>
+        <input type="number" step="0.01" min="0" name="return_on_credit" id="credit_return_on_credit" placeholder="Devolução a prazo" value="0">
+        <input type="number" step="0.01" min="0" name="return_exchange_credit" id="credit_return_exchange" placeholder="Devolução troca ou crédito" value="0">
+        <input type="number" step="0.01" min="0" id="credit_net_amount" placeholder="Valor líquido" readonly>
+        <button>Salvar lançamento</button>
+    </form>
+    <table>
+        <tr><th>Data</th><th>Valor total</th><th>Devolução a prazo</th><th>Devolução troca/crédito</th><th>Valor líquido</th></tr>
+        <?php foreach ($creditSalesTotals as $sale): ?>
+            <tr>
+                <td><?= dateBr((string) $sale['sale_date']) ?></td>
+                <td><?= money((float) $sale['total_amount']) ?></td>
+                <td><?= money((float) $sale['return_on_credit']) ?></td>
+                <td><?= money((float) $sale['return_exchange_credit']) ?></td>
+                <td><?= money((float) $sale['net_amount']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+    <script>
+        (function () {
+            const total = document.getElementById('credit_total_amount');
+            const returnOnCredit = document.getElementById('credit_return_on_credit');
+            const returnExchange = document.getElementById('credit_return_exchange');
+            const net = document.getElementById('credit_net_amount');
+            const update = () => {
+                const totalValue = parseFloat(total?.value || '0') || 0;
+                const returnOnCreditValue = parseFloat(returnOnCredit?.value || '0') || 0;
+                const returnExchangeValue = parseFloat(returnExchange?.value || '0') || 0;
+                const netValue = Math.max(0, totalValue - returnOnCreditValue - returnExchangeValue);
+                net.value = netValue.toFixed(2);
+            };
+            total?.addEventListener('input', update);
+            returnOnCredit?.addEventListener('input', update);
+            returnExchange?.addEventListener('input', update);
             update();
         })();
     </script>
