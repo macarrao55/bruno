@@ -74,6 +74,7 @@ CREATE TABLE customer_receipts (
 CREATE TABLE credit_sales_totals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sale_date TEXT NOT NULL,
+    sale_location TEXT,
     total_amount REAL NOT NULL,
     return_on_credit REAL NOT NULL DEFAULT 0,
     return_exchange_credit REAL NOT NULL DEFAULT 0,

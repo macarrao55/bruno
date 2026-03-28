@@ -374,10 +374,11 @@ function handlePost(PDO $pdo, string $module): void
             $returnExchangeCredit = moneyInput($_POST['return_exchange_credit'] ?? 0);
             $netAmount = round($totalAmount - $returnOnCredit - $returnExchangeCredit, 2);
 
-            $pdo->prepare('INSERT INTO credit_sales_totals (sale_date, total_amount, return_on_credit, return_exchange_credit, net_amount)
-                VALUES (:sale_date, :total_amount, :return_on_credit, :return_exchange_credit, :net_amount)')
+            $pdo->prepare('INSERT INTO credit_sales_totals (sale_date, sale_location, total_amount, return_on_credit, return_exchange_credit, net_amount)
+                VALUES (:sale_date, :sale_location, :total_amount, :return_on_credit, :return_exchange_credit, :net_amount)')
                 ->execute([
                     ':sale_date' => $_POST['sale_date'],
+                    ':sale_location' => trim((string) ($_POST['sale_location'] ?? '')),
                     ':total_amount' => $totalAmount,
                     ':return_on_credit' => $returnOnCredit,
                     ':return_exchange_credit' => $returnExchangeCredit,
@@ -1658,6 +1659,14 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <h3>Vendas a Prazo</h3>
     <form method="post" id="creditSalesForm">
         <label>Data: <input type="date" name="sale_date" value="<?= $today ?>" required></label>
+        <label>Empresa/Local:
+            <select name="sale_location" required>
+                <option value="">Selecionar local</option>
+                <?php foreach ($saleLocations as $location): ?>
+                    <option value="<?= htmlspecialchars($location['name']) ?>"><?= htmlspecialchars($location['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
         <input type="number" step="0.01" min="0" name="total_amount" id="credit_total_amount" placeholder="Valor total" required>
         <input type="number" step="0.01" min="0" name="return_on_credit" id="credit_return_on_credit" placeholder="Devolução a prazo" value="0">
         <input type="number" step="0.01" min="0" name="return_exchange_credit" id="credit_return_exchange" placeholder="Devolução troca ou crédito" value="0">
@@ -1665,10 +1674,11 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <button>Salvar lançamento</button>
     </form>
     <table>
-        <tr><th>Data</th><th>Valor total</th><th>Devolução a prazo</th><th>Devolução troca/crédito</th><th>Valor líquido</th></tr>
+        <tr><th>Data</th><th>Local</th><th>Valor total</th><th>Devolução a prazo</th><th>Devolução troca/crédito</th><th>Valor líquido</th></tr>
         <?php foreach ($creditSalesTotals as $sale): ?>
             <tr>
                 <td><?= dateBr((string) $sale['sale_date']) ?></td>
+                <td><?= htmlspecialchars((string) ($sale['sale_location'] ?: 'Sem local')) ?></td>
                 <td><?= money((float) $sale['total_amount']) ?></td>
                 <td><?= money((float) $sale['return_on_credit']) ?></td>
                 <td><?= money((float) $sale['return_exchange_credit']) ?></td>
