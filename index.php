@@ -997,19 +997,42 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <nav>
         <a href="?module=dashboard">Dashboard</a>
         <a href="?module=fluxo">Fluxo de Caixa</a>
-        <a href="?module=pagar">Contas a Pagar</a>
-        <a href="?module=receber">Contas a Receber</a>
         <a href="?module=vendas">Vendas</a>
-        <a href="?module=cartoes">Cartões</a>
-        <a href="?module=cheques">Cheques</a>
+        <div class="menu-group">
+            <button type="button" class="menu-toggle" onclick="toggleGestaoMenu(event)">Gestão ▾</button>
+            <div id="gestaoMenu" class="menu-dropdown">
+                <a href="?module=pagar">Contas a Pagar</a>
+                <a href="?module=receber">Contas a Receber</a>
+                <a href="?module=cartoes">Cartões</a>
+                <a href="?module=cheques">Cheques</a>
+                <a href="?module=dre">DRE</a>
+            </div>
+        </div>
         <a href="?module=conciliacao">Conciliação Bancária</a>
-        <a href="?module=dre">DRE</a>
         <a href="?module=fechamento">Fechamento</a>
         <a href="?module=relatorios">Relatórios</a>
         <a href="?module=fornecedores">Fornecedores</a>
         <a href="?module=configuracoes">Configurações</a>
     </nav>
 </header>
+<script>
+    function toggleGestaoMenu(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const menu = document.getElementById('gestaoMenu');
+        if (!menu) {
+            return;
+        }
+        menu.classList.toggle('show');
+    }
+
+    document.addEventListener('click', () => {
+        const menu = document.getElementById('gestaoMenu');
+        if (menu) {
+            menu.classList.remove('show');
+        }
+    });
+</script>
 <div class="container">
 <?php if ($module === 'dashboard'): ?>
     <div class="cards">

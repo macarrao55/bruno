@@ -1,6 +1,12 @@
 body { font-family: Arial, sans-serif; margin: 0; background: #f5f7fb; color: #222; }
 header { background: #1f3c88; color: #fff; padding: 14px 20px; }
 nav a { color: #fff; margin-right: 12px; text-decoration: none; font-size: 14px; }
+.menu-group { display: inline-block; position: relative; margin-right: 12px; }
+.menu-toggle { background: #162f6a; color: #fff; border: 1px solid rgba(255,255,255,0.25); }
+.menu-dropdown { display: none; position: absolute; top: 30px; left: 0; min-width: 210px; background: #fff; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.16); z-index: 30; overflow: hidden; }
+.menu-dropdown a { display: block; color: #222; margin: 0; padding: 10px 12px; text-decoration: none; }
+.menu-dropdown a:hover { background: #f0f4ff; }
+.menu-dropdown.show { display: block; }
 .container { padding: 20px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .card { background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
