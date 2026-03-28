@@ -260,4 +260,19 @@ function runMigrations(PDO $pdo): void
     if ($saleLocationCount === 0) {
         $pdo->exec("INSERT INTO sale_locations (name) VALUES ('Caixa Loja'), ('Financeiro'), ('Caixa Parafuso')");
     }
+
+    $customerReceiptTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_receipts'")->fetch();
+    if (!$customerReceiptTable) {
+        $pdo->exec('CREATE TABLE customer_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_date TEXT NOT NULL,
+            customer_name TEXT NOT NULL,
+            total_amount REAL NOT NULL,
+            discount REAL NOT NULL DEFAULT 0,
+            interest REAL NOT NULL DEFAULT 0,
+            net_amount REAL NOT NULL,
+            payment_method TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
 }

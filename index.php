@@ -338,6 +338,36 @@ function handlePost(PDO $pdo, string $module): void
             ]);
             break;
 
+        case 'recebimento_clientes':
+            $totalAmount = moneyInput($_POST['total_amount'] ?? 0);
+            $discount = moneyInput($_POST['discount'] ?? 0);
+            $interest = moneyInput($_POST['interest'] ?? 0);
+            $netAmount = round($totalAmount - $discount + $interest, 2);
+
+            $pdo->prepare('INSERT INTO customer_receipts (receipt_date, customer_name, total_amount, discount, interest, net_amount, payment_method)
+                VALUES (:receipt_date, :customer_name, :total_amount, :discount, :interest, :net_amount, :payment_method)')
+                ->execute([
+                    ':receipt_date' => $_POST['receipt_date'],
+                    ':customer_name' => trim((string) $_POST['customer_name']),
+                    ':total_amount' => $totalAmount,
+                    ':discount' => $discount,
+                    ':interest' => $interest,
+                    ':net_amount' => $netAmount,
+                    ':payment_method' => trim((string) $_POST['payment_method']),
+                ]);
+
+            $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                VALUES (\'entrada\', :amount, \'recebimento_clientes\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
+                ->execute([
+                    ':amount' => $netAmount,
+                    ':subcategory' => trim((string) $_POST['payment_method']),
+                    ':origin_account' => trim((string) $_POST['customer_name']),
+                    ':destination_account' => 'caixa',
+                    ':description' => 'Recebimento cliente: ' . trim((string) $_POST['customer_name']),
+                    ':occurred_on' => $_POST['receipt_date'],
+                ]);
+            break;
+
         case 'cartoes':
             $action = $_POST['action'] ?? 'create';
             if ($action === 'create') {
@@ -926,6 +956,7 @@ if ($module === 'pagar' && isset($_GET['edit_id'])) {
     $editingPayable = $stmtEdit->fetch() ?: null;
 }
 $receivables = fetchAll($pdo, 'SELECT *, CASE WHEN status IN ("aberto","parcial") AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_receivable ORDER BY due_date ASC', [':today' => $today]);
+$customerReceipts = fetchAll($pdo, 'SELECT * FROM customer_receipts ORDER BY receipt_date DESC, id DESC');
 $cards = fetchAll($pdo, 'SELECT * FROM card_receivables ORDER BY sale_date DESC');
 $weekStart = date('Y-m-d', strtotime('monday this week'));
 $monthStart = date('Y-m-01');
@@ -1003,6 +1034,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <div id="gestaoMenu" class="menu-dropdown">
                 <a href="?module=pagar">Contas a Pagar</a>
                 <a href="?module=receber">Contas a Receber</a>
+                <a href="?module=recebimento_clientes">Recebimento de Clientes</a>
                 <a href="?module=cartoes">Cartões</a>
                 <a href="?module=cheques">Cheques</a>
                 <a href="?module=dre">DRE</a>
@@ -1553,6 +1585,56 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <table><tr><th>Cliente</th><th>Vencimento</th><th>Total</th><th>Recebido</th><th>Parcela</th><th>Fiado</th><th>Situação</th></tr>
         <?php foreach ($receivables as $r): ?><tr><td><?= htmlspecialchars($r['customer']) ?></td><td><?= dateBr((string) $r['due_date']) ?></td><td><?= money((float) $r['amount']) ?></td><td><?= money((float) $r['amount_received']) ?></td><td><?= htmlspecialchars((string) $r['installment']) ?></td><td><?= $r['is_credit_sale'] ? 'Sim' : 'Não' ?></td><td><span class="badge <?= $r['display_status'] ?>"><?= $r['display_status'] ?></span></td></tr><?php endforeach; ?>
     </table>
+<?php elseif ($module === 'recebimento_clientes'): ?>
+    <h3>Recebimento de Clientes</h3>
+    <form method="post" id="customerReceiptForm">
+        <label>Data: <input type="date" name="receipt_date" value="<?= $today ?>" required></label>
+        <input name="customer_name" placeholder="Nome do cliente" required>
+        <input type="number" step="0.01" min="0" name="total_amount" id="receipt_total_amount" placeholder="Valor total" required>
+        <input type="number" step="0.01" min="0" name="discount" id="receipt_discount" placeholder="Desconto" value="0">
+        <input type="number" step="0.01" min="0" name="interest" id="receipt_interest" placeholder="Juros" value="0">
+        <input type="number" step="0.01" min="0" id="receipt_net_amount" placeholder="Valor líquido" readonly>
+        <select name="payment_method" required>
+            <option value="">Forma de pagamento</option>
+            <?php foreach ($paymentMethods as $method): ?>
+                <option value="<?= htmlspecialchars($method['name']) ?>"><?= htmlspecialchars($method['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <button>Salvar recebimento</button>
+    </form>
+    <table>
+        <tr><th>Data</th><th>Cliente</th><th>Total</th><th>Desconto</th><th>Juros</th><th>Líquido</th><th>Forma de pagamento</th></tr>
+        <?php foreach ($customerReceipts as $receipt): ?>
+            <tr>
+                <td><?= dateBr((string) $receipt['receipt_date']) ?></td>
+                <td><?= htmlspecialchars((string) $receipt['customer_name']) ?></td>
+                <td><?= money((float) $receipt['total_amount']) ?></td>
+                <td><?= money((float) $receipt['discount']) ?></td>
+                <td><?= money((float) $receipt['interest']) ?></td>
+                <td><?= money((float) $receipt['net_amount']) ?></td>
+                <td><?= htmlspecialchars((string) $receipt['payment_method']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+    <script>
+        (function () {
+            const total = document.getElementById('receipt_total_amount');
+            const discount = document.getElementById('receipt_discount');
+            const interest = document.getElementById('receipt_interest');
+            const net = document.getElementById('receipt_net_amount');
+            const update = () => {
+                const totalValue = parseFloat(total?.value || '0') || 0;
+                const discountValue = parseFloat(discount?.value || '0') || 0;
+                const interestValue = parseFloat(interest?.value || '0') || 0;
+                const netValue = Math.max(0, totalValue - discountValue + interestValue);
+                net.value = netValue.toFixed(2);
+            };
+            total?.addEventListener('input', update);
+            discount?.addEventListener('input', update);
+            interest?.addEventListener('input', update);
+            update();
+        })();
+    </script>
 <?php elseif ($module === 'vendas'): ?>
     <h3>Vendas</h3>
     <div class="cards">

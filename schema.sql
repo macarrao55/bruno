@@ -59,6 +59,18 @@ CREATE TABLE accounts_receivable (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE customer_receipts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_date TEXT NOT NULL,
+    customer_name TEXT NOT NULL,
+    total_amount REAL NOT NULL,
+    discount REAL NOT NULL DEFAULT 0,
+    interest REAL NOT NULL DEFAULT 0,
+    net_amount REAL NOT NULL,
+    payment_method TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE card_receivables (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     machine TEXT NOT NULL,
