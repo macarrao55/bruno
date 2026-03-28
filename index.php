@@ -387,14 +387,66 @@ function handlePost(PDO $pdo, string $module): void
             break;
 
         case 'clientes_atraso':
-            $pdo->prepare('INSERT INTO overdue_customers (collection_entry_date, customer_name, amount, status)
-                VALUES (:collection_entry_date, :customer_name, :amount, :status)')
-                ->execute([
-                    ':collection_entry_date' => $_POST['collection_entry_date'],
-                    ':customer_name' => trim((string) $_POST['customer_name']),
-                    ':amount' => moneyInput($_POST['amount'] ?? 0),
-                    ':status' => in_array((string) $_POST['status'], ['vencido', 'spc', 'outra'], true) ? $_POST['status'] : 'vencido',
-                ]);
+            $action = $_POST['action'] ?? 'create';
+            if ($action === 'create') {
+                $pdo->prepare('INSERT INTO overdue_customers (collection_entry_date, customer_name, amount, status)
+                    VALUES (:collection_entry_date, :customer_name, :amount, :status)')
+                    ->execute([
+                        ':collection_entry_date' => $_POST['collection_entry_date'],
+                        ':customer_name' => trim((string) $_POST['customer_name']),
+                        ':amount' => moneyInput($_POST['amount'] ?? 0),
+                        ':status' => in_array((string) $_POST['status'], ['vencido', 'spc', 'outra'], true) ? $_POST['status'] : 'vencido',
+                    ]);
+            }
+
+            if ($action === 'settle') {
+                $id = (int) ($_POST['id'] ?? 0);
+                $stmt = $pdo->prepare('SELECT * FROM overdue_customers WHERE id=:id');
+                $stmt->execute([':id' => $id]);
+                $item = $stmt->fetch();
+                if ($item) {
+                    $interest = moneyInput($_POST['interest'] ?? 0);
+                    $discount = moneyInput($_POST['discount'] ?? 0);
+                    $paidAmountInput = moneyInput($_POST['total_paid'] ?? 0);
+                    $paymentDate = (string) ($_POST['payment_date'] ?? date('Y-m-d'));
+                    $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
+
+                    $calculatedTotal = max(0, ((float) $item['amount']) - $discount + $interest);
+                    $paidAmount = $paidAmountInput > 0 ? $paidAmountInput : $calculatedTotal;
+                    $remainingAmount = round(max(0, (float) $item['amount'] - $paidAmount), 2);
+
+                    if ($remainingAmount > 0) {
+                        $pdo->prepare('UPDATE overdue_customers SET amount=:amount WHERE id=:id')
+                            ->execute([':amount' => $remainingAmount, ':id' => $id]);
+                    } else {
+                        $pdo->prepare('DELETE FROM overdue_customers WHERE id=:id')
+                            ->execute([':id' => $id]);
+                    }
+
+                    $pdo->prepare('INSERT INTO customer_receipts (receipt_date, customer_name, total_amount, discount, interest, net_amount, payment_method)
+                        VALUES (:receipt_date, :customer_name, :total_amount, :discount, :interest, :net_amount, :payment_method)')
+                        ->execute([
+                            ':receipt_date' => $paymentDate,
+                            ':customer_name' => (string) $item['customer_name'],
+                            ':total_amount' => $paidAmount,
+                            ':discount' => $discount,
+                            ':interest' => $interest,
+                            ':net_amount' => $paidAmount,
+                            ':payment_method' => $paymentMethod,
+                        ]);
+
+                    $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                        VALUES (\'entrada\', :amount, \'recebimento_clientes\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
+                        ->execute([
+                            ':amount' => $paidAmount,
+                            ':subcategory' => $paymentMethod,
+                            ':origin_account' => (string) $item['customer_name'],
+                            ':destination_account' => 'caixa',
+                            ':description' => 'Baixa cliente em atraso: ' . $item['customer_name'],
+                            ':occurred_on' => $paymentDate,
+                        ]);
+                }
+            }
             break;
 
         case 'cartoes':
@@ -1721,6 +1773,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 <?php elseif ($module === 'clientes_atraso'): ?>
     <h3>Clientes em Atraso</h3>
     <form method="post">
+        <input type="hidden" name="action" value="create">
         <label>Data que entrou para cobrança: <input type="date" name="collection_entry_date" value="<?= $today ?>" required></label>
         <input name="customer_name" placeholder="Nome do cliente" required>
         <input type="number" step="0.01" min="0" name="amount" placeholder="Valor" required>
@@ -1732,16 +1785,48 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <button>Salvar</button>
     </form>
     <table>
-        <tr><th>Data cobrança</th><th>Cliente</th><th>Valor</th><th>Situação</th></tr>
+        <tr><th>Data cobrança</th><th>Cliente</th><th>Valor</th><th>Situação</th><th>Ações</th></tr>
         <?php foreach ($overdueCustomers as $item): ?>
             <tr>
                 <td><?= dateBr((string) $item['collection_entry_date']) ?></td>
                 <td><?= htmlspecialchars((string) $item['customer_name']) ?></td>
                 <td><?= money((float) $item['amount']) ?></td>
                 <td><?= htmlspecialchars((string) $item['status']) ?></td>
+                <td>
+                    <button type="button" class="btn-success" onclick="openOverdueSettleModal(<?= (int) $item['id'] ?>, <?= (float) $item['amount'] ?>)">Dar baixa</button>
+                </td>
             </tr>
         <?php endforeach; ?>
     </table>
+    <dialog id="overdueSettleModal">
+        <form method="post">
+            <input type="hidden" name="action" value="settle">
+            <input type="hidden" name="id" id="overdue_settle_id">
+            <label>Data de pagamento: <input type="date" name="payment_date" value="<?= $today ?>" required></label><br>
+            <label>Juros: <input type="number" step="0.01" min="0" name="interest" value="0"></label><br>
+            <label>Desconto: <input type="number" step="0.01" min="0" name="discount" value="0"></label><br>
+            <label>Valor total (opcional): <input type="number" step="0.01" min="0" name="total_paid"></label><br>
+            <label>Forma de pagamento:
+                <select name="payment_method" required>
+                    <option value="">Selecionar</option>
+                    <?php foreach ($paymentMethods as $method): ?>
+                        <option value="<?= htmlspecialchars($method['name']) ?>"><?= htmlspecialchars($method['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <p class="small">Valor atual em atraso: <span id="overdue_settle_amount">R$ 0,00</span></p>
+            <p class="small">Se não informar o valor total, o sistema baixa usando valor devido com juros/desconto.</p>
+            <button>Confirmar baixa</button>
+            <button type="button" onclick="document.getElementById('overdueSettleModal').close()">Fechar</button>
+        </form>
+    </dialog>
+    <script>
+        function openOverdueSettleModal(id, amount) {
+            document.getElementById('overdue_settle_id').value = id;
+            document.getElementById('overdue_settle_amount').textContent = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
+            document.getElementById('overdueSettleModal').showModal();
+        }
+    </script>
 <?php elseif ($module === 'vendas'): ?>
     <h3>Vendas</h3>
     <div class="cards">
