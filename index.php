@@ -1039,7 +1039,35 @@ if ($module === 'pagar' && isset($_GET['edit_id'])) {
 $receivables = fetchAll($pdo, 'SELECT *, CASE WHEN status IN ("aberto","parcial") AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_receivable ORDER BY due_date ASC', [':today' => $today]);
 $customerReceipts = fetchAll($pdo, 'SELECT * FROM customer_receipts ORDER BY receipt_date DESC, id DESC');
 $creditSalesTotals = fetchAll($pdo, 'SELECT * FROM credit_sales_totals ORDER BY sale_date DESC, id DESC');
-$overdueCustomers = fetchAll($pdo, 'SELECT * FROM overdue_customers ORDER BY collection_entry_date DESC, id DESC');
+$overdueDateFrom = trim((string) ($_GET['overdue_date_from'] ?? ''));
+$overdueDateTo = trim((string) ($_GET['overdue_date_to'] ?? ''));
+$overdueStatusFilter = trim((string) ($_GET['overdue_status'] ?? ''));
+$overdueNameFilter = trim((string) ($_GET['overdue_name'] ?? ''));
+$overdueSort = trim((string) ($_GET['overdue_sort'] ?? 'date_desc'));
+$overdueSql = 'SELECT * FROM overdue_customers';
+$overdueParams = [];
+$overdueConditions = [];
+if ($overdueDateFrom !== '') {
+    $overdueConditions[] = 'collection_entry_date >= :overdue_date_from';
+    $overdueParams[':overdue_date_from'] = $overdueDateFrom;
+}
+if ($overdueDateTo !== '') {
+    $overdueConditions[] = 'collection_entry_date <= :overdue_date_to';
+    $overdueParams[':overdue_date_to'] = $overdueDateTo;
+}
+if ($overdueStatusFilter !== '') {
+    $overdueConditions[] = 'status = :overdue_status';
+    $overdueParams[':overdue_status'] = $overdueStatusFilter;
+}
+if ($overdueNameFilter !== '') {
+    $overdueConditions[] = 'customer_name LIKE :overdue_name';
+    $overdueParams[':overdue_name'] = '%' . $overdueNameFilter . '%';
+}
+if ($overdueConditions !== []) {
+    $overdueSql .= ' WHERE ' . implode(' AND ', $overdueConditions);
+}
+$overdueSql .= $overdueSort === 'amount_desc' ? ' ORDER BY amount DESC, collection_entry_date DESC' : ' ORDER BY collection_entry_date DESC, id DESC';
+$overdueCustomers = fetchAll($pdo, $overdueSql, $overdueParams);
 $cards = fetchAll($pdo, 'SELECT * FROM card_receivables ORDER BY sale_date DESC');
 $weekStart = date('Y-m-d', strtotime('monday this week'));
 $monthStart = date('Y-m-01');
@@ -1772,6 +1800,34 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </script>
 <?php elseif ($module === 'clientes_atraso'): ?>
     <h3>Clientes em Atraso</h3>
+    <button type="button" onclick="document.getElementById('overdueFilterModal').showModal()">Filtrar</button>
+    <a href="?module=clientes_atraso">Limpar filtros</a>
+
+    <dialog id="overdueFilterModal">
+        <form method="get">
+            <input type="hidden" name="module" value="clientes_atraso">
+            <label>Data de cobrança de: <input type="date" name="overdue_date_from" value="<?= htmlspecialchars($overdueDateFrom) ?>"></label>
+            <label>até: <input type="date" name="overdue_date_to" value="<?= htmlspecialchars($overdueDateTo) ?>"></label><br>
+            <label>Situação:
+                <select name="overdue_status">
+                    <option value="">Todas</option>
+                    <option value="vencido" <?= $overdueStatusFilter === 'vencido' ? 'selected' : '' ?>>vencido</option>
+                    <option value="spc" <?= $overdueStatusFilter === 'spc' ? 'selected' : '' ?>>spc</option>
+                    <option value="outra" <?= $overdueStatusFilter === 'outra' ? 'selected' : '' ?>>outra</option>
+                </select>
+            </label>
+            <label>Nome do cliente: <input name="overdue_name" value="<?= htmlspecialchars($overdueNameFilter) ?>"></label>
+            <label>Ordenação:
+                <select name="overdue_sort">
+                    <option value="date_desc" <?= $overdueSort === 'date_desc' ? 'selected' : '' ?>>Data mais recente</option>
+                    <option value="amount_desc" <?= $overdueSort === 'amount_desc' ? 'selected' : '' ?>>Valor maior para menor</option>
+                </select>
+            </label>
+            <button>Aplicar filtros</button>
+            <button type="button" onclick="document.getElementById('overdueFilterModal').close()">Fechar</button>
+        </form>
+    </dialog>
+
     <form method="post">
         <input type="hidden" name="action" value="create">
         <label>Data que entrou para cobrança: <input type="date" name="collection_entry_date" value="<?= $today ?>" required></label>
@@ -1785,14 +1841,21 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <button>Salvar</button>
     </form>
     <table>
-        <tr><th>Data cobrança</th><th>Cliente</th><th>Valor</th><th>Situação</th><th>Ações</th></tr>
+        <tr><th>Data cobrança</th><th>Cliente</th><th>Valor</th><th>Dias de atraso</th><th>Situação</th><th>Ações</th></tr>
         <?php foreach ($overdueCustomers as $item): ?>
+            <?php
+                $entryTime = strtotime((string) $item['collection_entry_date']);
+                $todayTime = strtotime($today);
+                $daysOverdue = ($entryTime && $todayTime) ? max(0, (int) floor(($todayTime - $entryTime) / 86400)) : 0;
+            ?>
             <tr>
                 <td><?= dateBr((string) $item['collection_entry_date']) ?></td>
                 <td><?= htmlspecialchars((string) $item['customer_name']) ?></td>
                 <td><?= money((float) $item['amount']) ?></td>
+                <td><?= $daysOverdue ?> dia(s)</td>
                 <td><?= htmlspecialchars((string) $item['status']) ?></td>
                 <td>
+                    <button type="button" onclick="openOverdueInfoModal(<?= json_encode((string) $item['customer_name'], JSON_HEX_APOS | JSON_HEX_QUOT) ?>)">Informações</button>
                     <button type="button" class="btn-success" onclick="openOverdueSettleModal(<?= (int) $item['id'] ?>, <?= (float) $item['amount'] ?>)">Dar baixa</button>
                 </td>
             </tr>
@@ -1820,11 +1883,53 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" onclick="document.getElementById('overdueSettleModal').close()">Fechar</button>
         </form>
     </dialog>
+    <dialog id="overdueInfoModal">
+        <div>
+            <h4 id="overdue_info_title">Histórico de pagamentos</h4>
+            <table>
+                <thead><tr><th>Data</th><th>Valor</th><th>Forma de pagamento</th></tr></thead>
+                <tbody id="overdue_info_body"></tbody>
+            </table>
+            <button type="button" onclick="document.getElementById('overdueInfoModal').close()">Fechar</button>
+        </div>
+    </dialog>
     <script>
+        const customerReceiptHistory = <?= json_encode(array_map(static fn(array $row): array => [
+            'date' => (string) $row['receipt_date'],
+            'customer_name' => (string) $row['customer_name'],
+            'amount' => (float) $row['net_amount'],
+            'payment_method' => (string) $row['payment_method'],
+        ], $customerReceipts)) ?>;
+
         function openOverdueSettleModal(id, amount) {
             document.getElementById('overdue_settle_id').value = id;
             document.getElementById('overdue_settle_amount').textContent = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
             document.getElementById('overdueSettleModal').showModal();
+        }
+
+        function openOverdueInfoModal(customerName) {
+            const dialog = document.getElementById('overdueInfoModal');
+            const title = document.getElementById('overdue_info_title');
+            const body = document.getElementById('overdue_info_body');
+            if (!dialog || !title || !body) return;
+            title.textContent = `Histórico de pagamentos - ${customerName}`;
+            const rows = customerReceiptHistory
+                .filter((row) => (row.customer_name || '').toLowerCase() === (customerName || '').toLowerCase())
+                .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+            body.innerHTML = '';
+            if (rows.length === 0) {
+                body.innerHTML = '<tr><td colspan="3">Sem pagamentos registrados.</td></tr>';
+            } else {
+                for (const row of rows) {
+                    const tr = document.createElement('tr');
+                    const formattedAmount = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(row.amount || 0);
+                    const dateParts = String(row.date || '').split('-');
+                    const formattedDate = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : String(row.date || '');
+                    tr.innerHTML = `<td>${formattedDate}</td><td>${formattedAmount}</td><td>${row.payment_method || ''}</td>`;
+                    body.appendChild(tr);
+                }
+            }
+            dialog.showModal();
         }
     </script>
 <?php elseif ($module === 'vendas'): ?>
