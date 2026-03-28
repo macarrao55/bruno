@@ -458,6 +458,31 @@ function handlePost(PDO $pdo, string $module): void
                             ':description' => 'Baixa cliente em atraso: ' . $item['customer_name'],
                             ':occurred_on' => $paymentDate,
                         ]);
+
+                    $isCardPayment = str_contains(mb_strtolower($paymentMethod, 'UTF-8'), 'cart');
+                    if ($isCardPayment) {
+                        $cardFeePercent = moneyInput($_POST['card_fee_percent'] ?? 0);
+                        $cardGross = $paidAmount;
+                        $cardNet = round(max(0, $cardGross - ($cardGross * $cardFeePercent / 100)), 2);
+                        $cardSaleDate = (string) ($_POST['card_sale_date'] ?? $paymentDate);
+                        $cardReleaseDate = (string) ($_POST['card_expected_release_date'] ?? $paymentDate);
+                        $cardType = normalizeCardType((string) ($_POST['card_type'] ?? 'credito_avista'));
+
+                        $pdo->prepare('INSERT INTO card_receivables (machine, brand, card_type, fee_percent, gross_value, net_value, sale_date, expected_release_date, received, sale_location)
+                            VALUES (:machine, :brand, :card_type, :fee_percent, :gross_value, :net_value, :sale_date, :expected_release_date, :received, :sale_location)')
+                            ->execute([
+                                ':machine' => trim((string) ($_POST['card_machine'] ?? 'Não informado')),
+                                ':brand' => trim((string) ($_POST['card_brand'] ?? 'Não informado')),
+                                ':card_type' => $cardType,
+                                ':fee_percent' => $cardFeePercent,
+                                ':gross_value' => $cardGross,
+                                ':net_value' => $cardNet,
+                                ':sale_date' => $cardSaleDate,
+                                ':expected_release_date' => $cardReleaseDate,
+                                ':received' => isset($_POST['card_received']) ? 1 : 0,
+                                ':sale_location' => trim((string) ($_POST['card_sale_location'] ?? '')),
+                            ]);
+                    }
                 }
             }
             break;
@@ -1910,13 +1935,44 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <label>Desconto: <input type="number" step="0.01" min="0" name="discount" value="0"></label><br>
             <label>Valor total (opcional): <input type="number" step="0.01" min="0" name="total_paid"></label><br>
             <label>Forma de pagamento:
-                <select name="payment_method" required>
+                <select name="payment_method" id="overdue_payment_method" required>
                     <option value="">Selecionar</option>
                     <?php foreach ($paymentMethods as $method): ?>
                         <option value="<?= htmlspecialchars($method['name']) ?>"><?= htmlspecialchars($method['name']) ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
+            <div id="overdue_card_fields" style="display:none;">
+                <h4>Lançamento no Controle de Cartões</h4>
+                <select name="card_machine" id="overdue_card_machine">
+                    <option value="">Máquina</option>
+                    <?php foreach ($cardMachines as $machine): ?>
+                        <option value="<?= htmlspecialchars($machine['name']) ?>"><?= htmlspecialchars($machine['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select name="card_brand" id="overdue_card_brand">
+                    <option value="">Bandeira</option>
+                    <?php foreach ($cardBrands as $brand): ?>
+                        <option value="<?= htmlspecialchars($brand['name']) ?>"><?= htmlspecialchars($brand['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select name="card_type" id="overdue_card_type">
+                    <option value="">Forma cartão</option>
+                    <?php foreach ($cardPaymentConfigs as $config): ?>
+                        <option value="<?= htmlspecialchars($config['name']) ?>"><?= htmlspecialchars($config['name']) ?></option>
+                    <?php endforeach; ?>
+                </select><br>
+                <input type="number" step="0.01" min="0" name="card_fee_percent" id="overdue_card_fee" placeholder="Taxa %">
+                <select name="card_sale_location" id="overdue_card_sale_location">
+                    <option value="">Local da venda</option>
+                    <?php foreach ($saleLocations as $location): ?>
+                        <option value="<?= htmlspecialchars($location['name']) ?>"><?= htmlspecialchars($location['name']) ?></option>
+                    <?php endforeach; ?>
+                </select><br>
+                <label>Data da venda: <input type="date" name="card_sale_date" id="overdue_card_sale_date" value="<?= $today ?>"></label>
+                <label>Data liberação: <input type="date" name="card_expected_release_date" id="overdue_card_release_date" value="<?= $today ?>"></label>
+                <label><input type="checkbox" name="card_received" id="overdue_card_received"> Baixa imediata no cartão</label>
+            </div>
             <p class="small">Valor atual em atraso: <span id="overdue_settle_amount">R$ 0,00</span></p>
             <p class="small">Se não informar o valor total, o sistema baixa usando valor devido com juros/desconto.</p>
             <button>Confirmar baixa</button>
@@ -1946,6 +2002,38 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('overdue_settle_amount').textContent = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
             document.getElementById('overdueSettleModal').showModal();
         }
+
+        (function () {
+            const paymentMethod = document.getElementById('overdue_payment_method');
+            const cardFields = document.getElementById('overdue_card_fields');
+            const cardInputs = [
+                document.getElementById('overdue_card_machine'),
+                document.getElementById('overdue_card_brand'),
+                document.getElementById('overdue_card_type'),
+                document.getElementById('overdue_card_fee'),
+                document.getElementById('overdue_card_sale_location'),
+                document.getElementById('overdue_card_sale_date'),
+                document.getElementById('overdue_card_release_date'),
+            ];
+            if (!paymentMethod || !cardFields) return;
+            const toggleCardFields = () => {
+                const value = (paymentMethod.value || '').toLowerCase();
+                const isCard = value.includes('cart');
+                cardFields.style.display = isCard ? 'block' : 'none';
+                for (const input of cardInputs) {
+                    if (!input) continue;
+                    if (isCard) {
+                        if (input.id !== 'overdue_card_fee') {
+                            input.setAttribute('required', 'required');
+                        }
+                    } else {
+                        input.removeAttribute('required');
+                    }
+                }
+            };
+            paymentMethod.addEventListener('change', toggleCardFields);
+            toggleCardFields();
+        })();
 
         function openOverdueEditModal(data) {
             document.getElementById('overdue_edit_id').value = data.id ?? '';
