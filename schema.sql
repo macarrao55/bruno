@@ -82,6 +82,15 @@ CREATE TABLE credit_sales_totals (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE overdue_customers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    collection_entry_date TEXT NOT NULL,
+    customer_name TEXT NOT NULL,
+    amount REAL NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('vencido', 'spc', 'outra')),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE card_receivables (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     machine TEXT NOT NULL,

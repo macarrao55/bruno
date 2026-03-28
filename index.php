@@ -386,6 +386,17 @@ function handlePost(PDO $pdo, string $module): void
                 ]);
             break;
 
+        case 'clientes_atraso':
+            $pdo->prepare('INSERT INTO overdue_customers (collection_entry_date, customer_name, amount, status)
+                VALUES (:collection_entry_date, :customer_name, :amount, :status)')
+                ->execute([
+                    ':collection_entry_date' => $_POST['collection_entry_date'],
+                    ':customer_name' => trim((string) $_POST['customer_name']),
+                    ':amount' => moneyInput($_POST['amount'] ?? 0),
+                    ':status' => in_array((string) $_POST['status'], ['vencido', 'spc', 'outra'], true) ? $_POST['status'] : 'vencido',
+                ]);
+            break;
+
         case 'cartoes':
             $action = $_POST['action'] ?? 'create';
             if ($action === 'create') {
@@ -976,6 +987,7 @@ if ($module === 'pagar' && isset($_GET['edit_id'])) {
 $receivables = fetchAll($pdo, 'SELECT *, CASE WHEN status IN ("aberto","parcial") AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_receivable ORDER BY due_date ASC', [':today' => $today]);
 $customerReceipts = fetchAll($pdo, 'SELECT * FROM customer_receipts ORDER BY receipt_date DESC, id DESC');
 $creditSalesTotals = fetchAll($pdo, 'SELECT * FROM credit_sales_totals ORDER BY sale_date DESC, id DESC');
+$overdueCustomers = fetchAll($pdo, 'SELECT * FROM overdue_customers ORDER BY collection_entry_date DESC, id DESC');
 $cards = fetchAll($pdo, 'SELECT * FROM card_receivables ORDER BY sale_date DESC');
 $weekStart = date('Y-m-d', strtotime('monday this week'));
 $monthStart = date('Y-m-01');
@@ -1055,6 +1067,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <a href="?module=receber">Contas a Receber</a>
                 <a href="?module=recebimento_clientes">Recebimento de Clientes</a>
                 <a href="?module=vendas_prazo">Vendas a Prazo</a>
+                <a href="?module=clientes_atraso">Clientes em Atraso</a>
                 <a href="?module=cartoes">Cartões</a>
                 <a href="?module=cheques">Cheques</a>
                 <a href="?module=dre">DRE</a>
@@ -1705,6 +1718,30 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             update();
         })();
     </script>
+<?php elseif ($module === 'clientes_atraso'): ?>
+    <h3>Clientes em Atraso</h3>
+    <form method="post">
+        <label>Data que entrou para cobrança: <input type="date" name="collection_entry_date" value="<?= $today ?>" required></label>
+        <input name="customer_name" placeholder="Nome do cliente" required>
+        <input type="number" step="0.01" min="0" name="amount" placeholder="Valor" required>
+        <select name="status" required>
+            <option value="vencido">vencido</option>
+            <option value="spc">spc</option>
+            <option value="outra">outra</option>
+        </select>
+        <button>Salvar</button>
+    </form>
+    <table>
+        <tr><th>Data cobrança</th><th>Cliente</th><th>Valor</th><th>Situação</th></tr>
+        <?php foreach ($overdueCustomers as $item): ?>
+            <tr>
+                <td><?= dateBr((string) $item['collection_entry_date']) ?></td>
+                <td><?= htmlspecialchars((string) $item['customer_name']) ?></td>
+                <td><?= money((float) $item['amount']) ?></td>
+                <td><?= htmlspecialchars((string) $item['status']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
 <?php elseif ($module === 'vendas'): ?>
     <h3>Vendas</h3>
     <div class="cards">

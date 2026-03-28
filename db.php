@@ -295,4 +295,16 @@ function runMigrations(PDO $pdo): void
             $pdo->exec('ALTER TABLE credit_sales_totals ADD COLUMN sale_location TEXT');
         }
     }
+
+    $overdueCustomersTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='overdue_customers'")->fetch();
+    if (!$overdueCustomersTable) {
+        $pdo->exec('CREATE TABLE overdue_customers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            collection_entry_date TEXT NOT NULL,
+            customer_name TEXT NOT NULL,
+            amount REAL NOT NULL,
+            status TEXT NOT NULL CHECK (status IN (\'vencido\', \'spc\', \'outra\')),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
 }
