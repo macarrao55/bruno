@@ -399,6 +399,19 @@ function handlePost(PDO $pdo, string $module): void
                     ]);
             }
 
+            if ($action === 'edit') {
+                $pdo->prepare('UPDATE overdue_customers
+                    SET collection_entry_date=:collection_entry_date, customer_name=:customer_name, amount=:amount, status=:status
+                    WHERE id=:id')
+                    ->execute([
+                        ':id' => (int) ($_POST['id'] ?? 0),
+                        ':collection_entry_date' => $_POST['collection_entry_date'],
+                        ':customer_name' => trim((string) $_POST['customer_name']),
+                        ':amount' => moneyInput($_POST['amount'] ?? 0),
+                        ':status' => in_array((string) $_POST['status'], ['vencido', 'spc', 'outra'], true) ? $_POST['status'] : 'vencido',
+                    ]);
+            }
+
             if ($action === 'settle') {
                 $id = (int) ($_POST['id'] ?? 0);
                 $stmt = $pdo->prepare('SELECT * FROM overdue_customers WHERE id=:id');
@@ -1856,11 +1869,38 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <td><?= htmlspecialchars((string) $item['status']) ?></td>
                 <td>
                     <button type="button" onclick="openOverdueInfoModal(<?= json_encode((string) $item['customer_name'], JSON_HEX_APOS | JSON_HEX_QUOT) ?>)">Informações</button>
+                    <button
+                        type="button"
+                        onclick='openOverdueEditModal(<?= json_encode([
+                            'id' => (int) $item['id'],
+                            'collection_entry_date' => (string) $item['collection_entry_date'],
+                            'customer_name' => (string) $item['customer_name'],
+                            'amount' => (float) $item['amount'],
+                            'status' => (string) $item['status'],
+                        ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                        Editar
+                    </button>
                     <button type="button" class="btn-success" onclick="openOverdueSettleModal(<?= (int) $item['id'] ?>, <?= (float) $item['amount'] ?>)">Dar baixa</button>
                 </td>
             </tr>
         <?php endforeach; ?>
     </table>
+    <dialog id="overdueEditModal">
+        <form method="post">
+            <input type="hidden" name="action" value="edit">
+            <input type="hidden" name="id" id="overdue_edit_id">
+            <label>Data que entrou para cobrança: <input type="date" name="collection_entry_date" id="overdue_edit_date" required></label><br>
+            <input name="customer_name" id="overdue_edit_customer" placeholder="Nome do cliente" required><br>
+            <input type="number" step="0.01" min="0" name="amount" id="overdue_edit_amount" placeholder="Valor" required><br>
+            <select name="status" id="overdue_edit_status" required>
+                <option value="vencido">vencido</option>
+                <option value="spc">spc</option>
+                <option value="outra">outra</option>
+            </select><br>
+            <button>Salvar edição</button>
+            <button type="button" onclick="document.getElementById('overdueEditModal').close()">Fechar</button>
+        </form>
+    </dialog>
     <dialog id="overdueSettleModal">
         <form method="post">
             <input type="hidden" name="action" value="settle">
@@ -1899,12 +1939,21 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             'customer_name' => (string) $row['customer_name'],
             'amount' => (float) $row['net_amount'],
             'payment_method' => (string) $row['payment_method'],
-        ], $customerReceipts)) ?>;
+        ], $customerReceipts), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 
         function openOverdueSettleModal(id, amount) {
             document.getElementById('overdue_settle_id').value = id;
             document.getElementById('overdue_settle_amount').textContent = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
             document.getElementById('overdueSettleModal').showModal();
+        }
+
+        function openOverdueEditModal(data) {
+            document.getElementById('overdue_edit_id').value = data.id ?? '';
+            document.getElementById('overdue_edit_date').value = data.collection_entry_date ?? '';
+            document.getElementById('overdue_edit_customer').value = data.customer_name ?? '';
+            document.getElementById('overdue_edit_amount').value = data.amount ?? 0;
+            document.getElementById('overdue_edit_status').value = data.status ?? 'vencido';
+            document.getElementById('overdueEditModal').showModal();
         }
 
         function openOverdueInfoModal(customerName) {
@@ -1913,8 +1962,9 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             const body = document.getElementById('overdue_info_body');
             if (!dialog || !title || !body) return;
             title.textContent = `Histórico de pagamentos - ${customerName}`;
+            const normalizedCustomer = String(customerName || '').trim().toLowerCase();
             const rows = customerReceiptHistory
-                .filter((row) => (row.customer_name || '').toLowerCase() === (customerName || '').toLowerCase())
+                .filter((row) => String(row.customer_name || '').trim().toLowerCase() === normalizedCustomer)
                 .sort((a, b) => String(b.date).localeCompare(String(a.date)));
             body.innerHTML = '';
             if (rows.length === 0) {
