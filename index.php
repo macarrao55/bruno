@@ -575,6 +575,92 @@ function handlePost(PDO $pdo, string $module): void
             }
             break;
 
+        case 'vendas_caixa':
+            $action = $_POST['action'] ?? 'create';
+            $type = (string) ($_POST['sale_type'] ?? 'venda_gas');
+            $isOutflow = in_array($type, ['cancelamento_devolucao', 'sangria'], true);
+            $movementType = $isOutflow ? 'saida' : 'entrada';
+            $category = 'vendas_caixa';
+            $amount = moneyInput($_POST['amount'] ?? 0);
+
+            if ($action === 'create') {
+                $transactionStmt = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                    VALUES (:movement_type, :amount, :category, :subcategory, :origin_account, :destination_account, :description, :occurred_on)');
+                $transactionStmt->execute([
+                    ':movement_type' => $movementType,
+                    ':amount' => $amount,
+                    ':category' => $category,
+                    ':subcategory' => $type,
+                    ':origin_account' => trim((string) ($_POST['cash_account'] ?? 'caixa')),
+                    ':destination_account' => trim((string) ($_POST['sale_location'] ?? 'caixa')),
+                    ':description' => 'Vendas do caixa - ' . $type,
+                    ':occurred_on' => $_POST['sale_date'],
+                ]);
+                $transactionId = (int) $pdo->lastInsertId();
+
+                $pdo->prepare('INSERT INTO cash_sales (sale_date, sale_location, amount, payment_method, cash_account, sale_type, transaction_id)
+                    VALUES (:sale_date, :sale_location, :amount, :payment_method, :cash_account, :sale_type, :transaction_id)')
+                    ->execute([
+                        ':sale_date' => $_POST['sale_date'],
+                        ':sale_location' => trim((string) $_POST['sale_location']),
+                        ':amount' => $amount,
+                        ':payment_method' => trim((string) $_POST['payment_method']),
+                        ':cash_account' => trim((string) $_POST['cash_account']),
+                        ':sale_type' => $type,
+                        ':transaction_id' => $transactionId,
+                    ]);
+            }
+
+            if ($action === 'edit') {
+                $id = (int) $_POST['id'];
+                $current = $pdo->prepare('SELECT * FROM cash_sales WHERE id=:id');
+                $current->execute([':id' => $id]);
+                $row = $current->fetch();
+                if ($row) {
+                    $transactionId = (int) ($row['transaction_id'] ?? 0);
+                    if ($transactionId > 0) {
+                        $pdo->prepare('UPDATE transactions
+                            SET movement_type=:movement_type, amount=:amount, category=:category, subcategory=:subcategory, origin_account=:origin_account, destination_account=:destination_account, description=:description, occurred_on=:occurred_on
+                            WHERE id=:id')
+                            ->execute([
+                                ':id' => $transactionId,
+                                ':movement_type' => $movementType,
+                                ':amount' => $amount,
+                                ':category' => $category,
+                                ':subcategory' => $type,
+                                ':origin_account' => trim((string) ($_POST['cash_account'] ?? 'caixa')),
+                                ':destination_account' => trim((string) ($_POST['sale_location'] ?? 'caixa')),
+                                ':description' => 'Vendas do caixa - ' . $type,
+                                ':occurred_on' => $_POST['sale_date'],
+                            ]);
+                    }
+                    $pdo->prepare('UPDATE cash_sales
+                        SET sale_date=:sale_date, sale_location=:sale_location, amount=:amount, payment_method=:payment_method, cash_account=:cash_account, sale_type=:sale_type
+                        WHERE id=:id')
+                        ->execute([
+                            ':id' => $id,
+                            ':sale_date' => $_POST['sale_date'],
+                            ':sale_location' => trim((string) $_POST['sale_location']),
+                            ':amount' => $amount,
+                            ':payment_method' => trim((string) $_POST['payment_method']),
+                            ':cash_account' => trim((string) $_POST['cash_account']),
+                            ':sale_type' => $type,
+                        ]);
+                }
+            }
+
+            if ($action === 'delete') {
+                $id = (int) $_POST['id'];
+                $current = $pdo->prepare('SELECT transaction_id FROM cash_sales WHERE id=:id');
+                $current->execute([':id' => $id]);
+                $transactionId = (int) ($current->fetchColumn() ?: 0);
+                $pdo->prepare('DELETE FROM cash_sales WHERE id=:id')->execute([':id' => $id]);
+                if ($transactionId > 0) {
+                    $pdo->prepare('DELETE FROM transactions WHERE id=:id')->execute([':id' => $transactionId]);
+                }
+            }
+            break;
+
         case 'cartoes':
             $action = $_POST['action'] ?? 'create';
             if ($action === 'create') {
@@ -1170,6 +1256,7 @@ $employees = fetchAll($pdo, 'SELECT * FROM employees ORDER BY role, name');
 $employeeDebts = fetchAll($pdo, 'SELECT d.*, e.name AS employee_name, e.role AS employee_role FROM employee_debts d JOIN employees e ON e.id=d.employee_id ORDER BY d.debt_date DESC, d.id DESC');
 $vehicles = fetchAll($pdo, 'SELECT * FROM vehicles ORDER BY name');
 $vehicleExpenses = fetchAll($pdo, 'SELECT ve.*, v.name AS vehicle_name, v.plate AS vehicle_plate FROM vehicle_expenses ve JOIN vehicles v ON v.id=ve.vehicle_id ORDER BY ve.expense_date DESC, ve.id DESC');
+$cashSales = fetchAll($pdo, 'SELECT * FROM cash_sales ORDER BY sale_date DESC, id DESC');
 $overdueDateFrom = trim((string) ($_GET['overdue_date_from'] ?? ''));
 $overdueDateTo = trim((string) ($_GET['overdue_date_to'] ?? ''));
 $overdueStatusFilter = trim((string) ($_GET['overdue_status'] ?? ''));
@@ -1275,6 +1362,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'financeiroMenu')">Financeiro ▾</button>
             <div id="financeiroMenu" class="menu-dropdown">
                 <a href="?module=recebimento_clientes">Recebimento de Clientes</a>
+                <a href="?module=vendas_caixa">Vendas do Caixa</a>
                 <a href="?module=saida_financeiro">Saída</a>
                 <a href="?module=vendas_prazo">Vendas a Prazo</a>
                 <a href="?module=clientes_atraso">Clientes em Atraso</a>
@@ -2169,6 +2257,91 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             interest?.addEventListener('input', update);
             update();
         })();
+    </script>
+<?php elseif ($module === 'vendas_caixa'): ?>
+    <h3>Módulo de Vendas do Caixa</h3>
+    <form method="post" id="cashSalesForm">
+        <input type="hidden" name="action" value="create" id="cash_sale_action">
+        <input type="hidden" name="id" id="cash_sale_id">
+        <input type="hidden" name="sale_type" id="cash_sale_type" value="venda_gas">
+        <button type="button" class="btn-success" onclick="setCashSaleType('venda_gas')">Venda de Gás</button>
+        <button type="button" class="btn-danger" onclick="setCashSaleType('cancelamento_devolucao')">Cancelamento ou devolução</button>
+        <button type="button" onclick="setCashSaleType('sangria')">Sangria</button><br>
+        <p class="small">Tipo selecionado: <strong id="cash_sale_type_label">Venda de Gás</strong></p>
+        <label>Data: <input type="date" name="sale_date" id="cash_sale_date" value="<?= $today ?>" required></label>
+        <select name="sale_location" id="cash_sale_location" required>
+            <option value="">Empresa/Local</option>
+            <?php foreach ($saleLocations as $location): ?>
+                <option value="<?= htmlspecialchars($location['name']) ?>"><?= htmlspecialchars($location['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <input type="number" step="0.01" min="0" name="amount" id="cash_sale_amount" placeholder="Valor" required>
+        <select name="payment_method" id="cash_sale_payment_method" required>
+            <option value="">Forma de pagamento</option>
+            <?php foreach ($paymentMethods as $method): ?>
+                <option value="<?= htmlspecialchars($method['name']) ?>"><?= htmlspecialchars($method['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <select name="cash_account" id="cash_sale_cash_account" required>
+            <option value="caixa">Caixa</option>
+            <?php foreach ($banks as $bank): ?>
+                <option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <button id="cash_sale_submit">Salvar lançamento</button>
+        <button type="button" onclick="resetCashSaleForm()">Cancelar edição</button>
+    </form>
+
+    <table>
+        <tr><th>Data</th><th>Tipo</th><th>Empresa/Local</th><th>Valor</th><th>Forma pagamento</th><th>Caixa</th><th>Ações</th></tr>
+        <?php foreach ($cashSales as $sale): ?>
+            <tr>
+                <td><?= dateBr((string) $sale['sale_date']) ?></td>
+                <td><?= htmlspecialchars((string) $sale['sale_type']) ?></td>
+                <td><?= htmlspecialchars((string) $sale['sale_location']) ?></td>
+                <td><?= money((float) $sale['amount']) ?></td>
+                <td><?= htmlspecialchars((string) $sale['payment_method']) ?></td>
+                <td><?= htmlspecialchars((string) $sale['cash_account']) ?></td>
+                <td>
+                    <button type="button" onclick='editCashSale(<?= json_encode($sale, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir lançamento de vendas do caixa?')">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" value="<?= (int) $sale['id'] ?>">
+                        <button class="btn-danger">Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+    <script>
+        function setCashSaleType(type) {
+            const typeField = document.getElementById('cash_sale_type');
+            const label = document.getElementById('cash_sale_type_label');
+            if (typeField) typeField.value = type;
+            if (!label) return;
+            if (type === 'venda_gas') label.textContent = 'Venda de Gás';
+            if (type === 'cancelamento_devolucao') label.textContent = 'Cancelamento ou devolução';
+            if (type === 'sangria') label.textContent = 'Sangria';
+        }
+        function editCashSale(sale) {
+            document.getElementById('cash_sale_action').value = 'edit';
+            document.getElementById('cash_sale_submit').textContent = 'Salvar edição';
+            document.getElementById('cash_sale_id').value = sale.id || '';
+            document.getElementById('cash_sale_date').value = sale.sale_date || '';
+            document.getElementById('cash_sale_location').value = sale.sale_location || '';
+            document.getElementById('cash_sale_amount').value = sale.amount || '';
+            document.getElementById('cash_sale_payment_method').value = sale.payment_method || '';
+            document.getElementById('cash_sale_cash_account').value = sale.cash_account || 'caixa';
+            setCashSaleType(sale.sale_type || 'venda_gas');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        function resetCashSaleForm() {
+            document.getElementById('cashSalesForm').reset();
+            document.getElementById('cash_sale_action').value = 'create';
+            document.getElementById('cash_sale_submit').textContent = 'Salvar lançamento';
+            document.getElementById('cash_sale_id').value = '';
+            setCashSaleType('venda_gas');
+        }
     </script>
 <?php elseif ($module === 'saida_financeiro'): ?>
     <h3>Saída</h3>
