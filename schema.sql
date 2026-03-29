@@ -147,6 +147,11 @@ CREATE TABLE cash_sales (
     payment_method TEXT NOT NULL,
     cash_account TEXT NOT NULL,
     sale_type TEXT NOT NULL CHECK (sale_type IN ('venda_gas', 'cancelamento_devolucao', 'sangria')),
+    quantity_units INTEGER,
+    gas_kind TEXT CHECK (gas_kind IN ('recarga', 'gas_completo')),
+    seller TEXT,
+    refund_method TEXT,
+    refund_reason TEXT,
     transaction_id INTEGER,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
