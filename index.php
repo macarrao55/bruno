@@ -487,6 +487,31 @@ function handlePost(PDO $pdo, string $module): void
             }
             break;
 
+        case 'saida_financeiro':
+            $expenseDate = (string) ($_POST['expense_date'] ?? date('Y-m-d'));
+            $name = trim((string) ($_POST['name'] ?? ''));
+            $amount = moneyInput($_POST['amount'] ?? 0);
+            $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
+
+            $pdo->prepare('INSERT INTO finance_expenses (expense_date, name, amount, payment_method)
+                VALUES (:expense_date, :name, :amount, :payment_method)')
+                ->execute([
+                    ':expense_date' => $expenseDate,
+                    ':name' => $name,
+                    ':amount' => $amount,
+                    ':payment_method' => $paymentMethod,
+                ]);
+
+            $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                VALUES (\'saida\', :amount, \'saida_financeiro\', :subcategory, \'caixa\', \'fornecedor\', :description, :occurred_on)')
+                ->execute([
+                    ':amount' => $amount,
+                    ':subcategory' => $paymentMethod,
+                    ':description' => 'Saída: ' . $name,
+                    ':occurred_on' => $expenseDate,
+                ]);
+            break;
+
         case 'cartoes':
             $action = $_POST['action'] ?? 'create';
             if ($action === 'create') {
@@ -1077,6 +1102,7 @@ if ($module === 'pagar' && isset($_GET['edit_id'])) {
 $receivables = fetchAll($pdo, 'SELECT *, CASE WHEN status IN ("aberto","parcial") AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_receivable ORDER BY due_date ASC', [':today' => $today]);
 $customerReceipts = fetchAll($pdo, 'SELECT * FROM customer_receipts ORDER BY receipt_date DESC, id DESC');
 $creditSalesTotals = fetchAll($pdo, 'SELECT * FROM credit_sales_totals ORDER BY sale_date DESC, id DESC');
+$financeExpenses = fetchAll($pdo, 'SELECT * FROM finance_expenses ORDER BY expense_date DESC, id DESC');
 $overdueDateFrom = trim((string) ($_GET['overdue_date_from'] ?? ''));
 $overdueDateTo = trim((string) ($_GET['overdue_date_to'] ?? ''));
 $overdueStatusFilter = trim((string) ($_GET['overdue_status'] ?? ''));
@@ -1182,6 +1208,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'financeiroMenu')">Financeiro ▾</button>
             <div id="financeiroMenu" class="menu-dropdown">
                 <a href="?module=recebimento_clientes">Recebimento de Clientes</a>
+                <a href="?module=saida_financeiro">Saída</a>
                 <a href="?module=vendas_prazo">Vendas a Prazo</a>
                 <a href="?module=clientes_atraso">Clientes em Atraso</a>
             </div>
@@ -1793,6 +1820,31 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             update();
         })();
     </script>
+<?php elseif ($module === 'saida_financeiro'): ?>
+    <h3>Saída</h3>
+    <form method="post">
+        <label>Data: <input type="date" name="expense_date" value="<?= $today ?>" required></label>
+        <input name="name" placeholder="Nome" required>
+        <input type="number" step="0.01" min="0" name="amount" placeholder="Valor" required>
+        <select name="payment_method" required>
+            <option value="">Forma de pagamento</option>
+            <?php foreach ($paymentMethods as $method): ?>
+                <option value="<?= htmlspecialchars($method['name']) ?>"><?= htmlspecialchars($method['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <button>Salvar saída</button>
+    </form>
+    <table>
+        <tr><th>Data</th><th>Nome</th><th>Valor</th><th>Forma de pagamento</th></tr>
+        <?php foreach ($financeExpenses as $expense): ?>
+            <tr>
+                <td><?= dateBr((string) $expense['expense_date']) ?></td>
+                <td><?= htmlspecialchars((string) $expense['name']) ?></td>
+                <td><?= money((float) $expense['amount']) ?></td>
+                <td><?= htmlspecialchars((string) $expense['payment_method']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
 <?php elseif ($module === 'vendas_prazo'): ?>
     <h3>Vendas a Prazo</h3>
     <form method="post" id="creditSalesForm">

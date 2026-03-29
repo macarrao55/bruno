@@ -91,6 +91,15 @@ CREATE TABLE overdue_customers (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE finance_expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    expense_date TEXT NOT NULL,
+    name TEXT NOT NULL,
+    amount REAL NOT NULL,
+    payment_method TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE card_receivables (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     machine TEXT NOT NULL,

@@ -307,4 +307,16 @@ function runMigrations(PDO $pdo): void
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )');
     }
+
+    $financeExpensesTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='finance_expenses'")->fetch();
+    if (!$financeExpensesTable) {
+        $pdo->exec('CREATE TABLE finance_expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_date TEXT NOT NULL,
+            name TEXT NOT NULL,
+            amount REAL NOT NULL,
+            payment_method TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
 }
