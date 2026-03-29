@@ -319,4 +319,28 @@ function runMigrations(PDO $pdo): void
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )');
     }
+
+    $employeesTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='employees'")->fetch();
+    if (!$employeesTable) {
+        $pdo->exec('CREATE TABLE employees (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            role TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+
+    $employeeDebtsTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='employee_debts'")->fetch();
+    if (!$employeeDebtsTable) {
+        $pdo->exec('CREATE TABLE employee_debts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            debt_date TEXT NOT NULL,
+            description TEXT,
+            amount REAL NOT NULL,
+            status TEXT NOT NULL DEFAULT \'aberto\' CHECK (status IN (\'aberto\', \'quitado\')),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+        )');
+    }
 }

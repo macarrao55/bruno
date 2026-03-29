@@ -512,6 +512,28 @@ function handlePost(PDO $pdo, string $module): void
                 ]);
             break;
 
+        case 'funcionarios':
+            $action = $_POST['action'] ?? '';
+            if ($action === 'employee_add') {
+                $pdo->prepare('INSERT INTO employees (name, role) VALUES (:name, :role)')
+                    ->execute([
+                        ':name' => trim((string) $_POST['name']),
+                        ':role' => trim((string) $_POST['role']),
+                    ]);
+            }
+            if ($action === 'debt_add') {
+                $pdo->prepare('INSERT INTO employee_debts (employee_id, debt_date, description, amount, status)
+                    VALUES (:employee_id, :debt_date, :description, :amount, :status)')
+                    ->execute([
+                        ':employee_id' => (int) $_POST['employee_id'],
+                        ':debt_date' => $_POST['debt_date'],
+                        ':description' => trim((string) ($_POST['description'] ?? '')),
+                        ':amount' => moneyInput($_POST['amount'] ?? 0),
+                        ':status' => in_array((string) $_POST['status'], ['aberto', 'quitado'], true) ? $_POST['status'] : 'aberto',
+                    ]);
+            }
+            break;
+
         case 'cartoes':
             $action = $_POST['action'] ?? 'create';
             if ($action === 'create') {
@@ -1103,6 +1125,8 @@ $receivables = fetchAll($pdo, 'SELECT *, CASE WHEN status IN ("aberto","parcial"
 $customerReceipts = fetchAll($pdo, 'SELECT * FROM customer_receipts ORDER BY receipt_date DESC, id DESC');
 $creditSalesTotals = fetchAll($pdo, 'SELECT * FROM credit_sales_totals ORDER BY sale_date DESC, id DESC');
 $financeExpenses = fetchAll($pdo, 'SELECT * FROM finance_expenses ORDER BY expense_date DESC, id DESC');
+$employees = fetchAll($pdo, 'SELECT * FROM employees ORDER BY role, name');
+$employeeDebts = fetchAll($pdo, 'SELECT d.*, e.name AS employee_name, e.role AS employee_role FROM employee_debts d JOIN employees e ON e.id=d.employee_id ORDER BY d.debt_date DESC, d.id DESC');
 $overdueDateFrom = trim((string) ($_GET['overdue_date_from'] ?? ''));
 $overdueDateTo = trim((string) ($_GET['overdue_date_to'] ?? ''));
 $overdueStatusFilter = trim((string) ($_GET['overdue_status'] ?? ''));
@@ -1218,6 +1242,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <div id="gestaoMenu" class="menu-dropdown">
                 <a href="?module=pagar">Contas a Pagar</a>
                 <a href="?module=receber">Contas a Receber</a>
+                <a href="?module=funcionarios">Funcionários</a>
                 <a href="?module=cartoes">Cartões</a>
                 <a href="?module=cheques">Cheques</a>
                 <a href="?module=dre">DRE</a>
@@ -1770,6 +1795,84 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <table><tr><th>Cliente</th><th>Vencimento</th><th>Total</th><th>Recebido</th><th>Parcela</th><th>Fiado</th><th>Situação</th></tr>
         <?php foreach ($receivables as $r): ?><tr><td><?= htmlspecialchars($r['customer']) ?></td><td><?= dateBr((string) $r['due_date']) ?></td><td><?= money((float) $r['amount']) ?></td><td><?= money((float) $r['amount_received']) ?></td><td><?= htmlspecialchars((string) $r['installment']) ?></td><td><?= $r['is_credit_sale'] ? 'Sim' : 'Não' ?></td><td><span class="badge <?= $r['display_status'] ?>"><?= $r['display_status'] ?></span></td></tr><?php endforeach; ?>
     </table>
+<?php elseif ($module === 'funcionarios'): ?>
+    <h3>Módulo de Funcionário</h3>
+    <button type="button" onclick="document.getElementById('employeeModal').showModal()">Cadastrar funcionário</button>
+    <button type="button" onclick="document.getElementById('employeeDebtModal').showModal()">Cadastrar o que o funcionário deve</button>
+
+    <?php
+        $employeesByRole = [];
+        foreach ($employees as $employee) {
+            $role = (string) ($employee['role'] ?: 'Sem cargo');
+            $employeesByRole[$role][] = $employee;
+        }
+    ?>
+    <?php foreach ($employeesByRole as $role => $roleEmployees): ?>
+        <h4>Cargo: <?= htmlspecialchars($role) ?></h4>
+        <table>
+            <tr><th>Funcionário</th><th>Dívida em aberto</th></tr>
+            <?php foreach ($roleEmployees as $employee): ?>
+                <?php
+                    $openDebt = array_reduce($employeeDebts, static function (float $carry, array $debt) use ($employee): float {
+                        if ((int) $debt['employee_id'] !== (int) $employee['id'] || (string) $debt['status'] !== 'aberto') {
+                            return $carry;
+                        }
+                        return $carry + (float) $debt['amount'];
+                    }, 0.0);
+                ?>
+                <tr>
+                    <td><?= htmlspecialchars((string) $employee['name']) ?></td>
+                    <td><?= money($openDebt) ?></td>
+                </tr>
+            <?php endforeach; ?>
+        </table>
+    <?php endforeach; ?>
+
+    <h4>Histórico de lançamentos (o que funcionário deve)</h4>
+    <table>
+        <tr><th>Data</th><th>Funcionário</th><th>Cargo</th><th>Descrição</th><th>Valor</th><th>Situação</th></tr>
+        <?php foreach ($employeeDebts as $debt): ?>
+            <tr>
+                <td><?= dateBr((string) $debt['debt_date']) ?></td>
+                <td><?= htmlspecialchars((string) $debt['employee_name']) ?></td>
+                <td><?= htmlspecialchars((string) $debt['employee_role']) ?></td>
+                <td><?= htmlspecialchars((string) $debt['description']) ?></td>
+                <td><?= money((float) $debt['amount']) ?></td>
+                <td><?= htmlspecialchars((string) $debt['status']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <dialog id="employeeModal">
+        <form method="post">
+            <input type="hidden" name="action" value="employee_add">
+            <input name="name" placeholder="Nome do funcionário" required>
+            <input name="role" placeholder="Cargo" required>
+            <button>Salvar funcionário</button>
+            <button type="button" onclick="document.getElementById('employeeModal').close()">Fechar</button>
+        </form>
+    </dialog>
+
+    <dialog id="employeeDebtModal">
+        <form method="post">
+            <input type="hidden" name="action" value="debt_add">
+            <select name="employee_id" required>
+                <option value="">Funcionário</option>
+                <?php foreach ($employees as $employee): ?>
+                    <option value="<?= (int) $employee['id'] ?>"><?= htmlspecialchars((string) ($employee['name'] . ' - ' . $employee['role'])) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <label>Data: <input type="date" name="debt_date" value="<?= $today ?>" required></label>
+            <input name="description" placeholder="Descrição">
+            <input type="number" step="0.01" min="0" name="amount" placeholder="Valor" required>
+            <select name="status">
+                <option value="aberto">aberto</option>
+                <option value="quitado">quitado</option>
+            </select>
+            <button>Salvar lançamento</button>
+            <button type="button" onclick="document.getElementById('employeeDebtModal').close()">Fechar</button>
+        </form>
+    </dialog>
 <?php elseif ($module === 'recebimento_clientes'): ?>
     <h3>Recebimento de Clientes</h3>
     <form method="post" id="customerReceiptForm">
