@@ -462,7 +462,7 @@ function handlePost(PDO $pdo, string $module): void
                     $isCardPayment = str_contains(mb_strtolower($paymentMethod, 'UTF-8'), 'cart');
                     if ($isCardPayment) {
                         $cardFeePercent = moneyInput($_POST['card_fee_percent'] ?? 0);
-                        $cardGross = $paidAmount;
+                        $cardGross = $calculatedTotal;
                         $cardNet = round(max(0, $cardGross - ($cardGross * $cardFeePercent / 100)), 2);
                         $cardSaleDate = (string) ($_POST['card_sale_date'] ?? $paymentDate);
                         $cardReleaseDate = (string) ($_POST['card_expected_release_date'] ?? $paymentDate);
