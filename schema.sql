@@ -119,6 +119,26 @@ CREATE TABLE employee_debts (
     FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
 );
 
+CREATE TABLE vehicles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    plate TEXT,
+    model TEXT,
+    year TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE vehicle_expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicle_id INTEGER NOT NULL,
+    expense_date TEXT NOT NULL,
+    expense_type TEXT NOT NULL CHECK (expense_type IN ('despesa', 'manutencao', 'abastecimento')),
+    description TEXT,
+    amount REAL NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+);
+
 CREATE TABLE card_receivables (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     machine TEXT NOT NULL,

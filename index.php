@@ -551,6 +551,30 @@ function handlePost(PDO $pdo, string $module): void
             }
             break;
 
+        case 'veiculos':
+            $action = $_POST['action'] ?? '';
+            if ($action === 'vehicle_add') {
+                $pdo->prepare('INSERT INTO vehicles (name, plate, model, year) VALUES (:name, :plate, :model, :year)')
+                    ->execute([
+                        ':name' => trim((string) $_POST['name']),
+                        ':plate' => trim((string) ($_POST['plate'] ?? '')),
+                        ':model' => trim((string) ($_POST['model'] ?? '')),
+                        ':year' => trim((string) ($_POST['year'] ?? '')),
+                    ]);
+            }
+            if ($action === 'vehicle_expense_add') {
+                $pdo->prepare('INSERT INTO vehicle_expenses (vehicle_id, expense_date, expense_type, description, amount)
+                    VALUES (:vehicle_id, :expense_date, :expense_type, :description, :amount)')
+                    ->execute([
+                        ':vehicle_id' => (int) $_POST['vehicle_id'],
+                        ':expense_date' => $_POST['expense_date'],
+                        ':expense_type' => in_array((string) $_POST['expense_type'], ['despesa', 'manutencao', 'abastecimento'], true) ? $_POST['expense_type'] : 'despesa',
+                        ':description' => trim((string) ($_POST['description'] ?? '')),
+                        ':amount' => moneyInput($_POST['amount'] ?? 0),
+                    ]);
+            }
+            break;
+
         case 'cartoes':
             $action = $_POST['action'] ?? 'create';
             if ($action === 'create') {
@@ -1144,6 +1168,8 @@ $creditSalesTotals = fetchAll($pdo, 'SELECT * FROM credit_sales_totals ORDER BY 
 $financeExpenses = fetchAll($pdo, 'SELECT * FROM finance_expenses ORDER BY expense_date DESC, id DESC');
 $employees = fetchAll($pdo, 'SELECT * FROM employees ORDER BY role, name');
 $employeeDebts = fetchAll($pdo, 'SELECT d.*, e.name AS employee_name, e.role AS employee_role FROM employee_debts d JOIN employees e ON e.id=d.employee_id ORDER BY d.debt_date DESC, d.id DESC');
+$vehicles = fetchAll($pdo, 'SELECT * FROM vehicles ORDER BY name');
+$vehicleExpenses = fetchAll($pdo, 'SELECT ve.*, v.name AS vehicle_name, v.plate AS vehicle_plate FROM vehicle_expenses ve JOIN vehicles v ON v.id=ve.vehicle_id ORDER BY ve.expense_date DESC, ve.id DESC');
 $overdueDateFrom = trim((string) ($_GET['overdue_date_from'] ?? ''));
 $overdueDateTo = trim((string) ($_GET['overdue_date_to'] ?? ''));
 $overdueStatusFilter = trim((string) ($_GET['overdue_status'] ?? ''));
@@ -1260,6 +1286,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <a href="?module=pagar">Contas a Pagar</a>
                 <a href="?module=receber">Contas a Receber</a>
                 <a href="?module=funcionarios">Funcionários</a>
+                <a href="?module=veiculos">Controle de Veículos</a>
                 <a href="?module=cartoes">Cartões</a>
                 <a href="?module=cheques">Cheques</a>
                 <a href="?module=dre">DRE</a>
@@ -2028,6 +2055,71 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('employeeEditModal').showModal();
         }
     </script>
+<?php elseif ($module === 'veiculos'): ?>
+    <h3>Controle de Veículos</h3>
+    <button type="button" onclick="document.getElementById('vehicleModal').showModal()">Cadastrar veículo</button>
+    <button type="button" onclick="document.getElementById('vehicleExpenseModal').showModal()">Cadastrar despesa/manutenção/abastecimento</button>
+
+    <h4>Veículos cadastrados</h4>
+    <table>
+        <tr><th>Nome</th><th>Placa</th><th>Modelo</th><th>Ano</th></tr>
+        <?php foreach ($vehicles as $vehicle): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $vehicle['name']) ?></td>
+                <td><?= htmlspecialchars((string) $vehicle['plate']) ?></td>
+                <td><?= htmlspecialchars((string) $vehicle['model']) ?></td>
+                <td><?= htmlspecialchars((string) $vehicle['year']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Lançamentos de despesas</h4>
+    <table>
+        <tr><th>Data</th><th>Veículo</th><th>Tipo</th><th>Descrição</th><th>Valor</th></tr>
+        <?php foreach ($vehicleExpenses as $expense): ?>
+            <tr>
+                <td><?= dateBr((string) $expense['expense_date']) ?></td>
+                <td><?= htmlspecialchars((string) ($expense['vehicle_name'] . ' ' . ($expense['vehicle_plate'] ? '(' . $expense['vehicle_plate'] . ')' : ''))) ?></td>
+                <td><?= htmlspecialchars((string) $expense['expense_type']) ?></td>
+                <td><?= htmlspecialchars((string) $expense['description']) ?></td>
+                <td><?= money((float) $expense['amount']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <dialog id="vehicleModal">
+        <form method="post">
+            <input type="hidden" name="action" value="vehicle_add">
+            <input name="name" placeholder="Nome do veículo" required>
+            <input name="plate" placeholder="Placa">
+            <input name="model" placeholder="Modelo">
+            <input name="year" placeholder="Ano">
+            <button>Salvar veículo</button>
+            <button type="button" onclick="document.getElementById('vehicleModal').close()">Fechar</button>
+        </form>
+    </dialog>
+
+    <dialog id="vehicleExpenseModal">
+        <form method="post">
+            <input type="hidden" name="action" value="vehicle_expense_add">
+            <select name="vehicle_id" required>
+                <option value="">Veículo</option>
+                <?php foreach ($vehicles as $vehicle): ?>
+                    <option value="<?= (int) $vehicle['id'] ?>"><?= htmlspecialchars((string) ($vehicle['name'] . ' ' . ($vehicle['plate'] ? '(' . $vehicle['plate'] . ')' : ''))) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <label>Data: <input type="date" name="expense_date" value="<?= $today ?>" required></label>
+            <select name="expense_type" required>
+                <option value="despesa">despesa</option>
+                <option value="manutencao">manutenção</option>
+                <option value="abastecimento">abastecimento</option>
+            </select>
+            <input name="description" placeholder="Descrição">
+            <input type="number" step="0.01" min="0" name="amount" placeholder="Valor" required>
+            <button>Salvar lançamento</button>
+            <button type="button" onclick="document.getElementById('vehicleExpenseModal').close()">Fechar</button>
+        </form>
+    </dialog>
 <?php elseif ($module === 'recebimento_clientes'): ?>
     <h3>Recebimento de Clientes</h3>
     <form method="post" id="customerReceiptForm">

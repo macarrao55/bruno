@@ -350,4 +350,30 @@ function runMigrations(PDO $pdo): void
             FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
         )');
     }
+
+    $vehiclesTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicles'")->fetch();
+    if (!$vehiclesTable) {
+        $pdo->exec('CREATE TABLE vehicles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            plate TEXT,
+            model TEXT,
+            year TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+
+    $vehicleExpensesTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicle_expenses'")->fetch();
+    if (!$vehicleExpensesTable) {
+        $pdo->exec('CREATE TABLE vehicle_expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_id INTEGER NOT NULL,
+            expense_date TEXT NOT NULL,
+            expense_type TEXT NOT NULL CHECK (expense_type IN (\'despesa\', \'manutencao\', \'abastecimento\')),
+            description TEXT,
+            amount REAL NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+        )');
+    }
 }
