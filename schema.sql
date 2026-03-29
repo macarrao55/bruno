@@ -271,6 +271,24 @@ CREATE TABLE sale_locations (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE front_cash_registers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE front_cash_sales (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_date TEXT NOT NULL,
+    cash_register TEXT NOT NULL,
+    sale_location TEXT NOT NULL,
+    payment_method TEXT NOT NULL,
+    amount REAL NOT NULL,
+    transaction_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
+);
+
 INSERT INTO bank_accounts (name, initial_balance, current_balance) VALUES
 ('Banco Principal', 10000, 10000),
 ('Banco Reserva', 2500, 2500);
@@ -333,3 +351,7 @@ INSERT INTO sale_locations (name) VALUES
 ('Caixa Loja'),
 ('Financeiro'),
 ('Caixa Parafuso');
+
+INSERT INTO front_cash_registers (name) VALUES
+('Caixa 1'),
+('Caixa 2');

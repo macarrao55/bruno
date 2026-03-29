@@ -487,6 +487,40 @@ function handlePost(PDO $pdo, string $module): void
             }
             break;
 
+        case 'vendas_frente_caixa':
+            $action = (string) ($_POST['action'] ?? 'create');
+            if ($action === 'create') {
+                $saleDate = (string) ($_POST['sale_date'] ?? date('Y-m-d'));
+                $cashRegister = trim((string) ($_POST['cash_register'] ?? ''));
+                $saleLocation = trim((string) ($_POST['sale_location'] ?? ''));
+                $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
+                $amount = moneyInput($_POST['amount'] ?? 0);
+
+                $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                    VALUES (\'entrada\', :amount, \'vendas_frente_caixa\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
+                    ->execute([
+                        ':amount' => $amount,
+                        ':subcategory' => $paymentMethod,
+                        ':origin_account' => $cashRegister,
+                        ':destination_account' => $saleLocation,
+                        ':description' => 'Venda frente de caixa',
+                        ':occurred_on' => $saleDate,
+                    ]);
+                $transactionId = (int) $pdo->lastInsertId();
+
+                $pdo->prepare('INSERT INTO front_cash_sales (sale_date, cash_register, sale_location, payment_method, amount, transaction_id)
+                    VALUES (:sale_date, :cash_register, :sale_location, :payment_method, :amount, :transaction_id)')
+                    ->execute([
+                        ':sale_date' => $saleDate,
+                        ':cash_register' => $cashRegister,
+                        ':sale_location' => $saleLocation,
+                        ':payment_method' => $paymentMethod,
+                        ':amount' => $amount,
+                        ':transaction_id' => $transactionId,
+                    ]);
+            }
+            break;
+
         case 'saida_financeiro':
             $expenseDate = (string) ($_POST['expense_date'] ?? date('Y-m-d'));
             $name = trim((string) ($_POST['name'] ?? ''));
@@ -911,6 +945,19 @@ function handlePost(PDO $pdo, string $module): void
                     ->execute([':id' => (int) $_POST['id']]);
             }
 
+            if ($action === 'front_cash_register_add') {
+                $pdo->prepare('INSERT INTO front_cash_registers (name) VALUES (:name)')
+                    ->execute([':name' => trim((string) $_POST['name'])]);
+            }
+            if ($action === 'front_cash_register_update') {
+                $pdo->prepare('UPDATE front_cash_registers SET name=:name WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id'], ':name' => trim((string) $_POST['name'])]);
+            }
+            if ($action === 'front_cash_register_delete') {
+                $pdo->prepare('DELETE FROM front_cash_registers WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id']]);
+            }
+
             if ($action === 'system_reset') {
                 $targets = array_map('strval', $_POST['reset_targets'] ?? []);
                 $resetMap = [
@@ -927,6 +974,8 @@ function handlePost(PDO $pdo, string $module): void
                     'suppliers' => ['DELETE FROM suppliers'],
                     'settings' => [
                         'DELETE FROM card_rate_rules',
+                        'DELETE FROM front_cash_registers',
+                        'DELETE FROM front_cash_sales',
                         'DELETE FROM sale_locations',
                         'DELETE FROM card_payment_configs',
                         'DELETE FROM card_brands',
@@ -1129,6 +1178,8 @@ $cardMachines = fetchAll($pdo, 'SELECT * FROM card_machines ORDER BY name');
 $cardBrands = fetchAll($pdo, 'SELECT * FROM card_brands ORDER BY name');
 $cardPaymentConfigs = fetchAll($pdo, 'SELECT * FROM card_payment_configs ORDER BY name');
 $saleLocations = fetchAll($pdo, 'SELECT * FROM sale_locations ORDER BY name');
+$frontCashRegisters = fetchAll($pdo, 'SELECT * FROM front_cash_registers ORDER BY name');
+$frontCashSales = fetchAll($pdo, 'SELECT * FROM front_cash_sales ORDER BY sale_date DESC, id DESC');
 $cardRateRules = fetchAll($pdo, 'SELECT r.*, m.name AS machine_name, b.name AS brand_name, p.name AS payment_name FROM card_rate_rules r
     JOIN card_machines m ON m.id=r.machine_id
     JOIN card_brands b ON b.id=r.brand_id
@@ -1275,6 +1326,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'financeiroMenu')">Financeiro ▾</button>
             <div id="financeiroMenu" class="menu-dropdown">
                 <a href="?module=recebimento_clientes">Recebimento de Clientes</a>
+                <a href="?module=vendas_frente_caixa">Vendas Frente de Caixa</a>
                 <a href="?module=saida_financeiro">Saída</a>
                 <a href="?module=vendas_prazo">Vendas a Prazo</a>
                 <a href="?module=clientes_atraso">Clientes em Atraso</a>
@@ -2170,6 +2222,44 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             update();
         })();
     </script>
+<?php elseif ($module === 'vendas_frente_caixa'): ?>
+    <h3>Vendas Frente de Caixa</h3>
+    <form method="post">
+        <input type="hidden" name="action" value="create">
+        <label>Data: <input type="date" name="sale_date" value="<?= $today ?>" required></label>
+        <select name="cash_register" required>
+            <option value="">Caixa</option>
+            <?php foreach ($frontCashRegisters as $register): ?>
+                <option value="<?= htmlspecialchars((string) $register['name']) ?>"><?= htmlspecialchars((string) $register['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <select name="sale_location" required>
+            <option value="">Local</option>
+            <?php foreach ($saleLocations as $location): ?>
+                <option value="<?= htmlspecialchars((string) $location['name']) ?>"><?= htmlspecialchars((string) $location['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <select name="payment_method" required>
+            <option value="">Forma de pagamento</option>
+            <?php foreach ($paymentMethods as $method): ?>
+                <option value="<?= htmlspecialchars((string) $method['name']) ?>"><?= htmlspecialchars((string) $method['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <input type="number" step="0.01" min="0" name="amount" placeholder="Valor" required>
+        <button>Salvar venda</button>
+    </form>
+    <table>
+        <tr><th>Data</th><th>Caixa</th><th>Local</th><th>Forma de pagamento</th><th>Valor</th></tr>
+        <?php foreach ($frontCashSales as $sale): ?>
+            <tr>
+                <td><?= dateBr((string) $sale['sale_date']) ?></td>
+                <td><?= htmlspecialchars((string) $sale['cash_register']) ?></td>
+                <td><?= htmlspecialchars((string) $sale['sale_location']) ?></td>
+                <td><?= htmlspecialchars((string) $sale['payment_method']) ?></td>
+                <td><?= money((float) $sale['amount']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
 <?php elseif ($module === 'saida_financeiro'): ?>
     <h3>Saída</h3>
     <form method="post">
@@ -3076,6 +3166,36 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                     <form method="post" style="display:inline;" onsubmit="return confirm('Excluir local?')">
                         <input type="hidden" name="action" value="sale_location_delete">
                         <input type="hidden" name="id" value="<?= $location['id'] ?>">
+                        <button>Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Caixas (Frente de Caixa)</h4>
+    <form method="post">
+        <input type="hidden" name="action" value="front_cash_register_add">
+        <input name="name" placeholder="Novo caixa" required>
+        <button>Adicionar caixa</button>
+    </form>
+    <table>
+        <tr><th>Caixa</th><th>Editar</th><th>Excluir</th></tr>
+        <?php foreach ($frontCashRegisters as $register): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $register['name']) ?></td>
+                <td>
+                    <form method="post" style="display:inline;">
+                        <input type="hidden" name="action" value="front_cash_register_update">
+                        <input type="hidden" name="id" value="<?= (int) $register['id'] ?>">
+                        <input name="name" value="<?= htmlspecialchars((string) $register['name']) ?>" required>
+                        <button>Salvar</button>
+                    </form>
+                </td>
+                <td>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir caixa?')">
+                        <input type="hidden" name="action" value="front_cash_register_delete">
+                        <input type="hidden" name="id" value="<?= (int) $register['id'] ?>">
                         <button>Excluir</button>
                     </form>
                 </td>

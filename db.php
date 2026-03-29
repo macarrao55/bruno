@@ -261,6 +261,40 @@ function runMigrations(PDO $pdo): void
         $pdo->exec("INSERT INTO sale_locations (name) VALUES ('Caixa Loja'), ('Financeiro'), ('Caixa Parafuso')");
     }
 
+    $frontCashRegistersTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='front_cash_registers'")->fetch();
+    if (!$frontCashRegistersTable) {
+        $pdo->exec('CREATE TABLE front_cash_registers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+    $frontCashRegisterCount = (int) ($pdo->query('SELECT COUNT(*) FROM front_cash_registers')->fetchColumn() ?: 0);
+    if ($frontCashRegisterCount === 0) {
+        $pdo->exec("INSERT INTO front_cash_registers (name) VALUES ('Caixa 1'), ('Caixa 2')");
+    }
+
+    $frontCashSalesTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='front_cash_sales'")->fetch();
+    if (!$frontCashSalesTable) {
+        $pdo->exec('CREATE TABLE front_cash_sales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sale_date TEXT NOT NULL,
+            cash_register TEXT NOT NULL,
+            sale_location TEXT NOT NULL,
+            payment_method TEXT NOT NULL,
+            amount REAL NOT NULL,
+            transaction_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
+        )');
+    } else {
+        $frontCashSalesColumns = $pdo->query("PRAGMA table_info(front_cash_sales)")->fetchAll();
+        $frontCashSalesColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $frontCashSalesColumns);
+        if (!in_array('transaction_id', $frontCashSalesColumnNames, true)) {
+            $pdo->exec('ALTER TABLE front_cash_sales ADD COLUMN transaction_id INTEGER');
+        }
+    }
+
     $customerReceiptTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_receipts'")->fetch();
     if (!$customerReceiptTable) {
         $pdo->exec('CREATE TABLE customer_receipts (
