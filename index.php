@@ -526,6 +526,18 @@ function handlePost(PDO $pdo, string $module): void
                         ':profile_data' => json_encode($profileData, JSON_UNESCAPED_UNICODE),
                     ]);
             }
+            if ($action === 'employee_update') {
+                $pdo->prepare('UPDATE employees SET name=:name, role=:role WHERE id=:id')
+                    ->execute([
+                        ':id' => (int) ($_POST['id'] ?? 0),
+                        ':name' => trim((string) ($_POST['name'] ?? '')),
+                        ':role' => trim((string) ($_POST['role'] ?? '')),
+                    ]);
+            }
+            if ($action === 'employee_delete') {
+                $pdo->prepare('DELETE FROM employees WHERE id=:id')
+                    ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
+            }
             if ($action === 'debt_add') {
                 $pdo->prepare('INSERT INTO employee_debts (employee_id, debt_date, description, amount, status)
                     VALUES (:employee_id, :debt_date, :description, :amount, :status)')
@@ -1815,7 +1827,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <?php foreach ($employeesByRole as $role => $roleEmployees): ?>
         <h4>Cargo: <?= htmlspecialchars($role) ?></h4>
         <table>
-            <tr><th>Funcionário</th><th>Dívida em aberto</th></tr>
+            <tr><th>Funcionário</th><th>Dívida em aberto</th><th>Ações</th></tr>
             <?php foreach ($roleEmployees as $employee): ?>
                 <?php
                     $openDebt = array_reduce($employeeDebts, static function (float $carry, array $debt) use ($employee): float {
@@ -1828,6 +1840,22 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <tr>
                     <td><?= htmlspecialchars((string) $employee['name']) ?></td>
                     <td><?= money($openDebt) ?></td>
+                    <td>
+                        <button
+                            type="button"
+                            onclick='openEmployeeEditModal(<?= json_encode([
+                                'id' => (int) $employee['id'],
+                                'name' => (string) $employee['name'],
+                                'role' => (string) $employee['role'],
+                            ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                            Editar
+                        </button>
+                        <form method="post" style="display:inline;" onsubmit="return confirm('Excluir funcionário?')">
+                            <input type="hidden" name="action" value="employee_delete">
+                            <input type="hidden" name="id" value="<?= (int) $employee['id'] ?>">
+                            <button class="btn-danger">Excluir</button>
+                        </form>
+                    </td>
                 </tr>
             <?php endforeach; ?>
         </table>
@@ -1982,6 +2010,24 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" onclick="document.getElementById('employeeDebtModal').close()">Fechar</button>
         </form>
     </dialog>
+    <dialog id="employeeEditModal">
+        <form method="post">
+            <input type="hidden" name="action" value="employee_update">
+            <input type="hidden" name="id" id="employee_edit_id">
+            <input name="name" id="employee_edit_name" placeholder="Nome do funcionário" required>
+            <input name="role" id="employee_edit_role" placeholder="Cargo" required>
+            <button>Salvar edição</button>
+            <button type="button" onclick="document.getElementById('employeeEditModal').close()">Fechar</button>
+        </form>
+    </dialog>
+    <script>
+        function openEmployeeEditModal(employee) {
+            document.getElementById('employee_edit_id').value = employee.id ?? '';
+            document.getElementById('employee_edit_name').value = employee.name ?? '';
+            document.getElementById('employee_edit_role').value = employee.role ?? '';
+            document.getElementById('employeeEditModal').showModal();
+        }
+    </script>
 <?php elseif ($module === 'recebimento_clientes'): ?>
     <h3>Recebimento de Clientes</h3>
     <form method="post" id="customerReceiptForm">
