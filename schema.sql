@@ -139,24 +139,6 @@ CREATE TABLE vehicle_expenses (
     FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
 );
 
-CREATE TABLE cash_sales (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    sale_date TEXT NOT NULL,
-    sale_location TEXT NOT NULL,
-    amount REAL NOT NULL,
-    payment_method TEXT NOT NULL,
-    cash_account TEXT NOT NULL,
-    sale_type TEXT NOT NULL CHECK (sale_type IN ('venda_gas', 'cancelamento_devolucao', 'sangria')),
-    quantity_units INTEGER,
-    gas_kind TEXT CHECK (gas_kind IN ('recarga', 'gas_completo')),
-    seller TEXT,
-    refund_method TEXT,
-    refund_reason TEXT,
-    transaction_id INTEGER,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
-);
-
 CREATE TABLE card_receivables (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     machine TEXT NOT NULL,

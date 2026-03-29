@@ -575,135 +575,6 @@ function handlePost(PDO $pdo, string $module): void
             }
             break;
 
-        case 'vendas_caixa':
-            $action = $_POST['action'] ?? 'create';
-            $type = (string) ($_POST['sale_type'] ?? 'venda_gas');
-            $isOutflow = ($type === 'cancelamento_devolucao');
-            $movementType = $isOutflow ? 'saida' : 'entrada';
-            $category = 'vendas_caixa';
-            $amount = moneyInput($_POST['amount'] ?? 0);
-            $saleDate = (string) ($_POST['sale_date'] ?? date('Y-m-d'));
-            $quantityUnits = (int) ($_POST['quantity_units'] ?? 0);
-            $gasKind = (string) ($_POST['gas_kind'] ?? '');
-            $seller = trim((string) ($_POST['seller'] ?? ''));
-            $refundMethod = trim((string) ($_POST['refund_method'] ?? ''));
-            $refundReason = trim((string) ($_POST['refund_reason'] ?? ''));
-
-            if (!in_array($gasKind, ['', 'recarga', 'gas_completo'], true)) {
-                $gasKind = '';
-            }
-
-            if ($action === 'create') {
-                $transactionId = null;
-                if ($amount > 0) {
-                    $transactionStmt = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                        VALUES (:movement_type, :amount, :category, :subcategory, :origin_account, :destination_account, :description, :occurred_on)');
-                    $transactionStmt->execute([
-                        ':movement_type' => $movementType,
-                        ':amount' => $amount,
-                        ':category' => $category,
-                        ':subcategory' => $type,
-                        ':origin_account' => 'caixa',
-                        ':destination_account' => $type === 'cancelamento_devolucao' ? 'devolucao_cliente' : 'venda_gas',
-                        ':description' => $type === 'cancelamento_devolucao' ? ('Cancelamento/devolução - ' . $refundReason) : ('Venda de gás - ' . $seller),
-                        ':occurred_on' => $saleDate,
-                    ]);
-                    $transactionId = (int) $pdo->lastInsertId();
-                }
-
-                $pdo->prepare('INSERT INTO cash_sales (sale_date, sale_location, amount, payment_method, cash_account, sale_type, quantity_units, gas_kind, seller, refund_method, refund_reason, transaction_id)
-                    VALUES (:sale_date, :sale_location, :amount, :payment_method, :cash_account, :sale_type, :quantity_units, :gas_kind, :seller, :refund_method, :refund_reason, :transaction_id)')
-                    ->execute([
-                        ':sale_date' => $saleDate,
-                        ':sale_location' => '',
-                        ':amount' => $amount,
-                        ':payment_method' => $refundMethod,
-                        ':cash_account' => 'caixa',
-                        ':sale_type' => $type,
-                        ':quantity_units' => $quantityUnits > 0 ? $quantityUnits : null,
-                        ':gas_kind' => $gasKind !== '' ? $gasKind : null,
-                        ':seller' => $seller !== '' ? $seller : null,
-                        ':refund_method' => $refundMethod !== '' ? $refundMethod : null,
-                        ':refund_reason' => $refundReason !== '' ? $refundReason : null,
-                        ':transaction_id' => $transactionId,
-                    ]);
-            }
-
-            if ($action === 'edit') {
-                $id = (int) $_POST['id'];
-                $current = $pdo->prepare('SELECT * FROM cash_sales WHERE id=:id');
-                $current->execute([':id' => $id]);
-                $row = $current->fetch();
-                if ($row) {
-                    $transactionId = (int) ($row['transaction_id'] ?? 0);
-                    if ($amount <= 0 && $transactionId > 0) {
-                        $pdo->prepare('DELETE FROM transactions WHERE id=:id')->execute([':id' => $transactionId]);
-                        $transactionId = 0;
-                    }
-                    if ($amount > 0 && $transactionId > 0) {
-                        $pdo->prepare('UPDATE transactions
-                            SET movement_type=:movement_type, amount=:amount, category=:category, subcategory=:subcategory, origin_account=:origin_account, destination_account=:destination_account, description=:description, occurred_on=:occurred_on
-                            WHERE id=:id')
-                            ->execute([
-                                ':id' => $transactionId,
-                                ':movement_type' => $movementType,
-                                ':amount' => $amount,
-                                ':category' => $category,
-                                ':subcategory' => $type,
-                                ':origin_account' => 'caixa',
-                                ':destination_account' => $type === 'cancelamento_devolucao' ? 'devolucao_cliente' : 'venda_gas',
-                                ':description' => $type === 'cancelamento_devolucao' ? ('Cancelamento/devolução - ' . $refundReason) : ('Venda de gás - ' . $seller),
-                                ':occurred_on' => $saleDate,
-                            ]);
-                    } elseif ($amount > 0) {
-                        $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                            VALUES (:movement_type, :amount, :category, :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
-                            ->execute([
-                                ':movement_type' => $movementType,
-                                ':amount' => $amount,
-                                ':category' => $category,
-                                ':subcategory' => $type,
-                                ':origin_account' => 'caixa',
-                                ':destination_account' => $type === 'cancelamento_devolucao' ? 'devolucao_cliente' : 'venda_gas',
-                                ':description' => $type === 'cancelamento_devolucao' ? ('Cancelamento/devolução - ' . $refundReason) : ('Venda de gás - ' . $seller),
-                                ':occurred_on' => $saleDate,
-                            ]);
-                        $transactionId = (int) $pdo->lastInsertId();
-                    }
-                    $pdo->prepare('UPDATE cash_sales
-                        SET sale_date=:sale_date, sale_location=:sale_location, amount=:amount, payment_method=:payment_method, cash_account=:cash_account, sale_type=:sale_type,
-                            quantity_units=:quantity_units, gas_kind=:gas_kind, seller=:seller, refund_method=:refund_method, refund_reason=:refund_reason, transaction_id=:transaction_id
-                        WHERE id=:id')
-                        ->execute([
-                            ':id' => $id,
-                            ':sale_date' => $saleDate,
-                            ':sale_location' => '',
-                            ':amount' => $amount,
-                            ':payment_method' => $refundMethod,
-                            ':cash_account' => 'caixa',
-                            ':sale_type' => $type,
-                            ':quantity_units' => $quantityUnits > 0 ? $quantityUnits : null,
-                            ':gas_kind' => $gasKind !== '' ? $gasKind : null,
-                            ':seller' => $seller !== '' ? $seller : null,
-                            ':refund_method' => $refundMethod !== '' ? $refundMethod : null,
-                            ':refund_reason' => $refundReason !== '' ? $refundReason : null,
-                            ':transaction_id' => $transactionId > 0 ? $transactionId : null,
-                        ]);
-                }
-            }
-
-            if ($action === 'delete') {
-                $id = (int) $_POST['id'];
-                $current = $pdo->prepare('SELECT transaction_id FROM cash_sales WHERE id=:id');
-                $current->execute([':id' => $id]);
-                $transactionId = (int) ($current->fetchColumn() ?: 0);
-                $pdo->prepare('DELETE FROM cash_sales WHERE id=:id')->execute([':id' => $id]);
-                if ($transactionId > 0) {
-                    $pdo->prepare('DELETE FROM transactions WHERE id=:id')->execute([':id' => $transactionId]);
-                }
-            }
-            break;
-
         case 'cartoes':
             $action = $_POST['action'] ?? 'create';
             if ($action === 'create') {
@@ -1299,7 +1170,6 @@ $employees = fetchAll($pdo, 'SELECT * FROM employees ORDER BY role, name');
 $employeeDebts = fetchAll($pdo, 'SELECT d.*, e.name AS employee_name, e.role AS employee_role FROM employee_debts d JOIN employees e ON e.id=d.employee_id ORDER BY d.debt_date DESC, d.id DESC');
 $vehicles = fetchAll($pdo, 'SELECT * FROM vehicles ORDER BY name');
 $vehicleExpenses = fetchAll($pdo, 'SELECT ve.*, v.name AS vehicle_name, v.plate AS vehicle_plate FROM vehicle_expenses ve JOIN vehicles v ON v.id=ve.vehicle_id ORDER BY ve.expense_date DESC, ve.id DESC');
-$cashSales = fetchAll($pdo, 'SELECT * FROM cash_sales ORDER BY sale_date DESC, id DESC');
 $overdueDateFrom = trim((string) ($_GET['overdue_date_from'] ?? ''));
 $overdueDateTo = trim((string) ($_GET['overdue_date_to'] ?? ''));
 $overdueStatusFilter = trim((string) ($_GET['overdue_status'] ?? ''));
@@ -1405,7 +1275,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'financeiroMenu')">Financeiro ▾</button>
             <div id="financeiroMenu" class="menu-dropdown">
                 <a href="?module=recebimento_clientes">Recebimento de Clientes</a>
-                <a href="?module=vendas_caixa">Vendas do Caixa</a>
                 <a href="?module=saida_financeiro">Saída</a>
                 <a href="?module=vendas_prazo">Vendas a Prazo</a>
                 <a href="?module=clientes_atraso">Clientes em Atraso</a>
@@ -2300,124 +2169,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             interest?.addEventListener('input', update);
             update();
         })();
-    </script>
-<?php elseif ($module === 'vendas_caixa'): ?>
-    <h3>Módulo de Vendas do Caixa</h3>
-    <div style="margin-bottom:12px;">
-        <button type="button" class="btn-success" onclick="openGasSaleModal()">Venda de Gás</button>
-        <button type="button" class="btn-danger" onclick="openCancelModal()">Cancelamento</button>
-    </div>
-
-    <div id="gasSaleModal" style="display:none; border:1px solid #ccc; padding:12px; margin-bottom:12px;">
-        <h4>Venda de Gás</h4>
-        <form method="post" id="gasSaleForm">
-            <input type="hidden" name="action" value="create" id="gas_sale_action">
-            <input type="hidden" name="id" id="gas_sale_id">
-            <input type="hidden" name="sale_type" value="venda_gas">
-            <label>Data: <input type="date" name="sale_date" id="gas_sale_date" value="<?= $today ?>" required></label>
-            <label>Quantidade (unidade): <input type="number" min="1" name="quantity_units" id="gas_sale_quantity" required></label>
-            <select name="gas_kind" id="gas_sale_kind" required>
-                <option value="">Tipo</option>
-                <option value="recarga">Recarga</option>
-                <option value="gas_completo">Gás completo</option>
-            </select>
-            <input name="seller" id="gas_sale_seller" placeholder="Vendedor" required>
-            <button id="gas_sale_submit">Salvar venda</button>
-            <button type="button" onclick="closeCashModals()">Fechar</button>
-        </form>
-    </div>
-
-    <div id="cancelModal" style="display:none; border:1px solid #ccc; padding:12px; margin-bottom:12px;">
-        <h4>Cancelamento</h4>
-        <form method="post" id="cancelSaleForm">
-            <input type="hidden" name="action" value="create" id="cancel_sale_action">
-            <input type="hidden" name="id" id="cancel_sale_id">
-            <input type="hidden" name="sale_type" value="cancelamento_devolucao">
-            <label>Data: <input type="date" name="sale_date" id="cancel_sale_date" value="<?= $today ?>" required></label>
-            <input type="number" step="0.01" min="0.01" name="amount" id="cancel_sale_amount" placeholder="Valor" required>
-            <select name="refund_method" id="cancel_sale_method" required>
-                <option value="">Forma da devolução</option>
-                <?php foreach ($paymentMethods as $method): ?>
-                    <option value="<?= htmlspecialchars($method['name']) ?>"><?= htmlspecialchars($method['name']) ?></option>
-                <?php endforeach; ?>
-            </select>
-            <input name="refund_reason" id="cancel_sale_reason" placeholder="Motivo" required>
-            <button id="cancel_sale_submit">Salvar cancelamento</button>
-            <button type="button" onclick="closeCashModals()">Fechar</button>
-        </form>
-    </div>
-
-    <table>
-        <tr><th>Data</th><th>Tipo</th><th>Qtd</th><th>Classificação</th><th>Vendedor</th><th>Valor</th><th>Forma devolução</th><th>Motivo</th><th>Ações</th></tr>
-        <?php foreach ($cashSales as $sale): ?>
-            <tr>
-                <td><?= dateBr((string) $sale['sale_date']) ?></td>
-                <td><?= htmlspecialchars((string) $sale['sale_type']) ?></td>
-                <td><?= (int) ($sale['quantity_units'] ?? 0) ?></td>
-                <td><?= htmlspecialchars((string) ($sale['gas_kind'] ?? '')) ?></td>
-                <td><?= htmlspecialchars((string) ($sale['seller'] ?? '')) ?></td>
-                <td><?= money((float) $sale['amount']) ?></td>
-                <td><?= htmlspecialchars((string) ($sale['refund_method'] ?? '')) ?></td>
-                <td><?= htmlspecialchars((string) ($sale['refund_reason'] ?? '')) ?></td>
-                <td>
-                    <button type="button" onclick='editCashSale(<?= json_encode($sale, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
-                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir lançamento de vendas do caixa?')">
-                        <input type="hidden" name="action" value="delete">
-                        <input type="hidden" name="id" value="<?= (int) $sale['id'] ?>">
-                        <button class="btn-danger">Excluir</button>
-                    </form>
-                </td>
-            </tr>
-        <?php endforeach; ?>
-    </table>
-    <script>
-        function closeCashModals() {
-            document.getElementById('gasSaleModal').style.display = 'none';
-            document.getElementById('cancelModal').style.display = 'none';
-        }
-
-        function openGasSaleModal() {
-            closeCashModals();
-            document.getElementById('gasSaleForm').reset();
-            document.getElementById('gas_sale_action').value = 'create';
-            document.getElementById('gas_sale_submit').textContent = 'Salvar venda';
-            document.getElementById('gas_sale_id').value = '';
-            document.getElementById('gas_sale_date').value = '<?= $today ?>';
-            document.getElementById('gasSaleModal').style.display = 'block';
-        }
-
-        function openCancelModal() {
-            closeCashModals();
-            document.getElementById('cancelSaleForm').reset();
-            document.getElementById('cancel_sale_action').value = 'create';
-            document.getElementById('cancel_sale_submit').textContent = 'Salvar cancelamento';
-            document.getElementById('cancel_sale_id').value = '';
-            document.getElementById('cancel_sale_date').value = '<?= $today ?>';
-            document.getElementById('cancelModal').style.display = 'block';
-        }
-
-        function editCashSale(sale) {
-            if ((sale.sale_type || '') === 'cancelamento_devolucao') {
-                openCancelModal();
-                document.getElementById('cancel_sale_action').value = 'edit';
-                document.getElementById('cancel_sale_submit').textContent = 'Salvar edição';
-                document.getElementById('cancel_sale_id').value = sale.id || '';
-                document.getElementById('cancel_sale_date').value = sale.sale_date || '';
-                document.getElementById('cancel_sale_amount').value = sale.amount || '';
-                document.getElementById('cancel_sale_method').value = sale.refund_method || sale.payment_method || '';
-                document.getElementById('cancel_sale_reason').value = sale.refund_reason || '';
-            } else {
-                openGasSaleModal();
-                document.getElementById('gas_sale_action').value = 'edit';
-                document.getElementById('gas_sale_submit').textContent = 'Salvar edição';
-                document.getElementById('gas_sale_id').value = sale.id || '';
-                document.getElementById('gas_sale_date').value = sale.sale_date || '';
-                document.getElementById('gas_sale_quantity').value = sale.quantity_units || '';
-                document.getElementById('gas_sale_kind').value = sale.gas_kind || '';
-                document.getElementById('gas_sale_seller').value = sale.seller || '';
-            }
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
     </script>
 <?php elseif ($module === 'saida_financeiro'): ?>
     <h3>Saída</h3>

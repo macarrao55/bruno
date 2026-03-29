@@ -377,45 +377,4 @@ function runMigrations(PDO $pdo): void
         )');
     }
 
-    $cashSalesTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='cash_sales'")->fetch();
-    if (!$cashSalesTable) {
-        $pdo->exec('CREATE TABLE cash_sales (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sale_date TEXT NOT NULL,
-            sale_location TEXT NOT NULL,
-            amount REAL NOT NULL,
-            payment_method TEXT NOT NULL,
-            cash_account TEXT NOT NULL,
-            sale_type TEXT NOT NULL CHECK (sale_type IN (\'venda_gas\', \'cancelamento_devolucao\', \'sangria\')),
-            quantity_units INTEGER,
-            gas_kind TEXT CHECK (gas_kind IN (\'recarga\', \'gas_completo\')),
-            seller TEXT,
-            refund_method TEXT,
-            refund_reason TEXT,
-            transaction_id INTEGER,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
-        )');
-    } else {
-        $cashSalesColumns = $pdo->query("PRAGMA table_info(cash_sales)")->fetchAll();
-        $cashSalesColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $cashSalesColumns);
-        if (!in_array('transaction_id', $cashSalesColumnNames, true)) {
-            $pdo->exec('ALTER TABLE cash_sales ADD COLUMN transaction_id INTEGER');
-        }
-        if (!in_array('quantity_units', $cashSalesColumnNames, true)) {
-            $pdo->exec('ALTER TABLE cash_sales ADD COLUMN quantity_units INTEGER');
-        }
-        if (!in_array('gas_kind', $cashSalesColumnNames, true)) {
-            $pdo->exec('ALTER TABLE cash_sales ADD COLUMN gas_kind TEXT');
-        }
-        if (!in_array('seller', $cashSalesColumnNames, true)) {
-            $pdo->exec('ALTER TABLE cash_sales ADD COLUMN seller TEXT');
-        }
-        if (!in_array('refund_method', $cashSalesColumnNames, true)) {
-            $pdo->exec('ALTER TABLE cash_sales ADD COLUMN refund_method TEXT');
-        }
-        if (!in_array('refund_reason', $cashSalesColumnNames, true)) {
-            $pdo->exec('ALTER TABLE cash_sales ADD COLUMN refund_reason TEXT');
-        }
-    }
 }
