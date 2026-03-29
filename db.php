@@ -326,8 +326,15 @@ function runMigrations(PDO $pdo): void
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             role TEXT NOT NULL,
+            profile_data TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )');
+    } else {
+        $employeesColumns = $pdo->query("PRAGMA table_info(employees)")->fetchAll();
+        $employeesColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $employeesColumns);
+        if (!in_array('profile_data', $employeesColumnNames, true)) {
+            $pdo->exec('ALTER TABLE employees ADD COLUMN profile_data TEXT');
+        }
     }
 
     $employeeDebtsTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='employee_debts'")->fetch();

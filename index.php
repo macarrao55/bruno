@@ -515,10 +515,15 @@ function handlePost(PDO $pdo, string $module): void
         case 'funcionarios':
             $action = $_POST['action'] ?? '';
             if ($action === 'employee_add') {
-                $pdo->prepare('INSERT INTO employees (name, role) VALUES (:name, :role)')
+                $fullName = trim((string) ($_POST['full_name'] ?? $_POST['name'] ?? ''));
+                $role = trim((string) ($_POST['function_role'] ?? $_POST['role'] ?? 'Sem função'));
+                $profileData = $_POST;
+                unset($profileData['action']);
+                $pdo->prepare('INSERT INTO employees (name, role, profile_data) VALUES (:name, :role, :profile_data)')
                     ->execute([
-                        ':name' => trim((string) $_POST['name']),
-                        ':role' => trim((string) $_POST['role']),
+                        ':name' => $fullName,
+                        ':role' => $role,
+                        ':profile_data' => json_encode($profileData, JSON_UNESCAPED_UNICODE),
                     ]);
             }
             if ($action === 'debt_add') {
@@ -1846,8 +1851,112 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <dialog id="employeeModal">
         <form method="post">
             <input type="hidden" name="action" value="employee_add">
-            <input name="name" placeholder="Nome do funcionário" required>
-            <input name="role" placeholder="Cargo" required>
+            <h4>1. Dados pessoais</h4>
+            <input name="full_name" placeholder="Nome completo" required>
+            <input name="social_name" placeholder="Nome social">
+            <label>Data de nascimento: <input type="date" name="birth_date"></label>
+            <input name="gender" placeholder="Sexo">
+            <input name="marital_status" placeholder="Estado civil">
+            <input name="nationality" placeholder="Nacionalidade">
+            <input name="birth_place" placeholder="Naturalidade">
+            <input name="mother_name" placeholder="Nome da mãe">
+            <input name="father_name" placeholder="Nome do pai">
+            <input name="employee_photo" placeholder="Foto do funcionário (URL/caminho)">
+            <input name="phone_primary" placeholder="Telefone principal">
+            <input name="phone_secondary" placeholder="Telefone secundário">
+            <input type="email" name="email" placeholder="E-mail">
+            <input name="full_address" placeholder="Endereço completo">
+            <input name="cep" placeholder="CEP">
+            <input name="street" placeholder="Rua">
+            <input name="address_number" placeholder="Número">
+            <input name="address_complement" placeholder="Complemento">
+            <input name="neighborhood" placeholder="Bairro">
+            <input name="city" placeholder="Cidade">
+            <input name="state" placeholder="Estado">
+
+            <h4>2. Documentos e RH</h4>
+            <input name="cpf" placeholder="CPF">
+            <input name="rg" placeholder="RG">
+            <input name="rg_issuer" placeholder="Órgão emissor">
+            <label>Data emissão RG: <input type="date" name="rg_issue_date"></label>
+            <input name="cnh" placeholder="CNH">
+            <input name="employee_registration" placeholder="Matrícula do funcionário">
+            <input name="work_store" placeholder="Empresa/loja em que trabalha">
+            <input name="education" placeholder="Escolaridade">
+            <input name="courses" placeholder="Cursos">
+            <input name="certifications" placeholder="Certificações">
+            <textarea name="dependents_info" placeholder="Dependentes (nome e CPF)"></textarea>
+            <input name="emergency_contact_name" placeholder="Nome do contato de emergência">
+            <input name="emergency_contact_phone" placeholder="Telefone do contato">
+            <input name="emergency_contact_relation" placeholder="Grau de parentesco">
+            <input name="admission_exams" placeholder="Exames admissionais">
+            <input name="periodic_exams" placeholder="Exames periódicos">
+            <input name="epi_usage" placeholder="Uso de EPI">
+            <input name="uniform_size" placeholder="Tamanho de uniforme">
+            <textarea name="internal_notes" placeholder="Observações internas"></textarea>
+            <input name="branch" placeholder="Filial">
+            <input name="function_role" placeholder="Função">
+            <input name="department" placeholder="Setor/departamento">
+            <select name="employment_type">
+                <option value="">Tipo de vínculo</option>
+                <option value="clt">CLT</option>
+                <option value="temporario">Temporário</option>
+                <option value="estagio">Estágio</option>
+                <option value="jovem_aprendiz">Jovem aprendiz</option>
+                <option value="terceirizado">Terceirizado</option>
+                <option value="autonomo">Autônomo</option>
+            </select>
+            <label>Data de admissão: <input type="date" name="admission_date"></label>
+            <label>Experiência início: <input type="date" name="experience_start"></label>
+            <label>Experiência fim: <input type="date" name="experience_end"></label>
+            <input type="number" step="0.01" name="base_salary" placeholder="Salário base">
+            <select name="payment_type">
+                <option value="">Tipo de pagamento</option>
+                <option value="mensal">Mensal</option>
+                <option value="quinzenal">Quinzenal</option>
+                <option value="semanal">Semanal</option>
+                <option value="comissao">Comissão</option>
+            </select>
+            <input name="work_schedule" placeholder="Jornada de trabalho">
+            <input name="entry_time" placeholder="Horário de entrada">
+            <input name="exit_time" placeholder="Horário de saída">
+            <input name="break_time" placeholder="Intervalo">
+            <input name="shift_scale" placeholder="Escala">
+            <input name="days_off" placeholder="Dias de folga">
+            <select name="employee_status">
+                <option value="">Situação do funcionário</option>
+                <option value="ativo">Ativo</option>
+                <option value="afastado">Afastado</option>
+                <option value="ferias">Férias</option>
+                <option value="desligado">Desligado</option>
+            </select>
+            <label>Data de desligamento: <input type="date" name="termination_date"></label>
+            <input name="termination_reason" placeholder="Motivo do desligamento">
+
+            <h4>4. Dados financeiros e históricos</h4>
+            <input name="bank" placeholder="Banco">
+            <input name="agency" placeholder="Agência">
+            <input name="account" placeholder="Conta">
+            <input name="account_type" placeholder="Tipo de conta">
+            <input name="pix_key" placeholder="Chave Pix">
+            <input type="number" step="0.01" name="contract_salary" placeholder="Salário contratual">
+            <input type="number" step="0.01" name="commission_percent" placeholder="Comissão %">
+            <input type="number" step="0.01" name="sales_goal" placeholder="Meta de vendas">
+            <input type="number" step="0.01" name="bonus" placeholder="Bonificação">
+            <input type="number" step="0.01" name="transport_allowance" placeholder="Vale transporte">
+            <input type="number" step="0.01" name="meal_allowance" placeholder="Vale alimentação/refeição">
+            <input type="number" step="0.01" name="other_discounts" placeholder="Outros descontos">
+            <input type="number" step="0.01" name="other_additions" placeholder="Outros adicionais">
+            <input name="cost_center" placeholder="Centro de custo">
+            <textarea name="vacation_history" placeholder="Histórico de férias"></textarea>
+            <textarea name="salary_history" placeholder="Histórico salarial"></textarea>
+            <textarea name="warning_history" placeholder="Histórico de advertências"></textarea>
+            <textarea name="promotion_history" placeholder="Histórico de promoções de cargo"></textarea>
+            <textarea name="performance_review" placeholder="Avaliação de desempenho"></textarea>
+            <textarea name="training_history" placeholder="Histórico de treinamentos"></textarea>
+            <textarea name="uniform_history" placeholder="Registro de uniformes entregues"></textarea>
+            <textarea name="epi_history" placeholder="Registro de EPIs entregues"></textarea>
+            <textarea name="leave_history" placeholder="Histórico de afastamentos/atestados"></textarea>
             <button>Salvar funcionário</button>
             <button type="button" onclick="document.getElementById('employeeModal').close()">Fechar</button>
         </form>
