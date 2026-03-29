@@ -1179,13 +1179,18 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <a href="?module=fluxo">Fluxo de Caixa</a>
         <a href="?module=vendas">Vendas</a>
         <div class="menu-group">
-            <button type="button" class="menu-toggle" onclick="toggleGestaoMenu(event)">Gestão ▾</button>
-            <div id="gestaoMenu" class="menu-dropdown">
-                <a href="?module=pagar">Contas a Pagar</a>
-                <a href="?module=receber">Contas a Receber</a>
+            <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'financeiroMenu')">Financeiro ▾</button>
+            <div id="financeiroMenu" class="menu-dropdown">
                 <a href="?module=recebimento_clientes">Recebimento de Clientes</a>
                 <a href="?module=vendas_prazo">Vendas a Prazo</a>
                 <a href="?module=clientes_atraso">Clientes em Atraso</a>
+            </div>
+        </div>
+        <div class="menu-group">
+            <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'gestaoMenu')">Gestão ▾</button>
+            <div id="gestaoMenu" class="menu-dropdown">
+                <a href="?module=pagar">Contas a Pagar</a>
+                <a href="?module=receber">Contas a Receber</a>
                 <a href="?module=cartoes">Cartões</a>
                 <a href="?module=cheques">Cheques</a>
                 <a href="?module=dre">DRE</a>
@@ -1199,21 +1204,23 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </nav>
 </header>
 <script>
-    function toggleGestaoMenu(event) {
+    function toggleMenu(event, menuId) {
         event.preventDefault();
         event.stopPropagation();
-        const menu = document.getElementById('gestaoMenu');
+        const menu = document.getElementById(menuId);
         if (!menu) {
             return;
         }
+        document.querySelectorAll('.menu-dropdown').forEach((item) => {
+            if (item.id !== menuId) {
+                item.classList.remove('show');
+            }
+        });
         menu.classList.toggle('show');
     }
 
     document.addEventListener('click', () => {
-        const menu = document.getElementById('gestaoMenu');
-        if (menu) {
-            menu.classList.remove('show');
-        }
+        document.querySelectorAll('.menu-dropdown').forEach((menu) => menu.classList.remove('show'));
     });
 </script>
 <div class="container">
