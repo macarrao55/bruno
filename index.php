@@ -222,19 +222,12 @@ function handlePost(PDO $pdo, string $module): void
 
             if ($action === 'delete') {
                 $id = (int) $_POST['id'];
-                $deleteCashflow = isset($_POST['delete_cashflow']) && (int) $_POST['delete_cashflow'] === 1;
-
                 $payableStmt = $pdo->prepare('SELECT * FROM accounts_payable WHERE id=:id');
                 $payableStmt->execute([':id' => $id]);
                 $payable = $payableStmt->fetch();
                 if ($payable) {
                     $pdo->prepare('DELETE FROM accounts_payable WHERE id=:id')
                         ->execute([':id' => $id]);
-
-                    if ($deleteCashflow) {
-                        $pdo->prepare('DELETE FROM transactions WHERE description LIKE :description')
-                            ->execute([':description' => 'Baixa conta a pagar #' . $id . ':%']);
-                    }
                 }
             }
 
@@ -292,16 +285,6 @@ function handlePost(PDO $pdo, string $module): void
                         ]);
                 }
 
-                $transaction = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                    VALUES (\'saida\', :amount, :category, :subcategory, :origin_account, \'fornecedor\', :description, :occurred_on)');
-                $transaction->execute([
-                    ':amount' => $paidAmount,
-                    ':category' => trim((string) ($_POST['settle_category'] ?: 'contas_a_pagar')),
-                    ':subcategory' => trim((string) ($_POST['settle_subcategory'] ?: (string) ($item['company'] ?: 'sem_empresa'))),
-                    ':origin_account' => $originAccount,
-                    ':description' => $description,
-                    ':occurred_on' => $_POST['paid_on'],
-                ]);
             }
 
             if ($action === 'supplier_add') {
@@ -338,16 +321,6 @@ function handlePost(PDO $pdo, string $module): void
                     ':payment_method' => trim((string) $_POST['payment_method']),
                 ]);
 
-            $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                VALUES (\'entrada\', :amount, \'recebimento_clientes\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
-                ->execute([
-                    ':amount' => $netAmount,
-                    ':subcategory' => trim((string) $_POST['payment_method']),
-                    ':origin_account' => trim((string) $_POST['customer_name']),
-                    ':destination_account' => 'caixa',
-                    ':description' => 'Recebimento cliente: ' . trim((string) $_POST['customer_name']),
-                    ':occurred_on' => $_POST['receipt_date'],
-                ]);
             break;
 
         case 'vendas_prazo':
@@ -430,17 +403,6 @@ function handlePost(PDO $pdo, string $module): void
                             ':payment_method' => $paymentMethod,
                         ]);
 
-                    $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                        VALUES (\'entrada\', :amount, \'recebimento_clientes\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
-                        ->execute([
-                            ':amount' => $paidAmount,
-                            ':subcategory' => $paymentMethod,
-                            ':origin_account' => (string) $item['customer_name'],
-                            ':destination_account' => 'caixa',
-                            ':description' => 'Baixa cliente em atraso: ' . $item['customer_name'],
-                            ':occurred_on' => $paymentDate,
-                        ]);
-
                     $isCardPayment = str_contains(mb_strtolower($paymentMethod, 'UTF-8'), 'cart');
                     if ($isCardPayment) {
                         $cardFeePercent = moneyInput($_POST['card_fee_percent'] ?? 0);
@@ -494,46 +456,17 @@ function handlePost(PDO $pdo, string $module): void
                     $paymentMethod = 'Dinheiro';
                 }
                 if ($action === 'create') {
-                    $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                        VALUES (\'entrada\', :amount, \'vendas_frente_caixa\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
-                        ->execute([
-                            ':amount' => $amount,
-                            ':subcategory' => $paymentMethod,
-                            ':origin_account' => $cashRegister,
-                            ':destination_account' => $saleLocation,
-                            ':description' => 'Venda frente de caixa',
-                            ':occurred_on' => $saleDate,
-                        ]);
-                    $transactionId = (int) $pdo->lastInsertId();
-
-                    $pdo->prepare('INSERT INTO front_cash_sales (sale_date, cash_register, sale_location, payment_method, amount, transaction_id)
-                        VALUES (:sale_date, :cash_register, :sale_location, :payment_method, :amount, :transaction_id)')
+                    $pdo->prepare('INSERT INTO front_cash_sales (sale_date, cash_register, sale_location, payment_method, amount)
+                        VALUES (:sale_date, :cash_register, :sale_location, :payment_method, :amount)')
                         ->execute([
                             ':sale_date' => $saleDate,
                             ':cash_register' => $cashRegister,
                             ':sale_location' => $saleLocation,
                             ':payment_method' => $paymentMethod,
                             ':amount' => $amount,
-                            ':transaction_id' => $transactionId,
                         ]);
                 } else {
                     $id = (int) ($_POST['id'] ?? 0);
-                    $rowStmt = $pdo->prepare('SELECT transaction_id FROM front_cash_sales WHERE id=:id');
-                    $rowStmt->execute([':id' => $id]);
-                    $transactionId = (int) ($rowStmt->fetchColumn() ?: 0);
-                    if ($transactionId > 0) {
-                        $pdo->prepare('UPDATE transactions
-                            SET amount=:amount, subcategory=:subcategory, origin_account=:origin_account, destination_account=:destination_account, occurred_on=:occurred_on
-                            WHERE id=:id')
-                            ->execute([
-                                ':id' => $transactionId,
-                                ':amount' => $amount,
-                                ':subcategory' => $paymentMethod,
-                                ':origin_account' => $cashRegister,
-                                ':destination_account' => $saleLocation,
-                                ':occurred_on' => $saleDate,
-                            ]);
-                    }
                     $pdo->prepare('UPDATE front_cash_sales
                         SET sale_date=:sale_date, cash_register=:cash_register, sale_location=:sale_location, payment_method=:payment_method, amount=:amount
                         WHERE id=:id')
@@ -549,13 +482,7 @@ function handlePost(PDO $pdo, string $module): void
             }
             if ($action === 'delete') {
                 $id = (int) ($_POST['id'] ?? 0);
-                $rowStmt = $pdo->prepare('SELECT transaction_id FROM front_cash_sales WHERE id=:id');
-                $rowStmt->execute([':id' => $id]);
-                $transactionId = (int) ($rowStmt->fetchColumn() ?: 0);
                 $pdo->prepare('DELETE FROM front_cash_sales WHERE id=:id')->execute([':id' => $id]);
-                if ($transactionId > 0) {
-                    $pdo->prepare('DELETE FROM transactions WHERE id=:id')->execute([':id' => $transactionId]);
-                }
             }
             if (in_array($action, ['gas_create', 'gas_edit'], true)) {
                 $saleDate = (string) ($_POST['gas_sale_date'] ?? date('Y-m-d'));
@@ -611,14 +538,6 @@ function handlePost(PDO $pdo, string $module): void
                     ':payment_method' => $paymentMethod,
                 ]);
 
-            $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                VALUES (\'saida\', :amount, \'saida_financeiro\', :subcategory, \'caixa\', \'fornecedor\', :description, :occurred_on)')
-                ->execute([
-                    ':amount' => $amount,
-                    ':subcategory' => $paymentMethod,
-                    ':description' => 'Saída: ' . $name,
-                    ':occurred_on' => $expenseDate,
-                ]);
             break;
 
         case 'funcionarios':
@@ -746,9 +665,6 @@ function handlePost(PDO $pdo, string $module): void
                     $discount = ((float) $card['net_value'] * $anticipationFeePercent) / 100;
                     $isCanceled = isset($_POST['canceled']) ? 1 : 0;
                     $receivedAmount = max(0, (float) $card['net_value'] - $discount);
-                    $settleSubcategory = trim((string) (($_POST['settle_subcategory'] ?? '') ?: (string) $card['card_type']));
-                    $settleCategory = trim((string) ($_POST['settle_category'] ?? ''));
-
                     $pdo->prepare('UPDATE card_receivables SET received=:received, canceled=:canceled, anticipation_discount=:anticipation_discount WHERE id=:id')
                         ->execute([
                             ':id' => $id,
@@ -756,23 +672,6 @@ function handlePost(PDO $pdo, string $module): void
                             ':canceled' => $isCanceled,
                             ':anticipation_discount' => $discount,
                         ]);
-
-                    if (!$isCanceled) {
-                        $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                            VALUES (\'entrada\', :amount, \'cartoes_recebidos\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
-                            ->execute([
-                                ':amount' => $receivedAmount,
-                                ':subcategory' => $settleSubcategory,
-                                ':origin_account' => (string) $card['machine'],
-                                ':destination_account' => trim((string) ($_POST['destination_account'] ?? 'caixa')),
-                                ':description' => 'Baixa de cartão ' . $card['brand'],
-                                ':occurred_on' => $_POST['received_on'] ?: date('Y-m-d'),
-                            ]);
-                        if ($settleCategory !== '') {
-                            $pdo->prepare("UPDATE transactions SET category=:category WHERE id=last_insert_rowid()")
-                                ->execute([':category' => $settleCategory]);
-                        }
-                    }
                 }
             }
             break;
