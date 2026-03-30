@@ -1469,10 +1469,15 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'financeiroMenu')">Financeiro ▾</button>
             <div id="financeiroMenu" class="menu-dropdown">
                 <a href="?module=recebimento_clientes">Recebimento de Clientes</a>
-                <a href="?module=vendas_frente_caixa">Vendas Frente de Caixa</a>
                 <a href="?module=saida_financeiro">Saída</a>
                 <a href="?module=vendas_prazo">Vendas a Prazo</a>
                 <a href="?module=clientes_atraso">Clientes em Atraso</a>
+            </div>
+        </div>
+        <div class="menu-group">
+            <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'caixaMenu')">Caixa ▾</button>
+            <div id="caixaMenu" class="menu-dropdown">
+                <a href="?module=vendas_frente_caixa">Vendas Frente de Caixa</a>
             </div>
         </div>
         <div class="menu-group">
