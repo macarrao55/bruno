@@ -1448,7 +1448,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'financeiroMenu')">Financeiro ▾</button>
             <div id="financeiroMenu" class="menu-dropdown">
                 <a href="?module=recebimento_clientes">Recebimento de Clientes</a>
-                <a href="?module=funcionarios">Funcionário</a>
                 <a href="?module=saida_financeiro">Saída</a>
                 <a href="?module=vendas_prazo">Vendas a Prazo</a>
                 <a href="?module=clientes_atraso">Clientes em Atraso</a>
@@ -1461,9 +1460,14 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             </div>
         </div>
         <div class="menu-group">
-            <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'gestaoMenu')">Gestão ▾</button>
-            <div id="gestaoMenu" class="menu-dropdown">
+            <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'gestaoFinanceiraMenu')">Gestão Financeira ▾</button>
+            <div id="gestaoFinanceiraMenu" class="menu-dropdown">
                 <a href="?module=pagar">Contas a Pagar</a>
+                <a href="?module=fluxo">Fluxo de Caixa</a>
+                <a href="?module=veiculos">Controle de Veículos</a>
+                <a href="?module=cartoes">Cartões</a>
+                <a href="?module=cheques">Cheques</a>
+                <a href="?module=dre">DRE</a>
             </div>
         </div>
         <a href="?module=conciliacao">Conciliação Bancária</a>
