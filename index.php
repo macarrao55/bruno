@@ -580,11 +580,8 @@ function handlePost(PDO $pdo, string $module): void
                 $seller = trim((string) ($_POST['seller'] ?? ''));
                 $qtyRefill = max(0, (int) ($_POST['qty_refill'] ?? 0));
                 $qtyFull = max(0, (int) ($_POST['qty_full'] ?? 0));
-                $deliveryType = (string) ($_POST['delivery_type'] ?? 'retirada');
-                $paymentMethod = trim((string) ($_POST['gas_payment_method'] ?? ''));
-                if (!in_array($deliveryType, ['retirada', 'entrega'], true)) {
-                    $deliveryType = 'retirada';
-                }
+                $deliveryType = 'retirada';
+                $paymentMethod = 'Não informado';
                 if ($action === 'gas_create') {
                     $pdo->prepare('INSERT INTO front_cash_gas_sales (sale_date, seller, qty_refill, qty_full, delivery_type, payment_method)
                         VALUES (:sale_date, :seller, :qty_refill, :qty_full, :delivery_type, :payment_method)')
@@ -2454,16 +2451,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             </select>
             <input type="number" min="0" name="qty_refill" id="gas_qty_refill" placeholder="Quant. recarga" value="0" required>
             <input type="number" min="0" name="qty_full" id="gas_qty_full" placeholder="Quant. gás completo" value="0" required>
-            <select name="delivery_type" id="gas_delivery_type" required>
-                <option value="retirada">Retirada</option>
-                <option value="entrega">Entrega</option>
-            </select>
-            <select name="gas_payment_method" id="gas_payment_method" required>
-                <option value="">Forma de pagamento</option>
-                <?php foreach ($paymentMethods as $method): ?>
-                    <option value="<?= htmlspecialchars((string) $method['name']) ?>"><?= htmlspecialchars((string) $method['name']) ?></option>
-                <?php endforeach; ?>
-            </select>
             <button id="gas_sale_submit">Salvar venda de gás</button>
             <button type="button" onclick="document.getElementById('gasSaleModal').close()">Fechar</button>
         </form>
@@ -2490,15 +2477,13 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </table>
     <h4>Lançamentos de Vendas de Gás</h4>
     <table>
-        <tr><th>Data</th><th>Vendedor</th><th>Recarga</th><th>Gás completo</th><th>Retirada/Entrega</th><th>Forma pagamento</th><th>Ações</th></tr>
+        <tr><th>Data</th><th>Vendedor</th><th>Recarga</th><th>Gás completo</th><th>Ações</th></tr>
         <?php foreach ($frontCashGasSales as $gasSale): ?>
             <tr>
                 <td><?= dateBr((string) $gasSale['sale_date']) ?></td>
                 <td><?= htmlspecialchars((string) $gasSale['seller']) ?></td>
                 <td><?= (int) $gasSale['qty_refill'] ?></td>
                 <td><?= (int) $gasSale['qty_full'] ?></td>
-                <td><?= htmlspecialchars((string) $gasSale['delivery_type']) ?></td>
-                <td><?= htmlspecialchars((string) $gasSale['payment_method']) ?></td>
                 <td>
                     <button type="button" onclick='editGasSale(<?= json_encode($gasSale, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
                     <form method="post" style="display:inline;" onsubmit="return confirm('Excluir venda de gás?')">
@@ -2552,8 +2537,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('gas_sale_seller').value = sale.seller || '';
             document.getElementById('gas_qty_refill').value = sale.qty_refill || 0;
             document.getElementById('gas_qty_full').value = sale.qty_full || 0;
-            document.getElementById('gas_delivery_type').value = sale.delivery_type || 'retirada';
-            document.getElementById('gas_payment_method').value = sale.payment_method || '';
             document.getElementById('gasSaleModal').showModal();
         }
     </script>
