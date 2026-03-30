@@ -705,6 +705,28 @@ function handlePost(PDO $pdo, string $module): void
             ]);
             break;
 
+        case 'dre':
+            $monthRef = trim((string) ($_POST['month_ref'] ?? date('Y-m')));
+            $fields = [
+                'sales_taxes', 'inventory_initial', 'purchases', 'purchase_freight', 'inventory_final',
+                'sales_commission', 'extra_card_fees', 'delivery_freight', 'packaging',
+                'payroll', 'rent', 'electricity', 'water_internet', 'software', 'accounting',
+                'loan_interest', 'late_interest', 'card_anticipation',
+            ];
+            $params = [':month_ref' => $monthRef];
+            foreach ($fields as $field) {
+                $params[':' . $field] = moneyInput($_POST[$field] ?? 0);
+            }
+            $updateSql = [];
+            foreach ($fields as $field) {
+                $updateSql[] = $field . '=:' . $field;
+            }
+            $pdo->prepare('INSERT INTO dre_config (month_ref, ' . implode(', ', $fields) . ')
+                VALUES (:month_ref, ' . implode(', ', array_map(static fn(string $field): string => ':' . $field, $fields)) . ')
+                ON CONFLICT(month_ref) DO UPDATE SET ' . implode(', ', $updateSql))
+                ->execute($params);
+            break;
+
         case 'configuracoes':
             $action = $_POST['action'] ?? '';
             if ($action === 'bank_add') {
@@ -1267,30 +1289,69 @@ $checks = fetchAll($pdo, 'SELECT * FROM checks_control ORDER BY due_date ASC');
 $banks = fetchAll($pdo, 'SELECT * FROM bank_accounts ORDER BY name');
 $reconciliations = fetchAll($pdo, 'SELECT br.*, ba.name bank_name FROM bank_reconciliation br JOIN bank_accounts ba ON ba.id=br.bank_account_id ORDER BY movement_date DESC');
 
-function dreCategorySum(PDO $pdo, string $monthStart, array $labels): float
-{
-    $clauses = [];
-    $params = [':m' => $monthStart];
-    foreach ($labels as $idx => $label) {
-        $key = ':label' . $idx;
-        $clauses[] = "LOWER(TRIM(category)) = $key";
-        $params[$key] = mb_strtolower(trim($label), 'UTF-8');
-    }
-
-    $sql = "SELECT COALESCE(SUM(amount),0) FROM transactions
-        WHERE movement_type='saida' AND occurred_on>=:m AND (" . implode(' OR ', $clauses) . ')';
-
-    return sumValue($pdo, $sql, $params);
+$dreMonth = trim((string) ($_GET['dre_month'] ?? date('Y-m')));
+if (!preg_match('/^\d{4}-\d{2}$/', $dreMonth)) {
+    $dreMonth = date('Y-m');
 }
+$dreMonthStart = $dreMonth . '-01';
+$dreMonthEnd = date('Y-m-t', strtotime($dreMonthStart));
+$dreConfigStmt = $pdo->prepare('SELECT * FROM dre_config WHERE month_ref=:month_ref');
+$dreConfigStmt->execute([':month_ref' => $dreMonth]);
+$dreConfigRow = $dreConfigStmt->fetch() ?: [];
 
-$dre = [
-    'receitas' => $monthEntries,
-    'custos' => dreCategorySum($pdo, $monthStart, ['custos', 'custo']),
-    'despesas_fixas' => dreCategorySum($pdo, $monthStart, ['despesas fixas', 'despesas_fixas']),
-    'despesas_variaveis' => dreCategorySum($pdo, $monthStart, ['despesas variáveis', 'despesas variaveis', 'despesas_variaveis']),
+$dreConfig = [
+    'sales_taxes' => (float) ($dreConfigRow['sales_taxes'] ?? 0),
+    'inventory_initial' => (float) ($dreConfigRow['inventory_initial'] ?? 0),
+    'purchases' => (float) ($dreConfigRow['purchases'] ?? 0),
+    'purchase_freight' => (float) ($dreConfigRow['purchase_freight'] ?? 0),
+    'inventory_final' => (float) ($dreConfigRow['inventory_final'] ?? 0),
+    'sales_commission' => (float) ($dreConfigRow['sales_commission'] ?? 0),
+    'extra_card_fees' => (float) ($dreConfigRow['extra_card_fees'] ?? 0),
+    'delivery_freight' => (float) ($dreConfigRow['delivery_freight'] ?? 0),
+    'packaging' => (float) ($dreConfigRow['packaging'] ?? 0),
+    'payroll' => (float) ($dreConfigRow['payroll'] ?? 0),
+    'rent' => (float) ($dreConfigRow['rent'] ?? 0),
+    'electricity' => (float) ($dreConfigRow['electricity'] ?? 0),
+    'water_internet' => (float) ($dreConfigRow['water_internet'] ?? 0),
+    'software' => (float) ($dreConfigRow['software'] ?? 0),
+    'accounting' => (float) ($dreConfigRow['accounting'] ?? 0),
+    'loan_interest' => (float) ($dreConfigRow['loan_interest'] ?? 0),
+    'late_interest' => (float) ($dreConfigRow['late_interest'] ?? 0),
+    'card_anticipation' => (float) ($dreConfigRow['card_anticipation'] ?? 0),
 ];
-$dre['resultado_operacional'] = $dre['receitas'] - $dre['custos'] - $dre['despesas_fixas'] - $dre['despesas_variaveis'];
-$dre['lucro_liquido'] = $dre['resultado_operacional'];
+
+$dreSalesCash = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM front_cash_sales WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
+$dreSalesCard = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
+$dreSalesCredit = sumValue($pdo, 'SELECT COALESCE(SUM(total_amount),0) FROM credit_sales_totals WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
+$dreSalesPix = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM front_cash_sales WHERE sale_date BETWEEN :start AND :end AND LOWER(payment_method) LIKE :pix', [':start' => $dreMonthStart, ':end' => $dreMonthEnd, ':pix' => '%pix%']);
+$dreCardFees = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value - net_value + anticipation_discount),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
+$dreReturns = sumValue($pdo, 'SELECT COALESCE(SUM(return_on_credit + return_exchange_credit),0) FROM credit_sales_totals WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
+$dreDiscounts = sumValue($pdo, 'SELECT COALESCE(SUM(discount),0) FROM customer_receipts WHERE receipt_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
+
+$dre = [];
+$dre['vendas_vista'] = $dreSalesCash;
+$dre['vendas_prazo'] = $dreSalesCredit;
+$dre['vendas_cartao'] = $dreSalesCard;
+$dre['vendas_pix'] = $dreSalesPix;
+$dre['receita_bruta'] = $dre['vendas_vista'] + $dre['vendas_prazo'] + $dre['vendas_cartao'] + $dre['vendas_pix'];
+
+$dre['impostos_vendas'] = $dreConfig['sales_taxes'];
+$dre['taxas_cartao'] = $dreCardFees;
+$dre['devolucoes_cancelamentos'] = $dreReturns;
+$dre['descontos_concedidos'] = $dreDiscounts;
+$dre['deducoes_total'] = $dre['impostos_vendas'] + $dre['taxas_cartao'] + $dre['devolucoes_cancelamentos'] + $dre['descontos_concedidos'];
+$dre['receita_liquida'] = $dre['receita_bruta'] - $dre['deducoes_total'];
+
+$dre['cmv'] = $dreConfig['inventory_initial'] + $dreConfig['purchases'] + $dreConfig['purchase_freight'] - $dreConfig['inventory_final'];
+$dre['lucro_bruto'] = $dre['receita_liquida'] - $dre['cmv'];
+
+$dre['despesas_variaveis'] = $dreConfig['sales_commission'] + $dreConfig['extra_card_fees'] + $dreConfig['delivery_freight'] + $dreConfig['packaging'];
+$dre['despesas_fixas'] = $dreConfig['payroll'] + $dreConfig['rent'] + $dreConfig['electricity'] + $dreConfig['water_internet'] + $dreConfig['software'] + $dreConfig['accounting'];
+$dre['resultado_operacional'] = $dre['lucro_bruto'] - $dre['despesas_variaveis'] - $dre['despesas_fixas'];
+
+$dre['despesas_financeiras'] = $dreConfig['loan_interest'] + $dreConfig['late_interest'] + $dreConfig['card_anticipation'];
+$dre['resultado_antes_impostos'] = $dre['resultado_operacional'] - $dre['despesas_financeiras'];
+$dre['resultado_final'] = $dre['resultado_antes_impostos'];
 
 $categories = fetchAll($pdo, 'SELECT id, name FROM cashflow_categories WHERE parent_id IS NULL ORDER BY name');
 $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS parent_name FROM cashflow_categories c LEFT JOIN cashflow_categories p ON p.id=c.parent_id WHERE c.parent_id IS NOT NULL ORDER BY p.name, c.name');
@@ -2938,15 +2999,67 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </table>
 <?php elseif ($module === 'dre'): ?>
     <h3>DRE Gerencial</h3>
-    <p class="small">Visão mensal (<?= date('m/Y') ?>) - para visão anual, agregue por mês nos relatórios.</p>
+    <form method="get">
+        <input type="hidden" name="module" value="dre">
+        <label>Mês referência: <input type="month" name="dre_month" value="<?= htmlspecialchars($dreMonth) ?>"></label>
+        <button>Carregar</button>
+    </form>
+
+    <h4>Configurações manuais do período</h4>
+    <form method="post">
+        <input type="hidden" name="month_ref" value="<?= htmlspecialchars($dreMonth) ?>">
+        <p class="small">Preencha os valores que não são capturados automaticamente pelo sistema.</p>
+        <input type="number" step="0.01" min="0" name="sales_taxes" placeholder="Impostos sobre vendas" value="<?= $dreConfig['sales_taxes'] ?>">
+        <input type="number" step="0.01" min="0" name="inventory_initial" placeholder="Estoque inicial" value="<?= $dreConfig['inventory_initial'] ?>">
+        <input type="number" step="0.01" min="0" name="purchases" placeholder="Compras do período" value="<?= $dreConfig['purchases'] ?>">
+        <input type="number" step="0.01" min="0" name="purchase_freight" placeholder="Fretes sobre compras" value="<?= $dreConfig['purchase_freight'] ?>">
+        <input type="number" step="0.01" min="0" name="inventory_final" placeholder="Estoque final" value="<?= $dreConfig['inventory_final'] ?>">
+        <input type="number" step="0.01" min="0" name="sales_commission" placeholder="Comissão de vendedores" value="<?= $dreConfig['sales_commission'] ?>">
+        <input type="number" step="0.01" min="0" name="extra_card_fees" placeholder="Taxas adicionais de cartão" value="<?= $dreConfig['extra_card_fees'] ?>">
+        <input type="number" step="0.01" min="0" name="delivery_freight" placeholder="Fretes de entrega" value="<?= $dreConfig['delivery_freight'] ?>">
+        <input type="number" step="0.01" min="0" name="packaging" placeholder="Embalagens" value="<?= $dreConfig['packaging'] ?>">
+        <input type="number" step="0.01" min="0" name="payroll" placeholder="Salários + encargos" value="<?= $dreConfig['payroll'] ?>">
+        <input type="number" step="0.01" min="0" name="rent" placeholder="Aluguel" value="<?= $dreConfig['rent'] ?>">
+        <input type="number" step="0.01" min="0" name="electricity" placeholder="Energia elétrica" value="<?= $dreConfig['electricity'] ?>">
+        <input type="number" step="0.01" min="0" name="water_internet" placeholder="Água / internet" value="<?= $dreConfig['water_internet'] ?>">
+        <input type="number" step="0.01" min="0" name="software" placeholder="Sistema / software" value="<?= $dreConfig['software'] ?>">
+        <input type="number" step="0.01" min="0" name="accounting" placeholder="Contabilidade" value="<?= $dreConfig['accounting'] ?>">
+        <input type="number" step="0.01" min="0" name="loan_interest" placeholder="Juros de empréstimos" value="<?= $dreConfig['loan_interest'] ?>">
+        <input type="number" step="0.01" min="0" name="late_interest" placeholder="Juros de atraso" value="<?= $dreConfig['late_interest'] ?>">
+        <input type="number" step="0.01" min="0" name="card_anticipation" placeholder="Antecipação de cartão" value="<?= $dreConfig['card_anticipation'] ?>">
+        <button>Salvar parâmetros do DRE</button>
+    </form>
+
     <table>
         <tr><th>Linha</th><th>Valor</th></tr>
-        <tr><td>Receitas</td><td><?= money($dre['receitas']) ?></td></tr>
-        <tr><td>Custos</td><td><?= money($dre['custos']) ?></td></tr>
-        <tr><td>Despesas Fixas</td><td><?= money($dre['despesas_fixas']) ?></td></tr>
+        <tr><td><strong>1. Receita Bruta de Vendas</strong></td><td></td></tr>
+        <tr><td>Vendas à vista</td><td><?= money($dre['vendas_vista']) ?></td></tr>
+        <tr><td>Vendas a prazo</td><td><?= money($dre['vendas_prazo']) ?></td></tr>
+        <tr><td>Vendas por cartão</td><td><?= money($dre['vendas_cartao']) ?></td></tr>
+        <tr><td>Vendas por PIX</td><td><?= money($dre['vendas_pix']) ?></td></tr>
+        <tr><td><strong>Total Receita Bruta</strong></td><td><strong><?= money($dre['receita_bruta']) ?></strong></td></tr>
+
+        <tr><td><strong>2. (-) Deduções da Receita</strong></td><td></td></tr>
+        <tr><td>Impostos sobre vendas</td><td><?= money($dre['impostos_vendas']) ?></td></tr>
+        <tr><td>Taxas de cartão</td><td><?= money($dre['taxas_cartao']) ?></td></tr>
+        <tr><td>Devoluções / cancelamentos</td><td><?= money($dre['devolucoes_cancelamentos']) ?></td></tr>
+        <tr><td>Descontos concedidos</td><td><?= money($dre['descontos_concedidos']) ?></td></tr>
+        <tr><td><strong>Receita Líquida</strong></td><td><strong><?= money($dre['receita_liquida']) ?></strong></td></tr>
+
+        <tr><td><strong>3. (-) CMV</strong></td><td></td></tr>
+        <tr><td>CMV = EI + Compras + Frete - EF</td><td><?= money($dre['cmv']) ?></td></tr>
+        <tr><td><strong>Lucro Bruto</strong></td><td><strong><?= money($dre['lucro_bruto']) ?></strong></td></tr>
+
+        <tr><td><strong>4. Despesas Operacionais</strong></td><td></td></tr>
         <tr><td>Despesas Variáveis</td><td><?= money($dre['despesas_variaveis']) ?></td></tr>
-        <tr><td>Resultado Operacional</td><td><?= money($dre['resultado_operacional']) ?></td></tr>
-        <tr><td>Lucro Líquido</td><td><?= money($dre['lucro_liquido']) ?></td></tr>
+        <tr><td>Despesas Fixas</td><td><?= money($dre['despesas_fixas']) ?></td></tr>
+        <tr><td><strong>Resultado Operacional</strong></td><td><strong><?= money($dre['resultado_operacional']) ?></strong></td></tr>
+
+        <tr><td><strong>5. Despesas Financeiras</strong></td><td></td></tr>
+        <tr><td>Total despesas financeiras</td><td><?= money($dre['despesas_financeiras']) ?></td></tr>
+        <tr><td><strong>Resultado antes dos impostos</strong></td><td><strong><?= money($dre['resultado_antes_impostos']) ?></strong></td></tr>
+
+        <tr><td><strong>6. Resultado Final (Lucro ou Prejuízo)</strong></td><td><strong><?= money($dre['resultado_final']) ?></strong></td></tr>
     </table>
 <?php elseif ($module === 'fornecedores'): ?>
     <h3>Fornecedores</h3>

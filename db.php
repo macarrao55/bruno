@@ -322,6 +322,33 @@ function runMigrations(PDO $pdo): void
         )');
     }
 
+    $dreConfigTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='dre_config'")->fetch();
+    if (!$dreConfigTable) {
+        $pdo->exec('CREATE TABLE dre_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            month_ref TEXT NOT NULL UNIQUE,
+            sales_taxes REAL NOT NULL DEFAULT 0,
+            inventory_initial REAL NOT NULL DEFAULT 0,
+            purchases REAL NOT NULL DEFAULT 0,
+            purchase_freight REAL NOT NULL DEFAULT 0,
+            inventory_final REAL NOT NULL DEFAULT 0,
+            sales_commission REAL NOT NULL DEFAULT 0,
+            extra_card_fees REAL NOT NULL DEFAULT 0,
+            delivery_freight REAL NOT NULL DEFAULT 0,
+            packaging REAL NOT NULL DEFAULT 0,
+            payroll REAL NOT NULL DEFAULT 0,
+            rent REAL NOT NULL DEFAULT 0,
+            electricity REAL NOT NULL DEFAULT 0,
+            water_internet REAL NOT NULL DEFAULT 0,
+            software REAL NOT NULL DEFAULT 0,
+            accounting REAL NOT NULL DEFAULT 0,
+            loan_interest REAL NOT NULL DEFAULT 0,
+            late_interest REAL NOT NULL DEFAULT 0,
+            card_anticipation REAL NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+
     $customerReceiptTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_receipts'")->fetch();
     if (!$customerReceiptTable) {
         $pdo->exec('CREATE TABLE customer_receipts (
