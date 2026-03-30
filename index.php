@@ -320,24 +320,6 @@ function handlePost(PDO $pdo, string $module): void
             }
             break;
 
-        case 'receber':
-            $total = (float) $_POST['amount'];
-            $received = (float) $_POST['amount_received'];
-            $status = $received === 0.0 ? 'aberto' : ($received < $total ? 'parcial' : 'recebido');
-            $stmt = $pdo->prepare('INSERT INTO accounts_receivable (customer, due_date, amount, amount_received, installment, is_credit_sale, status, notes)
-                VALUES (:customer,:due_date,:amount,:amount_received,:installment,:is_credit_sale,:status,:notes)');
-            $stmt->execute([
-                ':customer' => trim($_POST['customer']),
-                ':due_date' => $_POST['due_date'],
-                ':amount' => $total,
-                ':amount_received' => $received,
-                ':installment' => trim($_POST['installment']),
-                ':is_credit_sale' => isset($_POST['is_credit_sale']) ? 1 : 0,
-                ':status' => $status,
-                ':notes' => trim($_POST['notes']),
-            ]);
-            break;
-
         case 'recebimento_clientes':
             $totalAmount = moneyInput($_POST['total_amount'] ?? 0);
             $discount = moneyInput($_POST['discount'] ?? 0);
@@ -1071,7 +1053,6 @@ function handlePost(PDO $pdo, string $module): void
                         'UPDATE bank_accounts SET current_balance=initial_balance',
                     ],
                     'payables' => ['DELETE FROM accounts_payable'],
-                    'receivables' => ['DELETE FROM accounts_receivable'],
                     'cards' => ['DELETE FROM card_receivables'],
                     'checks' => ['DELETE FROM checks_control'],
                     'reconciliation' => ['DELETE FROM bank_reconciliation'],
@@ -1356,7 +1337,6 @@ if ($module === 'pagar' && isset($_GET['edit_id'])) {
     $stmtEdit->execute([':id' => (int) $_GET['edit_id']]);
     $editingPayable = $stmtEdit->fetch() ?: null;
 }
-$receivables = fetchAll($pdo, 'SELECT *, CASE WHEN status IN ("aberto","parcial") AND due_date < :today THEN "atrasado" ELSE status END AS display_status FROM accounts_receivable ORDER BY due_date ASC', [':today' => $today]);
 $customerReceipts = fetchAll($pdo, 'SELECT * FROM customer_receipts ORDER BY receipt_date DESC, id DESC');
 $creditSalesTotals = fetchAll($pdo, 'SELECT * FROM credit_sales_totals ORDER BY sale_date DESC, id DESC');
 $financeExpenses = fetchAll($pdo, 'SELECT * FROM finance_expenses ORDER BY expense_date DESC, id DESC');
@@ -1463,7 +1443,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <h2>Sistema Financeiro</h2>
     <nav>
         <a href="?module=dashboard">Dashboard</a>
-        <a href="?module=fluxo">Fluxo de Caixa</a>
         <a href="?module=vendas">Vendas</a>
         <div class="menu-group">
             <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'financeiroMenu')">Financeiro ▾</button>
@@ -1481,11 +1460,10 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             </div>
         </div>
         <div class="menu-group">
-            <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'gestaoMenu')">Gestão ▾</button>
-            <div id="gestaoMenu" class="menu-dropdown">
+            <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'gestaoFinanceiraMenu')">Gestão Financeira ▾</button>
+            <div id="gestaoFinanceiraMenu" class="menu-dropdown">
                 <a href="?module=pagar">Contas a Pagar</a>
-                <a href="?module=receber">Contas a Receber</a>
-                <a href="?module=funcionarios">Funcionários</a>
+                <a href="?module=fluxo">Fluxo de Caixa</a>
                 <a href="?module=veiculos">Controle de Veículos</a>
                 <a href="?module=cartoes">Cartões</a>
                 <a href="?module=cheques">Cheques</a>
@@ -2024,21 +2002,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             });
         })();
     </script>
-<?php elseif ($module === 'receber'): ?>
-    <h3>Contas a Receber</h3>
-    <form method="post">
-        <input name="customer" placeholder="Cliente" required>
-        <input name="due_date" type="date" required>
-        <input name="amount" type="number" step="0.01" placeholder="Valor total" required>
-        <input name="amount_received" type="number" step="0.01" placeholder="Recebido" value="0">
-        <input name="installment" placeholder="Parcela">
-        <label><input type="checkbox" name="is_credit_sale"> Fiado</label>
-        <input name="notes" placeholder="Observações">
-        <button>Salvar</button>
-    </form>
-    <table><tr><th>Cliente</th><th>Vencimento</th><th>Total</th><th>Recebido</th><th>Parcela</th><th>Fiado</th><th>Situação</th></tr>
-        <?php foreach ($receivables as $r): ?><tr><td><?= htmlspecialchars($r['customer']) ?></td><td><?= dateBr((string) $r['due_date']) ?></td><td><?= money((float) $r['amount']) ?></td><td><?= money((float) $r['amount_received']) ?></td><td><?= htmlspecialchars((string) $r['installment']) ?></td><td><?= $r['is_credit_sale'] ? 'Sim' : 'Não' ?></td><td><span class="badge <?= $r['display_status'] ?>"><?= $r['display_status'] ?></span></td></tr><?php endforeach; ?>
-    </table>
 <?php elseif ($module === 'funcionarios'): ?>
     <h3>Módulo de Funcionário</h3>
     <button type="button" onclick="document.getElementById('employeeModal').showModal()">Cadastrar funcionário</button>
@@ -3198,7 +3161,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <h4>Selecione os dados para excluir</h4>
             <label><input type="checkbox" name="reset_targets[]" value="transactions"> Fluxo de caixa / transações</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="payables"> Contas a pagar</label><br>
-            <label><input type="checkbox" name="reset_targets[]" value="receivables"> Contas a receber</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="cards"> Cartões</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="checks"> Cheques</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="reconciliation"> Conciliação bancária</label><br>
