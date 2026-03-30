@@ -17,18 +17,49 @@ function handlePost(PDO $pdo, string $module): void
 {
     switch ($module) {
         case 'fluxo':
-            $stmt = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)');
-            $stmt->execute([
-                ':movement_type' => $_POST['movement_type'],
-                ':amount' => (float) $_POST['amount'],
-                ':category' => trim($_POST['category']),
-                ':subcategory' => trim($_POST['subcategory']),
-                ':origin_account' => trim($_POST['origin_account']),
-                ':destination_account' => trim($_POST['destination_account']),
-                ':description' => trim($_POST['description']),
-                ':occurred_on' => $_POST['occurred_on'],
-            ]);
+            $action = (string) ($_POST['action'] ?? 'create');
+            if ($action === 'create') {
+                $stmt = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                    VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)');
+                $stmt->execute([
+                    ':movement_type' => $_POST['movement_type'],
+                    ':amount' => (float) $_POST['amount'],
+                    ':category' => trim($_POST['category']),
+                    ':subcategory' => trim($_POST['subcategory']),
+                    ':origin_account' => trim($_POST['origin_account']),
+                    ':destination_account' => trim($_POST['destination_account']),
+                    ':description' => trim($_POST['description']),
+                    ':occurred_on' => $_POST['occurred_on'],
+                ]);
+            }
+            if ($action === 'edit') {
+                $pdo->prepare('UPDATE transactions
+                    SET movement_type=:movement_type, amount=:amount, category=:category, subcategory=:subcategory, origin_account=:origin_account, destination_account=:destination_account, description=:description, occurred_on=:occurred_on
+                    WHERE id=:id')
+                    ->execute([
+                        ':id' => (int) ($_POST['id'] ?? 0),
+                        ':movement_type' => $_POST['movement_type'],
+                        ':amount' => (float) $_POST['amount'],
+                        ':category' => trim($_POST['category']),
+                        ':subcategory' => trim($_POST['subcategory']),
+                        ':origin_account' => trim($_POST['origin_account']),
+                        ':destination_account' => trim($_POST['destination_account']),
+                        ':description' => trim($_POST['description']),
+                        ':occurred_on' => $_POST['occurred_on'],
+                    ]);
+            }
+            if ($action === 'delete') {
+                $pdo->prepare('DELETE FROM transactions WHERE id=:id')
+                    ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
+            }
+            if ($action === 'quick_payment_method_add') {
+                $pdo->prepare('INSERT INTO payment_methods (name) VALUES (:name)')
+                    ->execute([':name' => trim((string) ($_POST['name'] ?? ''))]);
+            }
+            if ($action === 'quick_category_add') {
+                $pdo->prepare('INSERT INTO cashflow_categories (name, parent_id) VALUES (:name, NULL)')
+                    ->execute([':name' => trim((string) ($_POST['name'] ?? ''))]);
+            }
             break;
 
         case 'pagar':
@@ -1093,6 +1124,27 @@ $filterStart = match ($transactionFilter) {
 };
 $filterEnd = $transactionFilter === 'periodo' ? ($_GET['fim'] ?? date('Y-m-d')) : date('Y-m-d');
 $transactions = fetchAll($pdo, 'SELECT * FROM transactions WHERE occurred_on BETWEEN :s AND :e ORDER BY occurred_on DESC, id DESC', [':s' => $filterStart, ':e' => $filterEnd]);
+$dailyFlowRows = fetchAll($pdo, "SELECT occurred_on,
+    SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) AS entradas,
+    SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) AS saidas
+    FROM transactions
+    WHERE occurred_on BETWEEN :s AND :e
+    GROUP BY occurred_on
+    ORDER BY occurred_on ASC", [':s' => $filterStart, ':e' => $filterEnd]);
+$runningBalance = 0.0;
+foreach ($dailyFlowRows as &$dailyFlowRow) {
+    $runningBalance += (float) $dailyFlowRow['entradas'] - (float) $dailyFlowRow['saidas'];
+    $dailyFlowRow['saldo'] = $runningBalance;
+}
+unset($dailyFlowRow);
+$cashflowByPayment = fetchAll($pdo, "SELECT
+    COALESCE(NULLIF(subcategory, ''), 'Sem forma') AS payment_method,
+    SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) AS entradas,
+    SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) AS saidas
+    FROM transactions
+    WHERE occurred_on BETWEEN :s AND :e
+    GROUP BY payment_method
+    ORDER BY entradas DESC", [':s' => $filterStart, ':e' => $filterEnd]);
 $cashflowByCategory = fetchAll($pdo, "SELECT
     COALESCE(NULLIF(category, ''), 'Sem categoria') AS category,
     SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) AS entradas,
@@ -1468,36 +1520,50 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </script>
 <?php elseif ($module === 'fluxo'): ?>
     <h3>Fluxo de Caixa</h3>
-    <form method="post">
-        <select name="movement_type"><option value="entrada">Entrada</option><option value="saida">Saída</option></select>
-        <input name="amount" type="number" step="0.01" placeholder="Valor" required>
-        <select name="category" required>
+    <form method="post" id="fluxoForm">
+        <input type="hidden" name="action" value="create" id="fluxo_action">
+        <input type="hidden" name="id" id="fluxo_id">
+        <select name="movement_type" id="fluxo_movement_type"><option value="entrada">Entrada</option><option value="saida">Saída</option></select>
+        <input name="amount" id="fluxo_amount" type="number" step="0.01" placeholder="Valor" required>
+        <select name="category" id="fluxo_category" required>
             <option value="">Categoria</option>
             <?php foreach ($categories as $category): ?>
                 <option value="<?= htmlspecialchars($category['name']) ?>"><?= htmlspecialchars($category['name']) ?></option>
             <?php endforeach; ?>
         </select>
-        <select name="subcategory">
+        <select name="subcategory" id="fluxo_subcategory">
             <option value="">Subcategoria</option>
             <?php foreach ($subcategories as $subcategory): ?>
                 <option value="<?= htmlspecialchars($subcategory['name']) ?>"><?= htmlspecialchars($subcategory['parent_name'] . ' > ' . $subcategory['name']) ?></option>
             <?php endforeach; ?>
         </select>
-        <select name="origin_account">
+        <select name="origin_account" id="fluxo_origin_account">
             <option value="caixa">Caixa</option>
             <?php foreach ($banks as $bank): ?>
                 <option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option>
             <?php endforeach; ?>
         </select>
-        <select name="destination_account">
+        <select name="destination_account" id="fluxo_destination_account">
             <option value="caixa">Caixa</option>
             <?php foreach ($banks as $bank): ?>
                 <option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option>
             <?php endforeach; ?>
         </select>
-        <input name="occurred_on" type="date" value="<?= $today ?>" required>
-        <input name="description" placeholder="Histórico">
-        <button>Lançar</button>
+        <input name="occurred_on" id="fluxo_occurred_on" type="date" value="<?= $today ?>" required>
+        <input name="description" id="fluxo_description" placeholder="Histórico">
+        <button id="fluxo_submit">Lançar</button>
+        <button type="button" onclick="resetFluxoForm()">Cancelar edição</button>
+    </form>
+    <h4>Configuração rápida na mesma página</h4>
+    <form method="post" style="display:inline;">
+        <input type="hidden" name="action" value="quick_payment_method_add">
+        <input name="name" placeholder="Nova forma de pagamento" required>
+        <button>Adicionar forma</button>
+    </form>
+    <form method="post" style="display:inline;">
+        <input type="hidden" name="action" value="quick_category_add">
+        <input name="name" placeholder="Nova categoria" required>
+        <button>Adicionar categoria</button>
     </form>
     <form method="get">
         <input type="hidden" name="module" value="fluxo">
@@ -1509,12 +1575,74 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <button>Aplicar</button>
     </form>
     <p class="small">Saldo acumulado do filtro: <?= money(array_reduce($transactions, fn($c, $r) => $c + ($r['movement_type'] === 'entrada' ? $r['amount'] : -$r['amount']), 0.0)) ?></p>
+    <h4>Fluxo diário (Saldo Inicial + Entradas - Saídas = Saldo Final)</h4>
     <table>
-        <tr><th>Data</th><th>Tipo</th><th>Valor</th><th>Categoria</th><th>Subcategoria</th><th>Origem</th><th>Destino</th><th>Histórico</th></tr>
-        <?php foreach ($transactions as $t): ?>
-            <tr><td><?= dateBr((string) $t['occurred_on']) ?></td><td><?= $t['movement_type'] ?></td><td><?= money((float) $t['amount']) ?></td><td><?= htmlspecialchars($t['category']) ?></td><td><?= htmlspecialchars((string) $t['subcategory']) ?></td><td><?= htmlspecialchars((string) $t['origin_account']) ?></td><td><?= htmlspecialchars((string) $t['destination_account']) ?></td><td><?= htmlspecialchars((string) $t['description']) ?></td></tr>
+        <tr><th>Data</th><th>Entradas</th><th>Saídas</th><th>Saldo acumulado</th></tr>
+        <?php foreach ($dailyFlowRows as $row): ?>
+            <tr>
+                <td><?= dateBr((string) $row['occurred_on']) ?></td>
+                <td><?= money((float) $row['entradas']) ?></td>
+                <td><?= money((float) $row['saidas']) ?></td>
+                <td><?= money((float) $row['saldo']) ?></td>
+            </tr>
         <?php endforeach; ?>
     </table>
+    <h4>Entradas e saídas por forma de pagamento</h4>
+    <table>
+        <tr><th>Forma Pgto</th><th>Entradas</th><th>Saídas</th></tr>
+        <?php foreach ($cashflowByPayment as $row): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $row['payment_method']) ?></td>
+                <td><?= money((float) $row['entradas']) ?></td>
+                <td><?= money((float) $row['saidas']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+    <table>
+        <tr><th>Data</th><th>Tipo</th><th>Valor</th><th>Categoria</th><th>Subcategoria</th><th>Origem</th><th>Destino</th><th>Histórico</th><th>Ações</th></tr>
+        <?php foreach ($transactions as $t): ?>
+            <tr>
+                <td><?= dateBr((string) $t['occurred_on']) ?></td>
+                <td><?= $t['movement_type'] ?></td>
+                <td><?= money((float) $t['amount']) ?></td>
+                <td><?= htmlspecialchars($t['category']) ?></td>
+                <td><?= htmlspecialchars((string) $t['subcategory']) ?></td>
+                <td><?= htmlspecialchars((string) $t['origin_account']) ?></td>
+                <td><?= htmlspecialchars((string) $t['destination_account']) ?></td>
+                <td><?= htmlspecialchars((string) $t['description']) ?></td>
+                <td>
+                    <button type="button" onclick='editFluxo(<?= json_encode($t, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir lançamento?')">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" value="<?= (int) $t['id'] ?>">
+                        <button class="btn-danger">Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+    <script>
+        function editFluxo(item) {
+            document.getElementById('fluxo_action').value = 'edit';
+            document.getElementById('fluxo_id').value = item.id || '';
+            document.getElementById('fluxo_movement_type').value = item.movement_type || 'entrada';
+            document.getElementById('fluxo_amount').value = item.amount || '';
+            document.getElementById('fluxo_category').value = item.category || '';
+            document.getElementById('fluxo_subcategory').value = item.subcategory || '';
+            document.getElementById('fluxo_origin_account').value = item.origin_account || 'caixa';
+            document.getElementById('fluxo_destination_account').value = item.destination_account || 'caixa';
+            document.getElementById('fluxo_description').value = item.description || '';
+            document.getElementById('fluxo_occurred_on').value = item.occurred_on || '';
+            document.getElementById('fluxo_submit').textContent = 'Salvar edição';
+        }
+        function resetFluxoForm() {
+            document.getElementById('fluxoForm').reset();
+            document.getElementById('fluxo_action').value = 'create';
+            document.getElementById('fluxo_id').value = '';
+            document.getElementById('fluxo_submit').textContent = 'Lançar';
+            document.getElementById('fluxo_occurred_on').value = '<?= $today ?>';
+        }
+    </script>
 
     <h4>Análise do fluxo por categoria</h4>
     <table>
