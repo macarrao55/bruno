@@ -289,6 +289,23 @@ CREATE TABLE front_cash_sales (
     FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL
 );
 
+CREATE TABLE front_cash_vendors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE front_cash_gas_sales (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_date TEXT NOT NULL,
+    seller TEXT NOT NULL,
+    qty_refill INTEGER NOT NULL DEFAULT 0,
+    qty_full INTEGER NOT NULL DEFAULT 0,
+    delivery_type TEXT NOT NULL CHECK (delivery_type IN ('retirada', 'entrega')),
+    payment_method TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 INSERT INTO bank_accounts (name, initial_balance, current_balance) VALUES
 ('Banco Principal', 10000, 10000),
 ('Banco Reserva', 2500, 2500);
@@ -355,3 +372,7 @@ INSERT INTO sale_locations (name) VALUES
 INSERT INTO front_cash_registers (name) VALUES
 ('Caixa 1'),
 ('Caixa 2');
+
+INSERT INTO front_cash_vendors (name) VALUES
+('Vendedor 1'),
+('Vendedor 2');

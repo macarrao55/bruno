@@ -489,7 +489,7 @@ function handlePost(PDO $pdo, string $module): void
 
         case 'vendas_frente_caixa':
             $action = (string) ($_POST['action'] ?? 'create');
-            if ($action === 'create') {
+            if (in_array($action, ['create', 'edit'], true)) {
                 $saleDate = (string) ($_POST['sale_date'] ?? date('Y-m-d'));
                 $cashRegister = trim((string) ($_POST['cash_register'] ?? ''));
                 $saleLocation = trim((string) ($_POST['sale_location'] ?? ''));
@@ -511,29 +511,109 @@ function handlePost(PDO $pdo, string $module): void
                 if (!in_array($paymentMethod, $allowedPaymentMethods, true)) {
                     $paymentMethod = 'Dinheiro';
                 }
+                if ($action === 'create') {
+                    $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                        VALUES (\'entrada\', :amount, \'vendas_frente_caixa\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
+                        ->execute([
+                            ':amount' => $amount,
+                            ':subcategory' => $paymentMethod,
+                            ':origin_account' => $cashRegister,
+                            ':destination_account' => $saleLocation,
+                            ':description' => 'Venda frente de caixa',
+                            ':occurred_on' => $saleDate,
+                        ]);
+                    $transactionId = (int) $pdo->lastInsertId();
 
-                $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                    VALUES (\'entrada\', :amount, \'vendas_frente_caixa\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
-                    ->execute([
-                        ':amount' => $amount,
-                        ':subcategory' => $paymentMethod,
-                        ':origin_account' => $cashRegister,
-                        ':destination_account' => $saleLocation,
-                        ':description' => 'Venda frente de caixa',
-                        ':occurred_on' => $saleDate,
-                    ]);
-                $transactionId = (int) $pdo->lastInsertId();
-
-                $pdo->prepare('INSERT INTO front_cash_sales (sale_date, cash_register, sale_location, payment_method, amount, transaction_id)
-                    VALUES (:sale_date, :cash_register, :sale_location, :payment_method, :amount, :transaction_id)')
-                    ->execute([
-                        ':sale_date' => $saleDate,
-                        ':cash_register' => $cashRegister,
-                        ':sale_location' => $saleLocation,
-                        ':payment_method' => $paymentMethod,
-                        ':amount' => $amount,
-                        ':transaction_id' => $transactionId,
-                    ]);
+                    $pdo->prepare('INSERT INTO front_cash_sales (sale_date, cash_register, sale_location, payment_method, amount, transaction_id)
+                        VALUES (:sale_date, :cash_register, :sale_location, :payment_method, :amount, :transaction_id)')
+                        ->execute([
+                            ':sale_date' => $saleDate,
+                            ':cash_register' => $cashRegister,
+                            ':sale_location' => $saleLocation,
+                            ':payment_method' => $paymentMethod,
+                            ':amount' => $amount,
+                            ':transaction_id' => $transactionId,
+                        ]);
+                } else {
+                    $id = (int) ($_POST['id'] ?? 0);
+                    $rowStmt = $pdo->prepare('SELECT transaction_id FROM front_cash_sales WHERE id=:id');
+                    $rowStmt->execute([':id' => $id]);
+                    $transactionId = (int) ($rowStmt->fetchColumn() ?: 0);
+                    if ($transactionId > 0) {
+                        $pdo->prepare('UPDATE transactions
+                            SET amount=:amount, subcategory=:subcategory, origin_account=:origin_account, destination_account=:destination_account, occurred_on=:occurred_on
+                            WHERE id=:id')
+                            ->execute([
+                                ':id' => $transactionId,
+                                ':amount' => $amount,
+                                ':subcategory' => $paymentMethod,
+                                ':origin_account' => $cashRegister,
+                                ':destination_account' => $saleLocation,
+                                ':occurred_on' => $saleDate,
+                            ]);
+                    }
+                    $pdo->prepare('UPDATE front_cash_sales
+                        SET sale_date=:sale_date, cash_register=:cash_register, sale_location=:sale_location, payment_method=:payment_method, amount=:amount
+                        WHERE id=:id')
+                        ->execute([
+                            ':id' => $id,
+                            ':sale_date' => $saleDate,
+                            ':cash_register' => $cashRegister,
+                            ':sale_location' => $saleLocation,
+                            ':payment_method' => $paymentMethod,
+                            ':amount' => $amount,
+                        ]);
+                }
+            }
+            if ($action === 'delete') {
+                $id = (int) ($_POST['id'] ?? 0);
+                $rowStmt = $pdo->prepare('SELECT transaction_id FROM front_cash_sales WHERE id=:id');
+                $rowStmt->execute([':id' => $id]);
+                $transactionId = (int) ($rowStmt->fetchColumn() ?: 0);
+                $pdo->prepare('DELETE FROM front_cash_sales WHERE id=:id')->execute([':id' => $id]);
+                if ($transactionId > 0) {
+                    $pdo->prepare('DELETE FROM transactions WHERE id=:id')->execute([':id' => $transactionId]);
+                }
+            }
+            if (in_array($action, ['gas_create', 'gas_edit'], true)) {
+                $saleDate = (string) ($_POST['gas_sale_date'] ?? date('Y-m-d'));
+                $seller = trim((string) ($_POST['seller'] ?? ''));
+                $qtyRefill = max(0, (int) ($_POST['qty_refill'] ?? 0));
+                $qtyFull = max(0, (int) ($_POST['qty_full'] ?? 0));
+                $deliveryType = (string) ($_POST['delivery_type'] ?? 'retirada');
+                $paymentMethod = trim((string) ($_POST['gas_payment_method'] ?? ''));
+                if (!in_array($deliveryType, ['retirada', 'entrega'], true)) {
+                    $deliveryType = 'retirada';
+                }
+                if ($action === 'gas_create') {
+                    $pdo->prepare('INSERT INTO front_cash_gas_sales (sale_date, seller, qty_refill, qty_full, delivery_type, payment_method)
+                        VALUES (:sale_date, :seller, :qty_refill, :qty_full, :delivery_type, :payment_method)')
+                        ->execute([
+                            ':sale_date' => $saleDate,
+                            ':seller' => $seller,
+                            ':qty_refill' => $qtyRefill,
+                            ':qty_full' => $qtyFull,
+                            ':delivery_type' => $deliveryType,
+                            ':payment_method' => $paymentMethod,
+                        ]);
+                } else {
+                    $pdo->prepare('UPDATE front_cash_gas_sales
+                        SET sale_date=:sale_date, seller=:seller, qty_refill=:qty_refill, qty_full=:qty_full, delivery_type=:delivery_type, payment_method=:payment_method
+                        WHERE id=:id')
+                        ->execute([
+                            ':id' => (int) ($_POST['id'] ?? 0),
+                            ':sale_date' => $saleDate,
+                            ':seller' => $seller,
+                            ':qty_refill' => $qtyRefill,
+                            ':qty_full' => $qtyFull,
+                            ':delivery_type' => $deliveryType,
+                            ':payment_method' => $paymentMethod,
+                        ]);
+                }
+            }
+            if ($action === 'gas_delete') {
+                $pdo->prepare('DELETE FROM front_cash_gas_sales WHERE id=:id')
+                    ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
             }
             break;
 
@@ -973,6 +1053,18 @@ function handlePost(PDO $pdo, string $module): void
                 $pdo->prepare('DELETE FROM front_cash_registers WHERE id=:id')
                     ->execute([':id' => (int) $_POST['id']]);
             }
+            if ($action === 'front_cash_vendor_add') {
+                $pdo->prepare('INSERT INTO front_cash_vendors (name) VALUES (:name)')
+                    ->execute([':name' => trim((string) $_POST['name'])]);
+            }
+            if ($action === 'front_cash_vendor_update') {
+                $pdo->prepare('UPDATE front_cash_vendors SET name=:name WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id'], ':name' => trim((string) $_POST['name'])]);
+            }
+            if ($action === 'front_cash_vendor_delete') {
+                $pdo->prepare('DELETE FROM front_cash_vendors WHERE id=:id')
+                    ->execute([':id' => (int) $_POST['id']]);
+            }
 
             if ($action === 'system_reset') {
                 $targets = array_map('strval', $_POST['reset_targets'] ?? []);
@@ -991,7 +1083,9 @@ function handlePost(PDO $pdo, string $module): void
                     'settings' => [
                         'DELETE FROM card_rate_rules',
                         'DELETE FROM front_cash_registers',
+                        'DELETE FROM front_cash_vendors',
                         'DELETE FROM front_cash_sales',
+                        'DELETE FROM front_cash_gas_sales',
                         'DELETE FROM sale_locations',
                         'DELETE FROM card_payment_configs',
                         'DELETE FROM card_brands',
@@ -1195,7 +1289,43 @@ $cardBrands = fetchAll($pdo, 'SELECT * FROM card_brands ORDER BY name');
 $cardPaymentConfigs = fetchAll($pdo, 'SELECT * FROM card_payment_configs ORDER BY name');
 $saleLocations = fetchAll($pdo, 'SELECT * FROM sale_locations ORDER BY name');
 $frontCashRegisters = fetchAll($pdo, 'SELECT * FROM front_cash_registers ORDER BY name');
-$frontCashSales = fetchAll($pdo, 'SELECT * FROM front_cash_sales ORDER BY sale_date DESC, id DESC');
+$frontCashVendors = fetchAll($pdo, 'SELECT * FROM front_cash_vendors ORDER BY name');
+$frontCashFilters = [
+    'date_from' => trim((string) ($_GET['front_cash_date_from'] ?? '')),
+    'date_to' => trim((string) ($_GET['front_cash_date_to'] ?? '')),
+    'cash_register' => trim((string) ($_GET['front_cash_register'] ?? '')),
+    'sale_location' => trim((string) ($_GET['front_cash_location'] ?? '')),
+    'payment_method' => trim((string) ($_GET['front_cash_payment_method'] ?? '')),
+];
+$frontCashSql = 'SELECT * FROM front_cash_sales';
+$frontCashParams = [];
+$frontCashWhere = [];
+if ($frontCashFilters['date_from'] !== '') {
+    $frontCashWhere[] = 'sale_date >= :front_cash_date_from';
+    $frontCashParams[':front_cash_date_from'] = $frontCashFilters['date_from'];
+}
+if ($frontCashFilters['date_to'] !== '') {
+    $frontCashWhere[] = 'sale_date <= :front_cash_date_to';
+    $frontCashParams[':front_cash_date_to'] = $frontCashFilters['date_to'];
+}
+if ($frontCashFilters['cash_register'] !== '') {
+    $frontCashWhere[] = 'cash_register = :front_cash_register';
+    $frontCashParams[':front_cash_register'] = $frontCashFilters['cash_register'];
+}
+if ($frontCashFilters['sale_location'] !== '') {
+    $frontCashWhere[] = 'sale_location = :front_cash_location';
+    $frontCashParams[':front_cash_location'] = $frontCashFilters['sale_location'];
+}
+if ($frontCashFilters['payment_method'] !== '') {
+    $frontCashWhere[] = 'payment_method = :front_cash_payment_method';
+    $frontCashParams[':front_cash_payment_method'] = $frontCashFilters['payment_method'];
+}
+if ($frontCashWhere !== []) {
+    $frontCashSql .= ' WHERE ' . implode(' AND ', $frontCashWhere);
+}
+$frontCashSql .= ' ORDER BY sale_date DESC, id DESC';
+$frontCashSales = fetchAll($pdo, $frontCashSql, $frontCashParams);
+$frontCashGasSales = fetchAll($pdo, 'SELECT * FROM front_cash_gas_sales ORDER BY sale_date DESC, id DESC');
 $cardRateRules = fetchAll($pdo, 'SELECT r.*, m.name AS machine_name, b.name AS brand_name, p.name AS payment_name FROM card_rate_rules r
     JOIN card_machines m ON m.id=r.machine_id
     JOIN card_brands b ON b.id=r.brand_id
@@ -2240,24 +2370,61 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </script>
 <?php elseif ($module === 'vendas_frente_caixa'): ?>
     <h3>Vendas Frente de Caixa</h3>
-    <button type="button" onclick="document.getElementById('frontCashModal').showModal()">Lançamento</button>
+    <button type="button" onclick="openFrontCashModal()">Lançamento</button>
+    <button type="button" onclick="document.getElementById('frontCashFilterModal').showModal()">Filtrar</button>
+    <button type="button" class="btn-success" onclick="openGasSaleModal()">Vendas de Gás</button>
+
+    <dialog id="frontCashFilterModal">
+        <form method="get">
+            <input type="hidden" name="module" value="vendas_frente_caixa">
+            <h4>Filtrar lançamentos</h4>
+            <label>Data inicial: <input type="date" name="front_cash_date_from" value="<?= htmlspecialchars($frontCashFilters['date_from']) ?>"></label>
+            <label>Data final: <input type="date" name="front_cash_date_to" value="<?= htmlspecialchars($frontCashFilters['date_to']) ?>"></label>
+            <select name="front_cash_register">
+                <option value="">Todos os caixas</option>
+                <?php foreach ($frontCashRegisters as $register): ?>
+                    <option value="<?= htmlspecialchars((string) $register['name']) ?>" <?= $frontCashFilters['cash_register'] === (string) $register['name'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $register['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <select name="front_cash_location">
+                <option value="">Todos os locais</option>
+                <option value="Caixa Loja" <?= $frontCashFilters['sale_location'] === 'Caixa Loja' ? 'selected' : '' ?>>Caixa Loja</option>
+                <option value="Caixa Parafuso" <?= $frontCashFilters['sale_location'] === 'Caixa Parafuso' ? 'selected' : '' ?>>Caixa Parafuso</option>
+            </select>
+            <select name="front_cash_payment_method">
+                <option value="">Todas as formas</option>
+                <option value="Dinheiro" <?= $frontCashFilters['payment_method'] === 'Dinheiro' ? 'selected' : '' ?>>Dinheiro</option>
+                <option value="Cheque" <?= $frontCashFilters['payment_method'] === 'Cheque' ? 'selected' : '' ?>>Cheque</option>
+                <option value="Cartão Débito" <?= $frontCashFilters['payment_method'] === 'Cartão Débito' ? 'selected' : '' ?>>Cartão débito</option>
+                <option value="Cartão Crédito" <?= $frontCashFilters['payment_method'] === 'Cartão Crédito' ? 'selected' : '' ?>>Cartão crédito</option>
+                <option value="Cartão Parcelado" <?= $frontCashFilters['payment_method'] === 'Cartão Parcelado' ? 'selected' : '' ?>>Cartão parcelado</option>
+                <option value="Pix e TED" <?= $frontCashFilters['payment_method'] === 'Pix e TED' ? 'selected' : '' ?>>Pix e TED</option>
+                <option value="Pix QRCode" <?= $frontCashFilters['payment_method'] === 'Pix QRCode' ? 'selected' : '' ?>>Pix QRCode</option>
+            </select>
+            <button>Aplicar filtro</button>
+            <a href="?module=vendas_frente_caixa">Limpar</a>
+            <button type="button" onclick="document.getElementById('frontCashFilterModal').close()">Fechar</button>
+        </form>
+    </dialog>
+
     <dialog id="frontCashModal">
-        <form method="post">
-            <input type="hidden" name="action" value="create">
-            <h4>Novo lançamento</h4>
-            <label>Data: <input type="date" name="sale_date" value="<?= $today ?>" required></label>
-            <select name="cash_register" required>
+        <form method="post" id="frontCashForm">
+            <input type="hidden" name="action" value="create" id="front_cash_action">
+            <input type="hidden" name="id" value="" id="front_cash_id">
+            <h4 id="front_cash_modal_title">Novo lançamento</h4>
+            <label>Data: <input type="date" name="sale_date" id="front_cash_sale_date" value="<?= $today ?>" required></label>
+            <select name="cash_register" id="front_cash_register" required>
                 <option value="">Caixa</option>
                 <?php foreach ($frontCashRegisters as $register): ?>
                     <option value="<?= htmlspecialchars((string) $register['name']) ?>"><?= htmlspecialchars((string) $register['name']) ?></option>
                 <?php endforeach; ?>
             </select>
-            <select name="sale_location" required>
+            <select name="sale_location" id="front_cash_location" required>
                 <option value="">Local</option>
                 <option value="Caixa Loja">Caixa Loja</option>
                 <option value="Caixa Parafuso">Caixa Parafuso</option>
             </select>
-            <select name="payment_method" required>
+            <select name="payment_method" id="front_cash_payment_method" required>
                 <option value="">Forma de pagamento</option>
                 <option value="Dinheiro">Dinheiro</option>
                 <option value="Cheque">Cheque</option>
@@ -2267,13 +2434,42 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <option value="Pix e TED">Pix e TED</option>
                 <option value="Pix QRCode">Pix QRCode</option>
             </select>
-            <input type="number" step="0.01" min="0" name="amount" placeholder="Valor" required>
-            <button>Salvar lançamento</button>
+            <input type="number" step="0.01" min="0" name="amount" id="front_cash_amount" placeholder="Valor" required>
+            <button id="front_cash_submit">Salvar lançamento</button>
             <button type="button" onclick="document.getElementById('frontCashModal').close()">Fechar</button>
         </form>
     </dialog>
+
+    <dialog id="gasSaleModal">
+        <form method="post" id="gasSaleForm">
+            <input type="hidden" name="action" value="gas_create" id="gas_sale_action">
+            <input type="hidden" name="id" id="gas_sale_id">
+            <h4 id="gas_sale_modal_title">Venda de Gás</h4>
+            <label>Data: <input type="date" name="gas_sale_date" id="gas_sale_date" value="<?= $today ?>" required></label>
+            <select name="seller" id="gas_sale_seller" required>
+                <option value="">Vendedor</option>
+                <?php foreach ($frontCashVendors as $vendor): ?>
+                    <option value="<?= htmlspecialchars((string) $vendor['name']) ?>"><?= htmlspecialchars((string) $vendor['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <input type="number" min="0" name="qty_refill" id="gas_qty_refill" placeholder="Quant. recarga" value="0" required>
+            <input type="number" min="0" name="qty_full" id="gas_qty_full" placeholder="Quant. gás completo" value="0" required>
+            <select name="delivery_type" id="gas_delivery_type" required>
+                <option value="retirada">Retirada</option>
+                <option value="entrega">Entrega</option>
+            </select>
+            <select name="gas_payment_method" id="gas_payment_method" required>
+                <option value="">Forma de pagamento</option>
+                <?php foreach ($paymentMethods as $method): ?>
+                    <option value="<?= htmlspecialchars((string) $method['name']) ?>"><?= htmlspecialchars((string) $method['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <button id="gas_sale_submit">Salvar venda de gás</button>
+            <button type="button" onclick="document.getElementById('gasSaleModal').close()">Fechar</button>
+        </form>
+    </dialog>
     <table>
-        <tr><th>Data</th><th>Caixa</th><th>Local</th><th>Forma de pagamento</th><th>Valor</th></tr>
+        <tr><th>Data</th><th>Caixa</th><th>Local</th><th>Forma de pagamento</th><th>Valor</th><th>Ações</th></tr>
         <?php foreach ($frontCashSales as $sale): ?>
             <tr>
                 <td><?= dateBr((string) $sale['sale_date']) ?></td>
@@ -2281,9 +2477,86 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <td><?= htmlspecialchars((string) $sale['sale_location']) ?></td>
                 <td><?= htmlspecialchars((string) $sale['payment_method']) ?></td>
                 <td><?= money((float) $sale['amount']) ?></td>
+                <td>
+                    <button type="button" onclick='editFrontCash(<?= json_encode($sale, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir lançamento?')">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" value="<?= (int) $sale['id'] ?>">
+                        <button class="btn-danger">Excluir</button>
+                    </form>
+                </td>
             </tr>
         <?php endforeach; ?>
     </table>
+    <h4>Lançamentos de Vendas de Gás</h4>
+    <table>
+        <tr><th>Data</th><th>Vendedor</th><th>Recarga</th><th>Gás completo</th><th>Retirada/Entrega</th><th>Forma pagamento</th><th>Ações</th></tr>
+        <?php foreach ($frontCashGasSales as $gasSale): ?>
+            <tr>
+                <td><?= dateBr((string) $gasSale['sale_date']) ?></td>
+                <td><?= htmlspecialchars((string) $gasSale['seller']) ?></td>
+                <td><?= (int) $gasSale['qty_refill'] ?></td>
+                <td><?= (int) $gasSale['qty_full'] ?></td>
+                <td><?= htmlspecialchars((string) $gasSale['delivery_type']) ?></td>
+                <td><?= htmlspecialchars((string) $gasSale['payment_method']) ?></td>
+                <td>
+                    <button type="button" onclick='editGasSale(<?= json_encode($gasSale, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir venda de gás?')">
+                        <input type="hidden" name="action" value="gas_delete">
+                        <input type="hidden" name="id" value="<?= (int) $gasSale['id'] ?>">
+                        <button class="btn-danger">Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+    <script>
+        function openFrontCashModal() {
+            document.getElementById('front_cash_action').value = 'create';
+            document.getElementById('front_cash_id').value = '';
+            document.getElementById('front_cash_modal_title').textContent = 'Novo lançamento';
+            document.getElementById('front_cash_submit').textContent = 'Salvar lançamento';
+            document.getElementById('frontCashForm').reset();
+            document.getElementById('front_cash_sale_date').value = '<?= $today ?>';
+            document.getElementById('frontCashModal').showModal();
+        }
+        function editFrontCash(sale) {
+            document.getElementById('front_cash_action').value = 'edit';
+            document.getElementById('front_cash_id').value = sale.id || '';
+            document.getElementById('front_cash_modal_title').textContent = 'Editar lançamento';
+            document.getElementById('front_cash_submit').textContent = 'Salvar edição';
+            document.getElementById('front_cash_sale_date').value = sale.sale_date || '';
+            document.getElementById('front_cash_register').value = sale.cash_register || '';
+            document.getElementById('front_cash_location').value = sale.sale_location || '';
+            document.getElementById('front_cash_payment_method').value = sale.payment_method || '';
+            document.getElementById('front_cash_amount').value = sale.amount || '';
+            document.getElementById('frontCashModal').showModal();
+        }
+        function openGasSaleModal() {
+            document.getElementById('gas_sale_action').value = 'gas_create';
+            document.getElementById('gas_sale_id').value = '';
+            document.getElementById('gas_sale_modal_title').textContent = 'Venda de Gás';
+            document.getElementById('gas_sale_submit').textContent = 'Salvar venda de gás';
+            document.getElementById('gasSaleForm').reset();
+            document.getElementById('gas_sale_date').value = '<?= $today ?>';
+            document.getElementById('gas_qty_refill').value = '0';
+            document.getElementById('gas_qty_full').value = '0';
+            document.getElementById('gasSaleModal').showModal();
+        }
+        function editGasSale(sale) {
+            document.getElementById('gas_sale_action').value = 'gas_edit';
+            document.getElementById('gas_sale_id').value = sale.id || '';
+            document.getElementById('gas_sale_modal_title').textContent = 'Editar venda de gás';
+            document.getElementById('gas_sale_submit').textContent = 'Salvar edição';
+            document.getElementById('gas_sale_date').value = sale.sale_date || '';
+            document.getElementById('gas_sale_seller').value = sale.seller || '';
+            document.getElementById('gas_qty_refill').value = sale.qty_refill || 0;
+            document.getElementById('gas_qty_full').value = sale.qty_full || 0;
+            document.getElementById('gas_delivery_type').value = sale.delivery_type || 'retirada';
+            document.getElementById('gas_payment_method').value = sale.payment_method || '';
+            document.getElementById('gasSaleModal').showModal();
+        }
+    </script>
 <?php elseif ($module === 'saida_financeiro'): ?>
     <h3>Saída</h3>
     <form method="post">
@@ -3220,6 +3493,36 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                     <form method="post" style="display:inline;" onsubmit="return confirm('Excluir caixa?')">
                         <input type="hidden" name="action" value="front_cash_register_delete">
                         <input type="hidden" name="id" value="<?= (int) $register['id'] ?>">
+                        <button>Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Vendedores (Vendas de Gás)</h4>
+    <form method="post">
+        <input type="hidden" name="action" value="front_cash_vendor_add">
+        <input name="name" placeholder="Novo vendedor" required>
+        <button>Adicionar vendedor</button>
+    </form>
+    <table>
+        <tr><th>Vendedor</th><th>Editar</th><th>Excluir</th></tr>
+        <?php foreach ($frontCashVendors as $vendor): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $vendor['name']) ?></td>
+                <td>
+                    <form method="post" style="display:inline;">
+                        <input type="hidden" name="action" value="front_cash_vendor_update">
+                        <input type="hidden" name="id" value="<?= (int) $vendor['id'] ?>">
+                        <input name="name" value="<?= htmlspecialchars((string) $vendor['name']) ?>" required>
+                        <button>Salvar</button>
+                    </form>
+                </td>
+                <td>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir vendedor?')">
+                        <input type="hidden" name="action" value="front_cash_vendor_delete">
+                        <input type="hidden" name="id" value="<?= (int) $vendor['id'] ?>">
                         <button>Excluir</button>
                     </form>
                 </td>

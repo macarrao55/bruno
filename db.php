@@ -295,6 +295,33 @@ function runMigrations(PDO $pdo): void
         }
     }
 
+    $frontCashVendorsTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='front_cash_vendors'")->fetch();
+    if (!$frontCashVendorsTable) {
+        $pdo->exec('CREATE TABLE front_cash_vendors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+    $frontCashVendorCount = (int) ($pdo->query('SELECT COUNT(*) FROM front_cash_vendors')->fetchColumn() ?: 0);
+    if ($frontCashVendorCount === 0) {
+        $pdo->exec("INSERT INTO front_cash_vendors (name) VALUES ('Vendedor 1'), ('Vendedor 2')");
+    }
+
+    $frontCashGasSalesTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='front_cash_gas_sales'")->fetch();
+    if (!$frontCashGasSalesTable) {
+        $pdo->exec('CREATE TABLE front_cash_gas_sales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sale_date TEXT NOT NULL,
+            seller TEXT NOT NULL,
+            qty_refill INTEGER NOT NULL DEFAULT 0,
+            qty_full INTEGER NOT NULL DEFAULT 0,
+            delivery_type TEXT NOT NULL CHECK (delivery_type IN (\'retirada\', \'entrega\')),
+            payment_method TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+
     $customerReceiptTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_receipts'")->fetch();
     if (!$customerReceiptTable) {
         $pdo->exec('CREATE TABLE customer_receipts (
