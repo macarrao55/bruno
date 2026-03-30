@@ -954,9 +954,16 @@ function handlePost(PDO $pdo, string $module): void
                         'UPDATE bank_accounts SET current_balance=initial_balance',
                     ],
                     'payables' => ['DELETE FROM accounts_payable'],
+                    'customer_receipts' => ['DELETE FROM customer_receipts'],
+                    'credit_sales' => ['DELETE FROM credit_sales_totals'],
+                    'overdue_customers' => ['DELETE FROM overdue_customers'],
+                    'front_cash_sales' => ['DELETE FROM front_cash_sales'],
+                    'gas_sales' => ['DELETE FROM front_cash_gas_sales'],
+                    'finance_expenses' => ['DELETE FROM finance_expenses'],
                     'cards' => ['DELETE FROM card_receivables'],
                     'checks' => ['DELETE FROM checks_control'],
                     'reconciliation' => ['DELETE FROM bank_reconciliation'],
+                    'dre' => ['DELETE FROM dre_config'],
                     'suppliers' => ['DELETE FROM suppliers'],
                     'settings' => [
                         'DELETE FROM card_rate_rules',
@@ -3107,9 +3114,16 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <h4>Selecione os dados para excluir</h4>
             <label><input type="checkbox" name="reset_targets[]" value="transactions"> Fluxo de caixa / transações</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="payables"> Contas a pagar</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="customer_receipts"> Recebimento de clientes</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="credit_sales"> Vendas a prazo</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="overdue_customers"> Clientes em atraso</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="front_cash_sales"> Vendas frente de caixa</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="gas_sales"> Vendas de gás</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="finance_expenses"> Saída financeiro</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="cards"> Cartões</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="checks"> Cheques</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="reconciliation"> Conciliação bancária</label><br>
+            <label><input type="checkbox" name="reset_targets[]" value="dre"> DRE (parâmetros)</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="suppliers"> Fornecedores</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="settings"> Cadastros de configurações</label><br>
             <p class="small">Atenção: esta ação exclui permanentemente os registros selecionados.</p>
