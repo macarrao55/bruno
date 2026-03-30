@@ -495,6 +495,22 @@ function handlePost(PDO $pdo, string $module): void
                 $saleLocation = trim((string) ($_POST['sale_location'] ?? ''));
                 $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
                 $amount = moneyInput($_POST['amount'] ?? 0);
+                $allowedLocations = ['Caixa Loja', 'Caixa Parafuso'];
+                if (!in_array($saleLocation, $allowedLocations, true)) {
+                    $saleLocation = 'Caixa Loja';
+                }
+                $allowedPaymentMethods = [
+                    'Dinheiro',
+                    'Cheque',
+                    'Cartão Débito',
+                    'Cartão Crédito',
+                    'Cartão Parcelado',
+                    'Pix e TED',
+                    'Pix QRCode',
+                ];
+                if (!in_array($paymentMethod, $allowedPaymentMethods, true)) {
+                    $paymentMethod = 'Dinheiro';
+                }
 
                 $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
                     VALUES (\'entrada\', :amount, \'vendas_frente_caixa\', :subcategory, :origin_account, :destination_account, :description, :occurred_on)')
@@ -2224,30 +2240,38 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </script>
 <?php elseif ($module === 'vendas_frente_caixa'): ?>
     <h3>Vendas Frente de Caixa</h3>
-    <form method="post">
-        <input type="hidden" name="action" value="create">
-        <label>Data: <input type="date" name="sale_date" value="<?= $today ?>" required></label>
-        <select name="cash_register" required>
-            <option value="">Caixa</option>
-            <?php foreach ($frontCashRegisters as $register): ?>
-                <option value="<?= htmlspecialchars((string) $register['name']) ?>"><?= htmlspecialchars((string) $register['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <select name="sale_location" required>
-            <option value="">Local</option>
-            <?php foreach ($saleLocations as $location): ?>
-                <option value="<?= htmlspecialchars((string) $location['name']) ?>"><?= htmlspecialchars((string) $location['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <select name="payment_method" required>
-            <option value="">Forma de pagamento</option>
-            <?php foreach ($paymentMethods as $method): ?>
-                <option value="<?= htmlspecialchars((string) $method['name']) ?>"><?= htmlspecialchars((string) $method['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <input type="number" step="0.01" min="0" name="amount" placeholder="Valor" required>
-        <button>Salvar venda</button>
-    </form>
+    <button type="button" onclick="document.getElementById('frontCashModal').showModal()">Lançamento</button>
+    <dialog id="frontCashModal">
+        <form method="post">
+            <input type="hidden" name="action" value="create">
+            <h4>Novo lançamento</h4>
+            <label>Data: <input type="date" name="sale_date" value="<?= $today ?>" required></label>
+            <select name="cash_register" required>
+                <option value="">Caixa</option>
+                <?php foreach ($frontCashRegisters as $register): ?>
+                    <option value="<?= htmlspecialchars((string) $register['name']) ?>"><?= htmlspecialchars((string) $register['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <select name="sale_location" required>
+                <option value="">Local</option>
+                <option value="Caixa Loja">Caixa Loja</option>
+                <option value="Caixa Parafuso">Caixa Parafuso</option>
+            </select>
+            <select name="payment_method" required>
+                <option value="">Forma de pagamento</option>
+                <option value="Dinheiro">Dinheiro</option>
+                <option value="Cheque">Cheque</option>
+                <option value="Cartão Débito">Cartão débito</option>
+                <option value="Cartão Crédito">Cartão crédito</option>
+                <option value="Cartão Parcelado">Cartão parcelado</option>
+                <option value="Pix e TED">Pix e TED</option>
+                <option value="Pix QRCode">Pix QRCode</option>
+            </select>
+            <input type="number" step="0.01" min="0" name="amount" placeholder="Valor" required>
+            <button>Salvar lançamento</button>
+            <button type="button" onclick="document.getElementById('frontCashModal').close()">Fechar</button>
+        </form>
+    </dialog>
     <table>
         <tr><th>Data</th><th>Caixa</th><th>Local</th><th>Forma de pagamento</th><th>Valor</th></tr>
         <?php foreach ($frontCashSales as $sale): ?>
