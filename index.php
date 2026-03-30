@@ -806,26 +806,6 @@ function handlePost(PDO $pdo, string $module): void
             ]);
             break;
 
-        case 'fechamento':
-            $opening = (float) $_POST['opening_amount'];
-            $entries = (float) $_POST['total_entries'];
-            $exits = (float) $_POST['total_exits'];
-            $counted = (float) $_POST['counted_amount'];
-            $expected = $opening + $entries - $exits;
-            $diff = $counted - $expected;
-            $stmt = $pdo->prepare('INSERT INTO cash_closing (opening_date, opening_amount, total_entries, total_exits, counted_amount, cash_difference, notes)
-                VALUES (:opening_date,:opening_amount,:total_entries,:total_exits,:counted_amount,:cash_difference,:notes)');
-            $stmt->execute([
-                ':opening_date' => $_POST['opening_date'],
-                ':opening_amount' => $opening,
-                ':total_entries' => $entries,
-                ':total_exits' => $exits,
-                ':counted_amount' => $counted,
-                ':cash_difference' => $diff,
-                ':notes' => trim($_POST['notes']),
-            ]);
-            break;
-
         case 'configuracoes':
             $action = $_POST['action'] ?? '';
             if ($action === 'bank_add') {
@@ -1056,7 +1036,6 @@ function handlePost(PDO $pdo, string $module): void
                     'cards' => ['DELETE FROM card_receivables'],
                     'checks' => ['DELETE FROM checks_control'],
                     'reconciliation' => ['DELETE FROM bank_reconciliation'],
-                    'closing' => ['DELETE FROM cash_closing'],
                     'suppliers' => ['DELETE FROM suppliers'],
                     'settings' => [
                         'DELETE FROM card_rate_rules',
@@ -1388,7 +1367,6 @@ $salesByLocationToday = fetchAll($pdo, 'SELECT COALESCE(NULLIF(sale_location, \'
 $checks = fetchAll($pdo, 'SELECT * FROM checks_control ORDER BY due_date ASC');
 $banks = fetchAll($pdo, 'SELECT * FROM bank_accounts ORDER BY name');
 $reconciliations = fetchAll($pdo, 'SELECT br.*, ba.name bank_name FROM bank_reconciliation br JOIN bank_accounts ba ON ba.id=br.bank_account_id ORDER BY movement_date DESC');
-$closings = fetchAll($pdo, 'SELECT * FROM cash_closing ORDER BY opening_date DESC');
 
 function dreCategorySum(PDO $pdo, string $monthStart, array $labels): float
 {
@@ -1415,18 +1393,6 @@ $dre = [
 $dre['resultado_operacional'] = $dre['receitas'] - $dre['custos'] - $dre['despesas_fixas'] - $dre['despesas_variaveis'];
 $dre['lucro_liquido'] = $dre['resultado_operacional'];
 
-$reportType = $_GET['tipo_relatorio'] ?? 'mensal';
-$reportSql = match ($reportType) {
-    'diario' => "SELECT occurred_on periodo, SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas, SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas FROM transactions GROUP BY occurred_on ORDER BY occurred_on DESC LIMIT 31",
-    'semanal' => "SELECT strftime('%Y-W%W', occurred_on) periodo, SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas, SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas FROM transactions GROUP BY periodo ORDER BY periodo DESC LIMIT 12",
-    'categoria' => "SELECT category periodo, SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas, SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas FROM transactions GROUP BY category ORDER BY category",
-    'conta' => "SELECT origin_account periodo, SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas, SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas FROM transactions GROUP BY origin_account ORDER BY origin_account",
-    'cliente' => "SELECT customer periodo, SUM(amount) entradas, SUM(amount_received) saidas FROM accounts_receivable GROUP BY customer ORDER BY customer",
-    'vendedor' => "SELECT 'N/A' periodo, 0 entradas, 0 saidas",
-    'forma' => "SELECT movement_type periodo, SUM(amount) entradas, 0 saidas FROM transactions GROUP BY movement_type",
-    default => "SELECT strftime('%Y-%m', occurred_on) periodo, SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas, SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas FROM transactions GROUP BY periodo ORDER BY periodo DESC LIMIT 12"
-};
-$reportRows = fetchAll($pdo, $reportSql);
 $categories = fetchAll($pdo, 'SELECT id, name FROM cashflow_categories WHERE parent_id IS NULL ORDER BY name');
 $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS parent_name FROM cashflow_categories c LEFT JOIN cashflow_categories p ON p.id=c.parent_id WHERE c.parent_id IS NOT NULL ORDER BY p.name, c.name');
 
@@ -1471,8 +1437,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             </div>
         </div>
         <a href="?module=conciliacao">Conciliação Bancária</a>
-        <a href="?module=fechamento">Fechamento</a>
-        <a href="?module=relatorios">Relatórios</a>
         <a href="?module=fornecedores">Fornecedores</a>
         <a href="?module=configuracoes">Configurações</a>
     </nav>
@@ -3085,36 +3049,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <tr><td>Resultado Operacional</td><td><?= money($dre['resultado_operacional']) ?></td></tr>
         <tr><td>Lucro Líquido</td><td><?= money($dre['lucro_liquido']) ?></td></tr>
     </table>
-<?php elseif ($module === 'fechamento'): ?>
-    <h3>Fechamento de Caixa</h3>
-    <form method="post">
-        <input name="opening_date" type="date" required>
-        <input name="opening_amount" type="number" step="0.01" placeholder="Abertura do caixa" required>
-        <input name="total_entries" type="number" step="0.01" placeholder="Entradas do dia" required>
-        <input name="total_exits" type="number" step="0.01" placeholder="Saídas do dia" required>
-        <input name="counted_amount" type="number" step="0.01" placeholder="Valor conferido" required>
-        <textarea name="notes" placeholder="Observações"></textarea>
-        <button>Fechar</button>
-    </form>
-    <table><tr><th>Data</th><th>Abertura</th><th>Entradas</th><th>Saídas</th><th>Conferido</th><th>Diferença</th><th>Obs.</th></tr>
-        <?php foreach ($closings as $f): ?><tr><td><?= dateBr((string) $f['opening_date']) ?></td><td><?= money((float) $f['opening_amount']) ?></td><td><?= money((float) $f['total_entries']) ?></td><td><?= money((float) $f['total_exits']) ?></td><td><?= money((float) $f['counted_amount']) ?></td><td><?= money((float) $f['cash_difference']) ?></td><td><?= htmlspecialchars((string) $f['notes']) ?></td></tr><?php endforeach; ?>
-    </table>
-<?php elseif ($module === 'relatorios'): ?>
-    <h3>Relatórios</h3>
-    <form method="get">
-        <input type="hidden" name="module" value="relatorios">
-        <select name="tipo_relatorio">
-            <option value="diario">Diário</option><option value="semanal">Semanal</option><option value="mensal">Mensal</option>
-            <option value="categoria">Por categoria</option><option value="conta">Por conta</option><option value="cliente">Por cliente</option>
-            <option value="vendedor">Por vendedor</option><option value="forma">Por forma de pagamento</option>
-        </select>
-        <button>Gerar</button>
-    </form>
-    <table><tr><th>Agrupamento</th><th>Entradas</th><th>Saídas/Recebido</th><th>Saldo</th></tr>
-        <?php foreach ($reportRows as $r): $saldo = (float)$r['entradas'] - (float)$r['saidas']; ?>
-        <tr><td><?= htmlspecialchars((string)$r['periodo']) ?></td><td><?= money((float)$r['entradas']) ?></td><td><?= money((float)$r['saidas']) ?></td><td><?= money($saldo) ?></td></tr>
-        <?php endforeach; ?>
-    </table>
 <?php elseif ($module === 'fornecedores'): ?>
     <h3>Fornecedores</h3>
     <div class="cards">
@@ -3164,7 +3098,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <label><input type="checkbox" name="reset_targets[]" value="cards"> Cartões</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="checks"> Cheques</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="reconciliation"> Conciliação bancária</label><br>
-            <label><input type="checkbox" name="reset_targets[]" value="closing"> Fechamento de caixa</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="suppliers"> Fornecedores</label><br>
             <label><input type="checkbox" name="reset_targets[]" value="settings"> Cadastros de configurações</label><br>
             <p class="small">Atenção: esta ação exclui permanentemente os registros selecionados.</p>
