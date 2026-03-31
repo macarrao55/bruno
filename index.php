@@ -19,13 +19,14 @@ function handlePost(PDO $pdo, string $module): void
         case 'fluxo':
             $action = (string) ($_POST['action'] ?? 'create');
             if ($action === 'create') {
+                $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
                 $stmt = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
                     VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)');
                 $stmt->execute([
                     ':movement_type' => $_POST['movement_type'],
                     ':amount' => (float) $_POST['amount'],
                     ':category' => trim($_POST['category']),
-                    ':subcategory' => trim($_POST['subcategory']),
+                    ':subcategory' => $paymentMethod !== '' ? $paymentMethod : trim($_POST['subcategory']),
                     ':origin_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
                     ':destination_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
                     ':description' => trim($_POST['description']),
@@ -33,6 +34,7 @@ function handlePost(PDO $pdo, string $module): void
                 ]);
             }
             if ($action === 'edit') {
+                $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
                 $pdo->prepare('UPDATE transactions
                     SET movement_type=:movement_type, amount=:amount, category=:category, subcategory=:subcategory, origin_account=:origin_account, destination_account=:destination_account, description=:description, occurred_on=:occurred_on
                     WHERE id=:id')
@@ -41,7 +43,7 @@ function handlePost(PDO $pdo, string $module): void
                         ':movement_type' => $_POST['movement_type'],
                         ':amount' => (float) $_POST['amount'],
                         ':category' => trim($_POST['category']),
-                        ':subcategory' => trim($_POST['subcategory']),
+                        ':subcategory' => $paymentMethod !== '' ? $paymentMethod : trim($_POST['subcategory']),
                         ':origin_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
                         ':destination_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
                         ':description' => trim($_POST['description']),
@@ -55,6 +57,14 @@ function handlePost(PDO $pdo, string $module): void
             if ($action === 'quick_payment_method_add') {
                 $pdo->prepare('INSERT INTO payment_methods (name) VALUES (:name)')
                     ->execute([':name' => trim((string) ($_POST['name'] ?? ''))]);
+            }
+            if ($action === 'quick_payment_method_update') {
+                $pdo->prepare('UPDATE payment_methods SET name=:name WHERE id=:id')
+                    ->execute([':id' => (int) ($_POST['id'] ?? 0), ':name' => trim((string) ($_POST['name'] ?? ''))]);
+            }
+            if ($action === 'quick_payment_method_delete') {
+                $pdo->prepare('DELETE FROM payment_methods WHERE id=:id')
+                    ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
             }
             if ($action === 'quick_category_add') {
                 $pdo->prepare('INSERT INTO cashflow_categories (name, parent_id) VALUES (:name, NULL)')
@@ -1566,10 +1576,10 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <option value="<?= htmlspecialchars($category['name']) ?>"><?= htmlspecialchars($category['name']) ?></option>
             <?php endforeach; ?>
         </select>
-        <select name="subcategory" id="fluxo_subcategory">
-            <option value="">Subcategoria</option>
-            <?php foreach ($subcategories as $subcategory): ?>
-                <option value="<?= htmlspecialchars($subcategory['name']) ?>"><?= htmlspecialchars($subcategory['parent_name'] . ' > ' . $subcategory['name']) ?></option>
+        <select name="payment_method" id="fluxo_payment_method">
+            <option value="">Forma de pagamento</option>
+            <?php foreach ($paymentMethods as $method): ?>
+                <option value="<?= htmlspecialchars((string) $method['name']) ?>"><?= htmlspecialchars((string) $method['name']) ?></option>
             <?php endforeach; ?>
         </select>
         <select name="bank_account" id="fluxo_bank_account">
@@ -1585,6 +1595,33 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </form>
     <dialog id="fluxoConfigModal">
         <h4>Editar fluxo de caixa</h4>
+        <h5>Formas de pagamento</h5>
+        <form method="post">
+            <input type="hidden" name="action" value="quick_payment_method_add">
+            <input name="name" placeholder="Nova forma de pagamento" required>
+            <button>Adicionar forma</button>
+        </form>
+        <table>
+            <tr><th>Forma</th><th>Salvar</th><th>Excluir</th></tr>
+            <?php foreach ($paymentMethods as $method): ?>
+                <tr>
+                    <td>
+                        <form method="post" style="display:inline;">
+                            <input type="hidden" name="action" value="quick_payment_method_update">
+                            <input type="hidden" name="id" value="<?= (int) $method['id'] ?>">
+                            <input name="name" value="<?= htmlspecialchars((string) $method['name']) ?>" required>
+                    </td>
+                    <td><button>Salvar</button></form></td>
+                    <td>
+                        <form method="post" style="display:inline;" onsubmit="return confirm('Excluir forma de pagamento?')">
+                            <input type="hidden" name="action" value="quick_payment_method_delete">
+                            <input type="hidden" name="id" value="<?= (int) $method['id'] ?>">
+                            <button class="btn-danger">Excluir</button>
+                        </form>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        </table>
         <h5>Categorias</h5>
         <form method="post">
             <input type="hidden" name="action" value="quick_category_add">
@@ -1734,7 +1771,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('fluxo_movement_type').value = item.movement_type || 'entrada';
             document.getElementById('fluxo_amount').value = item.amount || '';
             document.getElementById('fluxo_category').value = item.category || '';
-            document.getElementById('fluxo_subcategory').value = item.subcategory || '';
+            document.getElementById('fluxo_payment_method').value = item.subcategory || '';
             document.getElementById('fluxo_bank_account').value = item.origin_account || 'caixa';
             document.getElementById('fluxo_description').value = item.description || '';
             document.getElementById('fluxo_occurred_on').value = item.occurred_on || '';
