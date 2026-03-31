@@ -210,21 +210,22 @@ function handlePost(PDO $pdo, string $module): void
                 if (!is_array($payload)) {
                     $payload = [];
                 }
-                if ($installmentsCount < 3 || count($payload) !== $installmentsCount) {
+                if ($installmentsCount < 2 || count($payload) !== $installmentsCount) {
                     break;
                 }
 
                 $totalAmount = (float) $_POST['amount'];
-                $baseAmount = round($totalAmount / $installmentsCount, 2);
-                $sumAmounts = 0.0;
+                $fallbackAmount = round($totalAmount / $installmentsCount, 2);
 
                 $stmt = $pdo->prepare('INSERT INTO accounts_payable (company_id, company, supplier_id, supplier, payable_type, boleto_number, due_date, amount, installment, status, reminder_date, notes)
                     VALUES (:company_id,:company,:supplier_id,:supplier,:payable_type,:boleto_number,:due_date,:amount,:installment,:status,:reminder_date,:notes)');
 
                 for ($i = 0; $i < $installmentsCount; $i++) {
                     $item = is_array($payload[$i] ?? null) ? $payload[$i] : [];
-                    $amount = $i === $installmentsCount - 1 ? round($totalAmount - $sumAmounts, 2) : $baseAmount;
-                    $sumAmounts += $amount;
+                    $amount = moneyInput($item['amount'] ?? 0);
+                    if ($amount <= 0) {
+                        $amount = $fallbackAmount;
+                    }
 
                     $stmt->execute([
                         ':company_id' => $companyId > 0 ? $companyId : null,
@@ -234,7 +235,7 @@ function handlePost(PDO $pdo, string $module): void
                         ':payable_type' => trim((string) $_POST['payable_type']),
                         ':boleto_number' => trim((string) ($item['boleto_number'] ?? $_POST['boleto_number'] ?? '')),
                         ':due_date' => (string) ($item['due_date'] ?? $_POST['due_date']),
-                        ':amount' => $amount,
+                        ':amount' => round($amount, 2),
                         ':installment' => ($i + 1) . '/' . $installmentsCount,
                         ':status' => $_POST['status'],
                         ':reminder_date' => $_POST['reminder_date'] ?: null,
@@ -410,13 +411,15 @@ function handlePost(PDO $pdo, string $module): void
                 }
 
                 if (!$wasPaid) {
+                    $settleCategory = trim((string) ($_POST['settle_category'] ?? ''));
+                    $settleSubcategory = trim((string) ($_POST['settle_subcategory'] ?? ''));
                     $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
                         VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)')
                         ->execute([
                             ':movement_type' => 'saida',
                             ':amount' => $paidAmount,
-                            ':category' => 'Contas a pagar',
-                            ':subcategory' => $paymentMethod !== '' ? $paymentMethod : 'Baixa',
+                            ':category' => $settleCategory !== '' ? $settleCategory : 'Contas a pagar',
+                            ':subcategory' => $settleSubcategory !== '' ? $settleSubcategory : ($paymentMethod !== '' ? $paymentMethod : 'Baixa'),
                             ':origin_account' => $originAccount,
                             ':destination_account' => $originAccount,
                             ':description' => $description,
@@ -820,14 +823,16 @@ function handlePost(PDO $pdo, string $module): void
                         if ($bankName !== '') {
                             $defaultBankName = $bankName;
                         }
+                        $settleCategory = trim((string) ($_POST['settle_category'] ?? ''));
+                        $settleSubcategory = trim((string) ($_POST['settle_subcategory'] ?? ''));
                         $description = 'Recebimento cartão #' . $id . ' - ' . (string) ($card['machine'] ?? '');
                         $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
                             VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)')
                             ->execute([
                                 ':movement_type' => 'entrada',
                                 ':amount' => $receivedAmount,
-                                ':category' => 'Recebimento de cartões',
-                                ':subcategory' => (string) ($card['card_type'] ?? 'Cartão'),
+                                ':category' => $settleCategory !== '' ? $settleCategory : 'Recebimento de cartões',
+                                ':subcategory' => $settleSubcategory !== '' ? $settleSubcategory : (string) ($card['card_type'] ?? 'Cartão'),
                                 ':origin_account' => $defaultBankName,
                                 ':destination_account' => $defaultBankName,
                                 ':description' => $description,
@@ -2275,7 +2280,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <dialog id="installmentsModal">
         <form method="dialog" id="installmentsDialogForm">
             <h4>Parcelamento automático</h4>
-            <p class="small">Informe vencimento, número do documento e observação de cada parcela.</p>
+            <p class="small">Informe valor, vencimento, número do boleto e observação de cada parcela.</p>
             <div id="installmentsContainer"></div>
             <button type="submit" class="btn-success">Salvar parcelas</button>
             <button type="button" onclick="document.getElementById('installmentsModal').close()">Cancelar</button>
@@ -2347,13 +2352,16 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 const dueDateValue = baseDueDate?.value || '';
                 const boletoValue = baseBoleto?.value || '';
                 const notesValue = baseNotes?.value || '';
+                const totalAmount = parseFloat(form?.querySelector('input[name="amount"]')?.value || '0');
+                const defaultAmount = count > 0 ? (totalAmount / count).toFixed(2) : '0.00';
                 container.innerHTML = '';
                 for (let i = 1; i <= count; i++) {
                     const block = document.createElement('div');
                     block.innerHTML = `
                         <p><strong>Parcela ${i}/${count}</strong></p>
+                        <label>Valor: <input type="number" step="0.01" data-field="amount" data-index="${i}" value="${defaultAmount}" required></label>
                         <label>Vencimento: <input type="date" data-field="due_date" data-index="${i}" value="${dueDateValue}" required></label>
-                        <label>Documento: <input data-field="boleto_number" data-index="${i}" value="${boletoValue}"></label>
+                        <label>Boleto: <input data-field="boleto_number" data-index="${i}" value="${boletoValue}"></label>
                         <label>Observação: <input data-field="notes" data-index="${i}" value="${notesValue}"></label>
                         <hr>
                     `;
@@ -2367,7 +2375,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 
             form.addEventListener('submit', (event) => {
                 const count = parseInt(installmentsSelect.value || '1', 10);
-                if (count <= 2) {
+                if (count <= 1) {
                     actionField.value = 'create';
                     payloadField.value = '';
                     return;
@@ -2381,10 +2389,11 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 const count = parseInt(installmentsSelect.value || '1', 10);
                 const payload = [];
                 for (let i = 1; i <= count; i++) {
+                    const amount = container.querySelector(`input[data-field="amount"][data-index="${i}"]`)?.value || '0';
                     const dueDate = container.querySelector(`input[data-field="due_date"][data-index="${i}"]`)?.value || '';
                     const boletoNumber = container.querySelector(`input[data-field="boleto_number"][data-index="${i}"]`)?.value || '';
                     const notes = container.querySelector(`input[data-field="notes"][data-index="${i}"]`)?.value || '';
-                    payload.push({ due_date: dueDate, boleto_number: boletoNumber, notes: notes });
+                    payload.push({ amount: amount, due_date: dueDate, boleto_number: boletoNumber, notes: notes });
                 }
                 payloadField.value = JSON.stringify(payload);
                 actionField.value = 'create_installments';
