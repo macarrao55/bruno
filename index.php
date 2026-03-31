@@ -3256,7 +3256,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </table>
 <?php elseif ($module === 'cartoes'): ?>
     <h3>Controle de Cartões</h3>
-    <form method="post">
+    <form method="post" id="cardForm">
         <input type="hidden" name="action" value="create">
         <select name="machine" id="card_machine_select" required>
             <option value="">Máquina</option>
@@ -3290,10 +3290,21 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <?php endforeach; ?>
         </select>
         <input name="gross_value" type="number" step="0.01" placeholder="Valor bruto" required>
+        <input name="installments_count" id="card_installments_count" type="number" min="1" value="1" placeholder="Qtd parcelas">
         <input name="sale_date" id="card_sale_date" type="date" required><input name="expected_release_date" id="card_expected_release_date" type="date" required>
         <label><input type="checkbox" name="received"> Baixa quando receber</label>
         <button>Salvar</button>
     </form>
+    <dialog id="cardInstallmentsPreviewModal">
+        <h4>Prévia do parcelamento</h4>
+        <p class="small">Confira parcelas, valores, vencimentos e taxas antes de salvar.</p>
+        <table>
+            <tr><th>Parcela</th><th>Valor</th><th>Vencimento</th><th>Taxa</th></tr>
+            <tbody id="cardInstallmentsPreviewBody"></tbody>
+        </table>
+        <button type="button" id="cardInstallmentsConfirmBtn" class="btn-success">Confirmar lançamento</button>
+        <button type="button" onclick="document.getElementById('cardInstallmentsPreviewModal').close()">Cancelar</button>
+    </dialog>
     <table><tr><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Local</th><th>Taxa</th><th>Bruto</th><th>Líquido</th><th>Venda</th><th>Liberação</th><th>Recebido</th><th>Ações</th></tr>
         <?php foreach ($cards as $c): ?>
             <tr>
@@ -3379,12 +3390,18 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </dialog>
     <script>
         (function () {
+            const cardForm = document.getElementById('cardForm');
             const machineSelect = document.getElementById('card_machine_select');
             const brandSelect = document.getElementById('card_brand_select');
             const paymentType = document.getElementById('card_type_select');
             const feeField = document.getElementById('card_fee_percent');
+            const grossField = cardForm?.querySelector('input[name="gross_value"]');
+            const installmentsField = document.getElementById('card_installments_count');
             const saleDateField = document.getElementById('card_sale_date');
             const releaseDateField = document.getElementById('card_expected_release_date');
+            const previewModal = document.getElementById('cardInstallmentsPreviewModal');
+            const previewBody = document.getElementById('cardInstallmentsPreviewBody');
+            const previewConfirmBtn = document.getElementById('cardInstallmentsConfirmBtn');
             const rateRules = <?= json_encode(array_map(static fn(array $r): array => [
                 'machine_id' => (int) $r['machine_id'],
                 'brand_id' => (int) $r['brand_id'],
@@ -3426,6 +3443,49 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             brandSelect.addEventListener('change', updateCardFields);
             paymentType.addEventListener('change', updateCardFields);
             saleDateField.addEventListener('change', updateCardFields);
+
+            if (cardForm && previewModal && previewBody && previewConfirmBtn) {
+                let allowSubmit = false;
+                cardForm.addEventListener('submit', (event) => {
+                    const selected = paymentType.options[paymentType.selectedIndex];
+                    const paymentName = (selected?.value || '').toLowerCase();
+                    const installments = Math.max(1, parseInt(installmentsField?.value || '1', 10));
+                    if (allowSubmit || !(paymentName.includes('parcel') && installments > 1)) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    const grossValue = parseFloat(grossField?.value || '0');
+                    const fee = parseFloat(feeField?.value || '0');
+                    const releaseBase = releaseDateField?.value || saleDateField?.value || '';
+                    const installmentValue = installments > 0 ? grossValue / installments : grossValue;
+                    previewBody.innerHTML = '';
+
+                    for (let i = 1; i <= installments; i++) {
+                        const releaseDate = releaseBase ? new Date(releaseBase + 'T00:00:00') : new Date();
+                        releaseDate.setMonth(releaseDate.getMonth() + (i - 1));
+                        const yyyy = releaseDate.getFullYear();
+                        const mm = String(releaseDate.getMonth() + 1).padStart(2, '0');
+                        const dd = String(releaseDate.getDate()).padStart(2, '0');
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>${i}/${installments}</td>
+                            <td>${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(installmentValue)}</td>
+                            <td>${dd}/${mm}/${yyyy}</td>
+                            <td>${fee.toFixed(2)}%</td>
+                        `;
+                        previewBody.appendChild(tr);
+                    }
+
+                    previewModal.showModal();
+                });
+
+                previewConfirmBtn.addEventListener('click', () => {
+                    allowSubmit = true;
+                    previewModal.close();
+                    cardForm.requestSubmit();
+                });
+            }
         })();
 
         function openCardEditModal(card) {
