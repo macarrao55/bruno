@@ -363,14 +363,20 @@ function handlePost(PDO $pdo, string $module): void
                 $lateInterest = moneyInput($_POST['late_interest'] ?? 0);
                 $paidAmount = round((float) $item['amount'] - $discount + $addition + $lateInterest, 2);
                 $bankAccountId = (int) $_POST['bank_account_id'];
+                $wasPaid = ((string) ($item['status'] ?? '')) === 'pago';
+                $paidOn = (string) ($_POST['paid_on'] ?? '');
+                if ($paidOn === '') {
+                    $paidOn = date('Y-m-d');
+                }
+                $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
 
                 $stmt = $pdo->prepare('UPDATE accounts_payable
                     SET status=\'pago\', paid_on=:paid_on, payment_method=:payment_method, bank_account_id=:bank_account_id, discount=:discount, addition=:addition, late_interest=:late_interest, paid_amount=:paid_amount
                     WHERE id=:id');
                 $stmt->execute([
                     ':id' => $id,
-                    ':paid_on' => $_POST['paid_on'],
-                    ':payment_method' => trim($_POST['payment_method']),
+                    ':paid_on' => $paidOn,
+                    ':payment_method' => $paymentMethod,
                     ':bank_account_id' => $bankAccountId > 0 ? $bankAccountId : null,
                     ':discount' => $discount,
                     ':addition' => $addition,
@@ -396,10 +402,25 @@ function handlePost(PDO $pdo, string $module): void
                         VALUES (:bank_account_id, :movement_date, :description, :system_amount, :bank_amount, 1)')
                         ->execute([
                             ':bank_account_id' => $bankAccountId,
-                            ':movement_date' => $_POST['paid_on'],
+                            ':movement_date' => $paidOn,
                             ':description' => $description . ' (' . $bankName . ')',
                             ':system_amount' => -$paidAmount,
                             ':bank_amount' => -$paidAmount,
+                        ]);
+                }
+
+                if (!$wasPaid) {
+                    $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                        VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)')
+                        ->execute([
+                            ':movement_type' => 'saida',
+                            ':amount' => $paidAmount,
+                            ':category' => 'Contas a pagar',
+                            ':subcategory' => $paymentMethod !== '' ? $paymentMethod : 'Baixa',
+                            ':origin_account' => $originAccount,
+                            ':destination_account' => $originAccount,
+                            ':description' => $description,
+                            ':occurred_on' => $paidOn,
                         ]);
                 }
 
@@ -783,6 +804,7 @@ function handlePost(PDO $pdo, string $module): void
                     $discount = ((float) $card['net_value'] * $anticipationFeePercent) / 100;
                     $isCanceled = isset($_POST['canceled']) ? 1 : 0;
                     $receivedAmount = max(0, (float) $card['net_value'] - $discount);
+                    $wasReceived = (int) ($card['received'] ?? 0) === 1;
                     $pdo->prepare('UPDATE card_receivables SET received=:received, canceled=:canceled, anticipation_discount=:anticipation_discount WHERE id=:id')
                         ->execute([
                             ':id' => $id,
@@ -790,6 +812,28 @@ function handlePost(PDO $pdo, string $module): void
                             ':canceled' => $isCanceled,
                             ':anticipation_discount' => $discount,
                         ]);
+
+                    if (!$isCanceled && !$wasReceived && $receivedAmount > 0) {
+                        $defaultBankName = 'caixa';
+                        $bankStmt = $pdo->query('SELECT name FROM bank_accounts ORDER BY id LIMIT 1');
+                        $bankName = (string) ($bankStmt->fetchColumn() ?: '');
+                        if ($bankName !== '') {
+                            $defaultBankName = $bankName;
+                        }
+                        $description = 'Recebimento cartão #' . $id . ' - ' . (string) ($card['machine'] ?? '');
+                        $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                            VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)')
+                            ->execute([
+                                ':movement_type' => 'entrada',
+                                ':amount' => $receivedAmount,
+                                ':category' => 'Recebimento de cartões',
+                                ':subcategory' => (string) ($card['card_type'] ?? 'Cartão'),
+                                ':origin_account' => $defaultBankName,
+                                ':destination_account' => $defaultBankName,
+                                ':description' => $description,
+                                ':occurred_on' => date('Y-m-d'),
+                            ]);
+                    }
                 }
             }
             break;
