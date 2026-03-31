@@ -773,12 +773,11 @@ function handlePost(PDO $pdo, string $module): void
                     if ($i > 1) {
                         $releaseDate->modify('+' . ($i - 1) . ' month');
                     }
-                    $installmentLabel = $installmentsCount > 1 ? $cardType . ' ' . $i . '/' . $installmentsCount : $cardType;
 
                     $stmt->execute([
                         ':machine' => trim($_POST['machine']),
                         ':brand' => trim($_POST['brand']),
-                        ':card_type' => $installmentLabel,
+                        ':card_type' => $cardType,
                         ':fee_percent' => $fee,
                         ':gross_value' => $installmentGross,
                         ':net_value' => $installmentNet,
