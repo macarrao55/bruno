@@ -66,6 +66,49 @@ function handlePost(PDO $pdo, string $module): void
                 $pdo->prepare('DELETE FROM payment_methods WHERE id=:id')
                     ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
             }
+            if ($action === 'transfer_between_accounts') {
+                $originAccount = trim((string) ($_POST['origin_account'] ?? ''));
+                $destinationAccount = trim((string) ($_POST['destination_account'] ?? ''));
+                $amount = (float) ($_POST['amount'] ?? 0);
+                $occurredOn = (string) ($_POST['occurred_on'] ?? date('Y-m-d'));
+                $description = trim((string) ($_POST['description'] ?? ''));
+
+                if ($originAccount !== '' && $destinationAccount !== '' && $originAccount !== $destinationAccount && $amount > 0) {
+                    $baseDescription = $description !== '' ? $description : 'Transferência entre contas';
+                    $pdo->beginTransaction();
+                    try {
+                        $stmt = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                            VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)');
+
+                        $stmt->execute([
+                            ':movement_type' => 'saida',
+                            ':amount' => $amount,
+                            ':category' => 'Transferência',
+                            ':subcategory' => 'Entre contas',
+                            ':origin_account' => $originAccount,
+                            ':destination_account' => $destinationAccount,
+                            ':description' => 'Transferência para ' . $destinationAccount . ($description !== '' ? ' - ' . $baseDescription : ''),
+                            ':occurred_on' => $occurredOn,
+                        ]);
+
+                        $stmt->execute([
+                            ':movement_type' => 'entrada',
+                            ':amount' => $amount,
+                            ':category' => 'Transferência',
+                            ':subcategory' => 'Entre contas',
+                            ':origin_account' => $originAccount,
+                            ':destination_account' => $destinationAccount,
+                            ':description' => 'Transferência de ' . $originAccount . ($description !== '' ? ' - ' . $baseDescription : ''),
+                            ':occurred_on' => $occurredOn,
+                        ]);
+
+                        $pdo->commit();
+                    } catch (Throwable $e) {
+                        $pdo->rollBack();
+                        throw $e;
+                    }
+                }
+            }
             if ($action === 'quick_category_add') {
                 $pdo->prepare('INSERT INTO cashflow_categories (name, parent_id) VALUES (:name, NULL)')
                     ->execute([':name' => trim((string) ($_POST['name'] ?? ''))]);
@@ -1591,8 +1634,32 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <input name="occurred_on" id="fluxo_occurred_on" type="date" value="<?= $today ?>" required>
         <input name="description" id="fluxo_description" placeholder="Histórico">
         <button id="fluxo_submit">Lançar</button>
+        <button type="button" onclick="openTransferModal()">Transferência entre contas</button>
         <button type="button" onclick="resetFluxoForm()">Cancelar edição</button>
     </form>
+    <dialog id="transferModal">
+        <h4>Transferência entre contas</h4>
+        <form method="post">
+            <input type="hidden" name="action" value="transfer_between_accounts">
+            <select name="origin_account" required>
+                <option value="">Conta de origem</option>
+                <?php foreach ($banks as $bank): ?>
+                    <option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <select name="destination_account" required>
+                <option value="">Conta de destino</option>
+                <?php foreach ($banks as $bank): ?>
+                    <option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <input type="number" name="amount" step="0.01" min="0.01" placeholder="Valor" required>
+            <input type="date" name="occurred_on" value="<?= $today ?>" required>
+            <input name="description" placeholder="Observação (opcional)">
+            <button>Transferir</button>
+            <button type="button" onclick="document.getElementById('transferModal').close()">Cancelar</button>
+        </form>
+    </dialog>
     <dialog id="fluxoConfigModal">
         <h4>Editar fluxo de caixa</h4>
         <h5>Formas de pagamento</h5>
@@ -1783,6 +1850,12 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('fluxo_id').value = '';
             document.getElementById('fluxo_submit').textContent = 'Lançar';
             document.getElementById('fluxo_occurred_on').value = '<?= $today ?>';
+        }
+        function openTransferModal() {
+            const modal = document.getElementById('transferModal');
+            if (modal) {
+                modal.showModal();
+            }
         }
     </script>
 
