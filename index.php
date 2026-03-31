@@ -750,23 +750,44 @@ function handlePost(PDO $pdo, string $module): void
             if ($action === 'create') {
                 $gross = (float) $_POST['gross_value'];
                 $fee = (float) $_POST['fee_percent'];
-                $net = $gross - ($gross * $fee / 100);
                 $cardType = normalizeCardType((string) $_POST['card_type']);
-                $stmt = $pdo->prepare('INSERT INTO card_receivables (machine, brand, card_type, fee_percent, gross_value, net_value, sale_date, expected_release_date, received)
-                    VALUES (:machine,:brand,:card_type,:fee_percent,:gross_value,:net_value,:sale_date,:expected_release_date,:received)');
-                $stmt->execute([
-                    ':machine' => trim($_POST['machine']),
-                    ':brand' => trim($_POST['brand']),
-                    ':card_type' => $cardType,
-                    ':fee_percent' => $fee,
-                    ':gross_value' => $gross,
-                    ':net_value' => $net,
-                    ':sale_date' => $_POST['sale_date'],
-                    ':expected_release_date' => $_POST['expected_release_date'],
-                    ':received' => isset($_POST['received']) ? 1 : 0,
-                ]);
-                $pdo->prepare('UPDATE card_receivables SET sale_location=:sale_location WHERE id=last_insert_rowid()')
-                    ->execute([':sale_location' => trim((string) ($_POST['sale_location'] ?? ''))]);
+                $saleLocation = trim((string) ($_POST['sale_location'] ?? ''));
+                $installmentsCount = max(1, (int) ($_POST['installments_count'] ?? 1));
+                if (preg_match('/parcelad[oa]?\s*(\d+)/i', (string) $_POST['card_type'], $matches)) {
+                    $installmentsCount = max($installmentsCount, (int) $matches[1]);
+                }
+                if (!str_contains(mb_strtolower((string) $_POST['card_type'], 'UTF-8'), 'parcel')) {
+                    $installmentsCount = 1;
+                }
+
+                $stmt = $pdo->prepare('INSERT INTO card_receivables (machine, brand, card_type, fee_percent, gross_value, net_value, sale_date, expected_release_date, received, sale_location)
+                    VALUES (:machine,:brand,:card_type,:fee_percent,:gross_value,:net_value,:sale_date,:expected_release_date,:received,:sale_location)');
+                $sumGross = 0.0;
+                for ($i = 1; $i <= $installmentsCount; $i++) {
+                    $installmentGross = $i === $installmentsCount
+                        ? round($gross - $sumGross, 2)
+                        : round($gross / $installmentsCount, 2);
+                    $sumGross += $installmentGross;
+                    $installmentNet = $installmentGross - ($installmentGross * $fee / 100);
+                    $releaseDate = new DateTime((string) $_POST['expected_release_date']);
+                    if ($i > 1) {
+                        $releaseDate->modify('+' . ($i - 1) . ' month');
+                    }
+                    $installmentLabel = $installmentsCount > 1 ? $cardType . ' ' . $i . '/' . $installmentsCount : $cardType;
+
+                    $stmt->execute([
+                        ':machine' => trim($_POST['machine']),
+                        ':brand' => trim($_POST['brand']),
+                        ':card_type' => $installmentLabel,
+                        ':fee_percent' => $fee,
+                        ':gross_value' => $installmentGross,
+                        ':net_value' => $installmentNet,
+                        ':sale_date' => $_POST['sale_date'],
+                        ':expected_release_date' => $releaseDate->format('Y-m-d'),
+                        ':received' => isset($_POST['received']) ? 1 : 0,
+                        ':sale_location' => $saleLocation,
+                    ]);
+                }
             }
 
             if ($action === 'edit') {
@@ -3422,6 +3443,10 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 const rule = rateRules.find((r) => r.machine_id === machineId && r.brand_id === brandId && r.payment_config_id === paymentId);
 
                 const paymentName = (selected.value || '').toLowerCase();
+                const parcelMatch = paymentName.match(/parcelad[oa]?\s*(\d+)/i);
+                if (installmentsField) {
+                    installmentsField.value = parcelMatch ? String(parseInt(parcelMatch[1], 10)) : '1';
+                }
                 const defaultDays = paymentName.includes('debito') ? 1 : 30;
                 const fallbackFee = parseFloat(selected.dataset.fee || '0');
                 const fallbackDays = parseInt(selected.dataset.days || String(defaultDays), 10);
