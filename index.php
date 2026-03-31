@@ -811,16 +811,54 @@ function handlePost(PDO $pdo, string $module): void
             break;
 
         case 'conciliacao':
-            $stmt = $pdo->prepare('INSERT INTO bank_reconciliation (bank_account_id, movement_date, description, system_amount, bank_amount, reconciled)
-                VALUES (:bank_account_id,:movement_date,:description,:system_amount,:bank_amount,:reconciled)');
-            $stmt->execute([
-                ':bank_account_id' => (int) $_POST['bank_account_id'],
-                ':movement_date' => $_POST['movement_date'],
-                ':description' => trim($_POST['description']),
-                ':system_amount' => (float) $_POST['system_amount'],
-                ':bank_amount' => (float) $_POST['bank_amount'],
-                ':reconciled' => isset($_POST['reconciled']) ? 1 : 0,
-            ]);
+            $action = (string) ($_POST['action'] ?? 'reconcile_flow_transaction');
+            if ($action === 'reconcile_flow_transaction') {
+                $transactionId = (int) ($_POST['transaction_id'] ?? 0);
+                if ($transactionId > 0) {
+                    $txStmt = $pdo->prepare('SELECT * FROM transactions WHERE id=:id');
+                    $txStmt->execute([':id' => $transactionId]);
+                    $tx = $txStmt->fetch();
+                    if ($tx) {
+                        $bankName = trim((string) ($tx['origin_account'] ?? ''));
+                        if ($bankName === '') {
+                            $bankName = trim((string) ($tx['destination_account'] ?? ''));
+                        }
+                        if ($bankName !== '') {
+                            $bankStmt = $pdo->prepare('SELECT id FROM bank_accounts WHERE name=:name LIMIT 1');
+                            $bankStmt->execute([':name' => $bankName]);
+                            $bankId = (int) ($bankStmt->fetchColumn() ?: 0);
+                            if ($bankId > 0) {
+                                $description = '[Fluxo #' . (int) $tx['id'] . '] ' . trim((string) ($tx['description'] ?? ''));
+                                $existsStmt = $pdo->prepare('SELECT id FROM bank_reconciliation WHERE description=:description AND movement_date=:movement_date AND bank_account_id=:bank_account_id LIMIT 1');
+                                $existsStmt->execute([
+                                    ':description' => $description,
+                                    ':movement_date' => $tx['occurred_on'],
+                                    ':bank_account_id' => $bankId,
+                                ]);
+                                $existingId = (int) ($existsStmt->fetchColumn() ?: 0);
+                                if ($existingId > 0) {
+                                    $pdo->prepare('UPDATE bank_reconciliation SET reconciled=1, system_amount=:system_amount, bank_amount=:bank_amount WHERE id=:id')
+                                        ->execute([
+                                            ':id' => $existingId,
+                                            ':system_amount' => (float) $tx['amount'],
+                                            ':bank_amount' => (float) $tx['amount'],
+                                        ]);
+                                } else {
+                                    $pdo->prepare('INSERT INTO bank_reconciliation (bank_account_id, movement_date, description, system_amount, bank_amount, reconciled)
+                                        VALUES (:bank_account_id,:movement_date,:description,:system_amount,:bank_amount,1)')
+                                        ->execute([
+                                            ':bank_account_id' => $bankId,
+                                            ':movement_date' => $tx['occurred_on'],
+                                            ':description' => $description,
+                                            ':system_amount' => (float) $tx['amount'],
+                                            ':bank_amount' => (float) $tx['amount'],
+                                        ]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             break;
 
         case 'dre':
@@ -1433,7 +1471,65 @@ $salesByLocationToday = fetchAll($pdo, 'SELECT COALESCE(NULLIF(sale_location, \'
     ORDER BY gross_total DESC', [':today' => $today]);
 $checks = fetchAll($pdo, 'SELECT * FROM checks_control ORDER BY due_date ASC');
 $banks = fetchAll($pdo, 'SELECT * FROM bank_accounts ORDER BY name');
-$reconciliations = fetchAll($pdo, 'SELECT br.*, ba.name bank_name FROM bank_reconciliation br JOIN bank_accounts ba ON ba.id=br.bank_account_id ORDER BY movement_date DESC');
+$bankNamesById = [];
+foreach ($banks as $bankRow) {
+    $bankNamesById[(int) $bankRow['id']] = (string) $bankRow['name'];
+}
+$reconDateFrom = trim((string) ($_GET['recon_date_from'] ?? ''));
+$reconDateTo = trim((string) ($_GET['recon_date_to'] ?? ''));
+$reconBankAccountId = (int) ($_GET['recon_bank_account_id'] ?? 0);
+$reconBankName = $reconBankAccountId > 0 ? ($bankNamesById[$reconBankAccountId] ?? '') : '';
+
+$reconConditions = [];
+$reconParams = [];
+if ($reconDateFrom !== '') {
+    $reconConditions[] = 't.occurred_on >= :recon_date_from';
+    $reconParams[':recon_date_from'] = $reconDateFrom;
+}
+if ($reconDateTo !== '') {
+    $reconConditions[] = 't.occurred_on <= :recon_date_to';
+    $reconParams[':recon_date_to'] = $reconDateTo;
+}
+if ($reconBankName !== '') {
+    $reconConditions[] = '(t.origin_account = :recon_bank OR t.destination_account = :recon_bank)';
+    $reconParams[':recon_bank'] = $reconBankName;
+}
+$reconFlowSql = 'SELECT t.*
+    FROM transactions t';
+if ($reconConditions !== []) {
+    $reconFlowSql .= ' WHERE ' . implode(' AND ', $reconConditions);
+}
+$reconFlowSql .= ' ORDER BY t.occurred_on DESC, t.id DESC';
+$reconciliationFlow = fetchAll($pdo, $reconFlowSql, $reconParams);
+
+$reconciliationRowsSql = 'SELECT br.*, ba.name bank_name FROM bank_reconciliation br JOIN bank_accounts ba ON ba.id=br.bank_account_id';
+$reconciliationRowsParams = [];
+$reconciliationRowsConditions = [];
+if ($reconDateFrom !== '') {
+    $reconciliationRowsConditions[] = 'br.movement_date >= :recon_date_from';
+    $reconciliationRowsParams[':recon_date_from'] = $reconDateFrom;
+}
+if ($reconDateTo !== '') {
+    $reconciliationRowsConditions[] = 'br.movement_date <= :recon_date_to';
+    $reconciliationRowsParams[':recon_date_to'] = $reconDateTo;
+}
+if ($reconBankAccountId > 0) {
+    $reconciliationRowsConditions[] = 'br.bank_account_id = :recon_bank_account_id';
+    $reconciliationRowsParams[':recon_bank_account_id'] = $reconBankAccountId;
+}
+if ($reconciliationRowsConditions !== []) {
+    $reconciliationRowsSql .= ' WHERE ' . implode(' AND ', $reconciliationRowsConditions);
+}
+$reconciliationRowsSql .= ' ORDER BY br.movement_date DESC, br.id DESC';
+$reconciliations = fetchAll($pdo, $reconciliationRowsSql, $reconciliationRowsParams);
+$reconciledFlowIds = [];
+$reconciledFlowRows = fetchAll($pdo, "SELECT description FROM bank_reconciliation WHERE description LIKE '[Fluxo #%]%'");
+foreach ($reconciledFlowRows as $row) {
+    $description = (string) ($row['description'] ?? '');
+    if (preg_match('/^\[Fluxo #(\d+)\]/', $description, $matches)) {
+        $reconciledFlowIds[(int) $matches[1]] = true;
+    }
+}
 
 $dreMonth = trim((string) ($_GET['dre_month'] ?? date('Y-m')));
 if (!preg_match('/^\d{4}-\d{2}$/', $dreMonth)) {
@@ -3335,15 +3431,62 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </table>
 <?php elseif ($module === 'conciliacao'): ?>
     <h3>Conciliação Bancária</h3>
-    <form method="post">
-        <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= htmlspecialchars($b['name']) ?></option><?php endforeach; ?></select>
-        <input name="movement_date" type="date" required>
-        <input name="description" placeholder="Descrição">
-        <input name="system_amount" type="number" step="0.01" placeholder="Sistema" required>
-        <input name="bank_amount" type="number" step="0.01" placeholder="Banco" required>
-        <label><input type="checkbox" name="reconciled"> Conciliado</label>
-        <button>Salvar</button>
+    <p class="small">Conciliação feita apenas com lançamentos do Fluxo de Caixa.</p>
+    <form method="get">
+        <input type="hidden" name="module" value="conciliacao">
+        <label>Data inicial <input type="date" name="recon_date_from" value="<?= htmlspecialchars($reconDateFrom) ?>"></label>
+        <label>Data final <input type="date" name="recon_date_to" value="<?= htmlspecialchars($reconDateTo) ?>"></label>
+        <label>Conta
+            <select name="recon_bank_account_id">
+                <option value="0">Todas as contas</option>
+                <?php foreach ($banks as $b): ?>
+                    <option value="<?= (int) $b['id'] ?>" <?= $reconBankAccountId === (int) $b['id'] ? 'selected' : '' ?>><?= htmlspecialchars($b['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <button type="submit">Filtrar</button>
     </form>
+
+    <h4>Saldos atuais das contas cadastradas</h4>
+    <table>
+        <tr><th>Conta</th><th>Saldo atual</th></tr>
+        <?php foreach ($banks as $b): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $b['name']) ?></td>
+                <td><?= money((float) $b['current_balance']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Lançamentos do Fluxo de Caixa</h4>
+    <table>
+        <tr><th>Data</th><th>Conta origem</th><th>Conta destino</th><th>Tipo</th><th>Descrição</th><th>Valor</th><th>Status</th><th>Ação</th></tr>
+        <?php foreach ($reconciliationFlow as $flow): ?>
+            <?php $isReconciled = isset($reconciledFlowIds[(int) $flow['id']]); ?>
+            <tr>
+                <td><?= dateBr((string) $flow['occurred_on']) ?></td>
+                <td><?= htmlspecialchars((string) $flow['origin_account']) ?></td>
+                <td><?= htmlspecialchars((string) $flow['destination_account']) ?></td>
+                <td><?= htmlspecialchars((string) $flow['movement_type']) ?></td>
+                <td><?= htmlspecialchars((string) $flow['description']) ?></td>
+                <td><?= money((float) $flow['amount']) ?></td>
+                <td><?= $isReconciled ? 'Conciliado' : 'Pendente' ?></td>
+                <td>
+                    <?php if (!$isReconciled): ?>
+                        <form method="post">
+                            <input type="hidden" name="action" value="reconcile_flow_transaction">
+                            <input type="hidden" name="transaction_id" value="<?= (int) $flow['id'] ?>">
+                            <button>Conciliar</button>
+                        </form>
+                    <?php else: ?>
+                        —
+                    <?php endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Histórico de conciliações</h4>
     <table><tr><th>Conta</th><th>Data</th><th>Descrição</th><th>Sistema</th><th>Banco</th><th>Status</th></tr>
         <?php foreach ($reconciliations as $r): ?><tr><td><?= htmlspecialchars($r['bank_name']) ?></td><td><?= dateBr((string) $r['movement_date']) ?></td><td><?= htmlspecialchars((string) $r['description']) ?></td><td><?= money((float) $r['system_amount']) ?></td><td><?= money((float) $r['bank_amount']) ?></td><td><?= $r['reconciled'] ? 'Conciliado' : 'Não conciliado' ?></td></tr><?php endforeach; ?>
     </table>
