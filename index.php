@@ -26,8 +26,8 @@ function handlePost(PDO $pdo, string $module): void
                     ':amount' => (float) $_POST['amount'],
                     ':category' => trim($_POST['category']),
                     ':subcategory' => trim($_POST['subcategory']),
-                    ':origin_account' => trim($_POST['origin_account']),
-                    ':destination_account' => trim($_POST['destination_account']),
+                    ':origin_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
+                    ':destination_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
                     ':description' => trim($_POST['description']),
                     ':occurred_on' => $_POST['occurred_on'],
                 ]);
@@ -42,8 +42,8 @@ function handlePost(PDO $pdo, string $module): void
                         ':amount' => (float) $_POST['amount'],
                         ':category' => trim($_POST['category']),
                         ':subcategory' => trim($_POST['subcategory']),
-                        ':origin_account' => trim($_POST['origin_account']),
-                        ':destination_account' => trim($_POST['destination_account']),
+                        ':origin_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
+                        ':destination_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
                         ':description' => trim($_POST['description']),
                         ':occurred_on' => $_POST['occurred_on'],
                     ]);
@@ -59,6 +59,40 @@ function handlePost(PDO $pdo, string $module): void
             if ($action === 'quick_category_add') {
                 $pdo->prepare('INSERT INTO cashflow_categories (name, parent_id) VALUES (:name, NULL)')
                     ->execute([':name' => trim((string) ($_POST['name'] ?? ''))]);
+            }
+            if ($action === 'quick_category_update') {
+                $pdo->prepare('UPDATE cashflow_categories SET name=:name WHERE id=:id AND parent_id IS NULL')
+                    ->execute([':id' => (int) ($_POST['id'] ?? 0), ':name' => trim((string) ($_POST['name'] ?? ''))]);
+            }
+            if ($action === 'quick_category_delete') {
+                $id = (int) ($_POST['id'] ?? 0);
+                $pdo->prepare('DELETE FROM cashflow_categories WHERE parent_id=:id')->execute([':id' => $id]);
+                $pdo->prepare('DELETE FROM cashflow_categories WHERE id=:id AND parent_id IS NULL')->execute([':id' => $id]);
+            }
+            if ($action === 'quick_subcategory_add') {
+                $pdo->prepare('INSERT INTO cashflow_categories (name, parent_id) VALUES (:name, :parent_id)')
+                    ->execute([':name' => trim((string) ($_POST['name'] ?? '')), ':parent_id' => (int) ($_POST['parent_id'] ?? 0)]);
+            }
+            if ($action === 'quick_subcategory_update') {
+                $pdo->prepare('UPDATE cashflow_categories SET name=:name, parent_id=:parent_id WHERE id=:id AND parent_id IS NOT NULL')
+                    ->execute([
+                        ':id' => (int) ($_POST['id'] ?? 0),
+                        ':name' => trim((string) ($_POST['name'] ?? '')),
+                        ':parent_id' => (int) ($_POST['parent_id'] ?? 0),
+                    ]);
+            }
+            if ($action === 'quick_subcategory_delete') {
+                $pdo->prepare('DELETE FROM cashflow_categories WHERE id=:id AND parent_id IS NOT NULL')
+                    ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
+            }
+            if ($action === 'quick_bank_update') {
+                $pdo->prepare('UPDATE bank_accounts SET name=:name, initial_balance=:initial_balance, current_balance=:current_balance WHERE id=:id')
+                    ->execute([
+                        ':id' => (int) ($_POST['id'] ?? 0),
+                        ':name' => trim((string) ($_POST['name'] ?? '')),
+                        ':initial_balance' => moneyInput($_POST['initial_balance'] ?? 0),
+                        ':current_balance' => moneyInput($_POST['current_balance'] ?? 0),
+                    ]);
             }
             break;
 
@@ -1520,6 +1554,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </script>
 <?php elseif ($module === 'fluxo'): ?>
     <h3>Fluxo de Caixa</h3>
+    <button type="button" onclick="document.getElementById('fluxoConfigModal').showModal()">Editar fluxo de caixa</button>
     <form method="post" id="fluxoForm">
         <input type="hidden" name="action" value="create" id="fluxo_action">
         <input type="hidden" name="id" id="fluxo_id">
@@ -1537,13 +1572,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <option value="<?= htmlspecialchars($subcategory['name']) ?>"><?= htmlspecialchars($subcategory['parent_name'] . ' > ' . $subcategory['name']) ?></option>
             <?php endforeach; ?>
         </select>
-        <select name="origin_account" id="fluxo_origin_account">
-            <option value="caixa">Caixa</option>
-            <?php foreach ($banks as $bank): ?>
-                <option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <select name="destination_account" id="fluxo_destination_account">
+        <select name="bank_account" id="fluxo_bank_account">
             <option value="caixa">Caixa</option>
             <?php foreach ($banks as $bank): ?>
                 <option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option>
@@ -1554,17 +1583,94 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <button id="fluxo_submit">Lançar</button>
         <button type="button" onclick="resetFluxoForm()">Cancelar edição</button>
     </form>
-    <h4>Configuração rápida na mesma página</h4>
-    <form method="post" style="display:inline;">
-        <input type="hidden" name="action" value="quick_payment_method_add">
-        <input name="name" placeholder="Nova forma de pagamento" required>
-        <button>Adicionar forma</button>
-    </form>
-    <form method="post" style="display:inline;">
-        <input type="hidden" name="action" value="quick_category_add">
-        <input name="name" placeholder="Nova categoria" required>
-        <button>Adicionar categoria</button>
-    </form>
+    <dialog id="fluxoConfigModal">
+        <h4>Editar fluxo de caixa</h4>
+        <h5>Categorias</h5>
+        <form method="post">
+            <input type="hidden" name="action" value="quick_category_add">
+            <input name="name" placeholder="Nova categoria" required>
+            <button>Adicionar categoria</button>
+        </form>
+        <table>
+            <tr><th>Categoria</th><th>Salvar</th><th>Excluir</th></tr>
+            <?php foreach ($categories as $category): ?>
+                <tr>
+                    <td>
+                        <form method="post" style="display:inline;">
+                            <input type="hidden" name="action" value="quick_category_update">
+                            <input type="hidden" name="id" value="<?= (int) $category['id'] ?>">
+                            <input name="name" value="<?= htmlspecialchars((string) $category['name']) ?>" required>
+                    </td>
+                    <td><button>Salvar</button></form></td>
+                    <td>
+                        <form method="post" style="display:inline;" onsubmit="return confirm('Excluir categoria e subcategorias?')">
+                            <input type="hidden" name="action" value="quick_category_delete">
+                            <input type="hidden" name="id" value="<?= (int) $category['id'] ?>">
+                            <button class="btn-danger">Excluir</button>
+                        </form>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        </table>
+        <h5>Subcategorias</h5>
+        <form method="post">
+            <input type="hidden" name="action" value="quick_subcategory_add">
+            <input name="name" placeholder="Nova subcategoria" required>
+            <select name="parent_id" required>
+                <option value="">Categoria pai</option>
+                <?php foreach ($categories as $category): ?>
+                    <option value="<?= (int) $category['id'] ?>"><?= htmlspecialchars((string) $category['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <button>Adicionar subcategoria</button>
+        </form>
+        <table>
+            <tr><th>Subcategoria</th><th>Categoria pai</th><th>Salvar</th><th>Excluir</th></tr>
+            <?php foreach ($subcategories as $subcategory): ?>
+                <tr>
+                    <td>
+                        <form method="post" style="display:inline;">
+                            <input type="hidden" name="action" value="quick_subcategory_update">
+                            <input type="hidden" name="id" value="<?= (int) $subcategory['id'] ?>">
+                            <input name="name" value="<?= htmlspecialchars((string) $subcategory['name']) ?>" required>
+                    </td>
+                    <td>
+                            <select name="parent_id" required>
+                                <?php foreach ($categories as $category): ?>
+                                    <option value="<?= (int) $category['id'] ?>" <?= (int) $subcategory['parent_id'] === (int) $category['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $category['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                    </td>
+                    <td><button>Salvar</button></form></td>
+                    <td>
+                        <form method="post" style="display:inline;" onsubmit="return confirm('Excluir subcategoria?')">
+                            <input type="hidden" name="action" value="quick_subcategory_delete">
+                            <input type="hidden" name="id" value="<?= (int) $subcategory['id'] ?>">
+                            <button class="btn-danger">Excluir</button>
+                        </form>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        </table>
+        <h5>Bancos</h5>
+        <table>
+            <tr><th>Banco</th><th>Saldo inicial</th><th>Saldo atual</th><th>Salvar</th></tr>
+            <?php foreach ($banks as $bank): ?>
+                <tr>
+                    <td>
+                        <form method="post" style="display:inline;">
+                            <input type="hidden" name="action" value="quick_bank_update">
+                            <input type="hidden" name="id" value="<?= (int) $bank['id'] ?>">
+                            <input name="name" value="<?= htmlspecialchars((string) $bank['name']) ?>" required>
+                    </td>
+                    <td><input type="number" step="0.01" name="initial_balance" value="<?= htmlspecialchars((string) $bank['initial_balance']) ?>" required></td>
+                    <td><input type="number" step="0.01" name="current_balance" value="<?= htmlspecialchars((string) $bank['current_balance']) ?>" required></td>
+                    <td><button>Salvar</button></form></td>
+                </tr>
+            <?php endforeach; ?>
+        </table>
+        <button type="button" onclick="document.getElementById('fluxoConfigModal').close()">Fechar</button>
+    </dialog>
     <form method="get">
         <input type="hidden" name="module" value="fluxo">
         <select name="filtro">
@@ -1629,8 +1735,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('fluxo_amount').value = item.amount || '';
             document.getElementById('fluxo_category').value = item.category || '';
             document.getElementById('fluxo_subcategory').value = item.subcategory || '';
-            document.getElementById('fluxo_origin_account').value = item.origin_account || 'caixa';
-            document.getElementById('fluxo_destination_account').value = item.destination_account || 'caixa';
+            document.getElementById('fluxo_bank_account').value = item.origin_account || 'caixa';
             document.getElementById('fluxo_description').value = item.description || '';
             document.getElementById('fluxo_occurred_on').value = item.occurred_on || '';
             document.getElementById('fluxo_submit').textContent = 'Salvar edição';
