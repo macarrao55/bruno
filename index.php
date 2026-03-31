@@ -811,7 +811,32 @@ function handlePost(PDO $pdo, string $module): void
             break;
 
         case 'conciliacao':
-            // Conciliação automática: os dados são derivados diretamente do fluxo de caixa.
+            $action = (string) ($_POST['action'] ?? '');
+            if ($action === 'bank_add') {
+                $name = trim((string) ($_POST['name'] ?? ''));
+                $initialBalance = (float) ($_POST['initial_balance'] ?? 0);
+                if ($name !== '') {
+                    $pdo->prepare('INSERT INTO bank_accounts (name, initial_balance, current_balance) VALUES (:name, :initial_balance, :current_balance)')
+                        ->execute([
+                            ':name' => $name,
+                            ':initial_balance' => $initialBalance,
+                            ':current_balance' => $initialBalance,
+                        ]);
+                }
+            }
+            if ($action === 'bank_update') {
+                $id = (int) ($_POST['id'] ?? 0);
+                $name = trim((string) ($_POST['name'] ?? ''));
+                $initialBalance = (float) ($_POST['initial_balance'] ?? 0);
+                if ($id > 0 && $name !== '') {
+                    $pdo->prepare('UPDATE bank_accounts SET name=:name, initial_balance=:initial_balance WHERE id=:id')
+                        ->execute([
+                            ':id' => $id,
+                            ':name' => $name,
+                            ':initial_balance' => $initialBalance,
+                        ]);
+                }
+            }
             break;
 
         case 'dre':
@@ -3384,20 +3409,56 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 <?php elseif ($module === 'conciliacao'): ?>
     <h3>Conciliação Bancária</h3>
     <p class="small">Conciliação totalmente automática com base no Fluxo de Caixa. Ao editar/excluir lançamentos no fluxo, esta tela já reflete os novos valores.</p>
-    <form method="get">
-        <input type="hidden" name="module" value="conciliacao">
-        <label>Data inicial <input type="date" name="recon_date_from" value="<?= htmlspecialchars($reconDateFrom) ?>"></label>
-        <label>Data final <input type="date" name="recon_date_to" value="<?= htmlspecialchars($reconDateTo) ?>"></label>
-        <label>Conta
-            <select name="recon_bank_account_id">
-                <option value="0">Todas as contas</option>
-                <?php foreach ($banks as $b): ?>
-                    <option value="<?= (int) $b['id'] ?>" <?= $reconBankAccountId === (int) $b['id'] ? 'selected' : '' ?>><?= htmlspecialchars($b['name']) ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
-        <button type="submit">Filtrar</button>
-    </form>
+    <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <button type="button" onclick="openReconciliationFilterModal()">Filtrar</button>
+        <button type="button" onclick="openBankAccountsModal()">Editar contas</button>
+    </div>
+
+    <dialog id="reconciliationFilterModal">
+        <h4>Filtrar conciliação</h4>
+        <form method="get">
+            <input type="hidden" name="module" value="conciliacao">
+            <label>Data inicial <input type="date" name="recon_date_from" value="<?= htmlspecialchars($reconDateFrom) ?>"></label>
+            <label>Data final <input type="date" name="recon_date_to" value="<?= htmlspecialchars($reconDateTo) ?>"></label>
+            <label>Conta
+                <select name="recon_bank_account_id">
+                    <option value="0">Todas as contas</option>
+                    <?php foreach ($banks as $b): ?>
+                        <option value="<?= (int) $b['id'] ?>" <?= $reconBankAccountId === (int) $b['id'] ? 'selected' : '' ?>><?= htmlspecialchars($b['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <button type="submit">Aplicar filtro</button>
+            <button type="button" onclick="document.getElementById('reconciliationFilterModal').close()">Cancelar</button>
+        </form>
+    </dialog>
+
+    <dialog id="bankAccountsModal">
+        <h4>Editar contas</h4>
+        <form method="post">
+            <input type="hidden" name="action" value="bank_add">
+            <input name="name" placeholder="Nome da conta" required>
+            <input name="initial_balance" type="number" step="0.01" placeholder="Saldo inicial">
+            <button>Adicionar conta</button>
+        </form>
+        <table>
+            <tr><th>Conta</th><th>Saldo inicial</th><th>Ação</th></tr>
+            <?php foreach ($banks as $b): ?>
+                <tr>
+                    <td colspan="3">
+                        <form method="post" style="display:flex; gap:6px; align-items:center;">
+                            <input type="hidden" name="action" value="bank_update">
+                            <input type="hidden" name="id" value="<?= (int) $b['id'] ?>">
+                            <input name="name" value="<?= htmlspecialchars((string) $b['name']) ?>" required>
+                            <input name="initial_balance" type="number" step="0.01" value="<?= (float) $b['initial_balance'] ?>">
+                            <button>Salvar</button>
+                        </form>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        </table>
+        <button type="button" onclick="document.getElementById('bankAccountsModal').close()">Fechar</button>
+    </dialog>
 
     <h4>Saldos atuais das contas cadastradas</h4>
     <table>
@@ -3425,6 +3486,20 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             </tr>
         <?php endforeach; ?>
     </table>
+    <script>
+        function openReconciliationFilterModal() {
+            const modal = document.getElementById('reconciliationFilterModal');
+            if (modal) {
+                modal.showModal();
+            }
+        }
+        function openBankAccountsModal() {
+            const modal = document.getElementById('bankAccountsModal');
+            if (modal) {
+                modal.showModal();
+            }
+        }
+    </script>
 <?php elseif ($module === 'dre'): ?>
     <h3>DRE Gerencial</h3>
     <form method="get">
