@@ -904,6 +904,45 @@ function handlePost(PDO $pdo, string $module): void
                 $pdo->prepare('DELETE FROM checks_control WHERE id=:id')
                     ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
             }
+            if ($action === 'settle_transfer') {
+                $id = (int) ($_POST['id'] ?? 0);
+                $originAccount = trim((string) ($_POST['origin_account'] ?? 'caixa'));
+                $destinationAccount = trim((string) ($_POST['destination_account'] ?? ''));
+                $settleDate = trim((string) ($_POST['settle_date'] ?? date('Y-m-d')));
+
+                $checkStmt = $pdo->prepare('SELECT * FROM checks_control WHERE id=:id');
+                $checkStmt->execute([':id' => $id]);
+                $check = $checkStmt->fetch();
+                if ($check && $destinationAccount !== '') {
+                    $pdo->prepare('UPDATE checks_control SET cleared=1, compensated=1, returned=0 WHERE id=:id')
+                        ->execute([':id' => $id]);
+
+                    $bankIdStmt = $pdo->prepare('SELECT id FROM bank_accounts WHERE name=:name LIMIT 1');
+                    $bankIdStmt->execute([':name' => $destinationAccount]);
+                    $bankAccountId = (int) ($bankIdStmt->fetchColumn() ?: 0);
+                    if ($bankAccountId > 0) {
+                        $description = 'Baixa cheque #' . $id . ' - ' . (string) ($check['customer'] ?? '');
+                        $existsStmt = $pdo->prepare('SELECT id FROM bank_reconciliation WHERE bank_account_id=:bank_account_id AND movement_date=:movement_date AND description=:description LIMIT 1');
+                        $existsStmt->execute([
+                            ':bank_account_id' => $bankAccountId,
+                            ':movement_date' => $settleDate,
+                            ':description' => $description,
+                        ]);
+                        $existingId = (int) ($existsStmt->fetchColumn() ?: 0);
+                        if ($existingId === 0) {
+                            $pdo->prepare('INSERT INTO bank_reconciliation (bank_account_id, movement_date, description, system_amount, bank_amount, reconciled)
+                                VALUES (:bank_account_id, :movement_date, :description, :system_amount, :bank_amount, 1)')
+                                ->execute([
+                                    ':bank_account_id' => $bankAccountId,
+                                    ':movement_date' => $settleDate,
+                                    ':description' => $description,
+                                    ':system_amount' => (float) ($check['amount'] ?? 0),
+                                    ':bank_amount' => (float) ($check['amount'] ?? 0),
+                                ]);
+                        }
+                    }
+                }
+            }
             if ($action === 'settle') {
                 $id = (int) ($_POST['id'] ?? 0);
                 $bankAccountId = (int) ($_POST['bank_account_id'] ?? 0);
@@ -3859,7 +3898,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                         <input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
                         <button class="btn-danger">Excluir</button>
                     </form>
-                    <button type="button" class="btn-success" onclick='openCheckSettleModal(<?= json_encode($c, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Dar baixa</button>
+                    <button type="button" class="btn-success" onclick='openCheckTransferModal(<?= json_encode($c, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Dar baixa</button>
                 </td>
             </tr>
         <?php endforeach; ?>
@@ -3880,24 +3919,30 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" onclick="document.getElementById('checkEditModal').close()">Fechar</button>
         </form>
     </dialog>
-    <dialog id="checkSettleModal">
+    <dialog id="checkTransferModal">
         <form method="post">
-            <input type="hidden" name="action" value="settle">
-            <input type="hidden" name="id" id="check_settle_id">
-            <label>Data da baixa: <input name="settle_date" type="date" value="<?= $today ?>" required></label>
-            <label>Conta para conciliação:
-                <select name="bank_account_id">
-                    <option value="0">Selecionar conta</option>
-                    <?php foreach ($banks as $bank): ?>
-                        <option value="<?= (int) $bank['id'] ?>"><?= htmlspecialchars((string) $bank['name']) ?></option>
+            <input type="hidden" name="action" value="settle_transfer">
+            <input type="hidden" name="id" id="check_transfer_id">
+            <label>Conta de origem:
+                <select name="origin_account" id="check_transfer_origin" required>
+                    <option value="caixa">Caixa</option>
+                    <?php foreach ($transferBanks as $bank): ?>
+                        <option value="<?= htmlspecialchars((string) $bank['name']) ?>"><?= htmlspecialchars((string) $bank['name']) ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
-            <label><input type="checkbox" name="cleared" id="check_settle_cleared"> Baixa</label>
-            <label><input type="checkbox" name="compensated" id="check_settle_compensated"> Compensado</label>
-            <label><input type="checkbox" name="returned" id="check_settle_returned"> Devolvido</label>
-            <button>Salvar status</button>
-            <button type="button" onclick="document.getElementById('checkSettleModal').close()">Fechar</button>
+            <label>Conta de destino:
+                <select name="destination_account" id="check_transfer_destination" required>
+                    <option value="">Selecionar conta</option>
+                    <?php foreach ($transferBanks as $bank): ?>
+                        <option value="<?= htmlspecialchars((string) $bank['name']) ?>"><?= htmlspecialchars((string) $bank['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Data da baixa: <input name="settle_date" id="check_transfer_date" type="date" value="<?= $today ?>" required></label>
+            <p class="small">Valor do cheque: <span id="check_transfer_amount">R$ 0,00</span></p>
+            <button>Confirmar transferência e baixa</button>
+            <button type="button" onclick="document.getElementById('checkTransferModal').close()">Fechar</button>
         </form>
     </dialog>
     <script>
@@ -3913,12 +3958,13 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('check_edit_notes').value = check.notes || '';
             document.getElementById('checkEditModal').showModal();
         }
-        function openCheckSettleModal(check) {
-            document.getElementById('check_settle_id').value = check.id || '';
-            document.getElementById('check_settle_cleared').checked = Number(check.cleared) === 1;
-            document.getElementById('check_settle_compensated').checked = Number(check.compensated) === 1;
-            document.getElementById('check_settle_returned').checked = Number(check.returned) === 1;
-            document.getElementById('checkSettleModal').showModal();
+        function openCheckTransferModal(check) {
+            document.getElementById('check_transfer_id').value = check.id || '';
+            document.getElementById('check_transfer_origin').value = 'caixa';
+            document.getElementById('check_transfer_destination').value = check.bank || '';
+            document.getElementById('check_transfer_date').value = '<?= $today ?>';
+            document.getElementById('check_transfer_amount').textContent = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(check.amount || 0));
+            document.getElementById('checkTransferModal').showModal();
         }
     </script>
 <?php elseif ($module === 'conciliacao'): ?>
