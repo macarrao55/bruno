@@ -1662,13 +1662,17 @@ foreach ($vehicles as $vehicle) {
             $liters += (float) ($expense['liters'] ?? 0);
         }
     }
+    $annualDepreciation = ((float) ($vehicle['vehicle_value'] ?? 0) * (float) ($vehicle['depreciation_percent'] ?? 0)) / 100;
+    $totalCostWithDepreciation = $totalCost + $annualDepreciation;
     $vehicleAnalysis[] = [
         'name' => (string) ($vehicle['name'] ?? ''),
         'plate' => (string) ($vehicle['plate'] ?? ''),
         'avg_km_l' => $liters > 0 ? $distance / $liters : 0,
-        'cost_per_km' => $distance > 0 ? $totalCost / $distance : 0,
+        'cost_per_km' => $distance > 0 ? $totalCostWithDepreciation / $distance : 0,
         'distance' => $distance,
         'total_cost' => $totalCost,
+        'annual_depreciation' => $annualDepreciation,
+        'total_cost_with_depreciation' => $totalCostWithDepreciation,
     ];
 }
 $overdueDateFrom = trim((string) ($_GET['overdue_date_from'] ?? ''));
@@ -3001,17 +3005,26 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 
     <h4>Análise dos veículos</h4>
     <table>
-        <tr><th>Veículo</th><th>KM rodado base</th><th>Média KM/L</th><th>Custo por KM</th><th>Custo total</th></tr>
+        <tr><th>Veículo</th><th>KM rodado base</th><th>Média KM/L</th><th>Depreciação anual</th><th>Custo por KM</th><th>Custo total (c/ depreciação)</th></tr>
         <?php foreach ($vehicleAnalysis as $analysis): ?>
             <tr>
                 <td><?= htmlspecialchars((string) ($analysis['name'] . ($analysis['plate'] !== '' ? ' (' . $analysis['plate'] . ')' : ''))) ?></td>
                 <td><?= number_format((float) $analysis['distance'], 1, ',', '.') ?></td>
                 <td><?= number_format((float) $analysis['avg_km_l'], 2, ',', '.') ?></td>
+                <td><?= money((float) $analysis['annual_depreciation']) ?></td>
                 <td><?= money((float) $analysis['cost_per_km']) ?></td>
-                <td><?= money((float) $analysis['total_cost']) ?></td>
+                <td><?= money((float) $analysis['total_cost_with_depreciation']) ?></td>
             </tr>
         <?php endforeach; ?>
     </table>
+    <p><strong>Legenda dos cálculos:</strong></p>
+    <ul>
+        <li><strong>KM rodado base</strong> = maior KM informado - menor KM informado do veículo.</li>
+        <li><strong>Média KM/L</strong> = KM rodado base / soma dos litros lançados em abastecimentos.</li>
+        <li><strong>Depreciação anual</strong> = valor do veículo × (% de depreciação / 100).</li>
+        <li><strong>Custo total (c/ depreciação)</strong> = soma das despesas lançadas + depreciação anual.</li>
+        <li><strong>Custo por KM</strong> = custo total (c/ depreciação) / KM rodado base.</li>
+    </ul>
 
     <dialog id="vehicleModal">
         <form method="post">
