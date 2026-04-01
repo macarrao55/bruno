@@ -3,6 +3,7 @@ CREATE TABLE bank_accounts (
     name TEXT NOT NULL,
     initial_balance REAL NOT NULL DEFAULT 0,
     current_balance REAL NOT NULL DEFAULT 0,
+    transfer_enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
