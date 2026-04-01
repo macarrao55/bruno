@@ -139,12 +139,13 @@ function handlePost(PDO $pdo, string $module): void
                     ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
             }
             if ($action === 'quick_bank_update') {
-                $pdo->prepare('UPDATE bank_accounts SET name=:name, initial_balance=:initial_balance, current_balance=:current_balance, transfer_enabled=:transfer_enabled WHERE id=:id')
+                $pdo->prepare('UPDATE bank_accounts SET name=:name, initial_balance=:initial_balance, current_balance=:current_balance, launch_enabled=:launch_enabled, transfer_enabled=:transfer_enabled WHERE id=:id')
                     ->execute([
                         ':id' => (int) ($_POST['id'] ?? 0),
                         ':name' => trim((string) ($_POST['name'] ?? '')),
                         ':initial_balance' => moneyInput($_POST['initial_balance'] ?? 0),
                         ':current_balance' => moneyInput($_POST['current_balance'] ?? 0),
+                        ':launch_enabled' => isset($_POST['launch_enabled']) ? 1 : 0,
                         ':transfer_enabled' => isset($_POST['transfer_enabled']) ? 1 : 0,
                     ]);
             }
@@ -886,11 +887,12 @@ function handlePost(PDO $pdo, string $module): void
                 $name = trim((string) ($_POST['name'] ?? ''));
                 $initialBalance = (float) ($_POST['initial_balance'] ?? 0);
                 if ($name !== '') {
-                    $pdo->prepare('INSERT INTO bank_accounts (name, initial_balance, current_balance, transfer_enabled) VALUES (:name, :initial_balance, :current_balance, :transfer_enabled)')
+                    $pdo->prepare('INSERT INTO bank_accounts (name, initial_balance, current_balance, launch_enabled, transfer_enabled) VALUES (:name, :initial_balance, :current_balance, :launch_enabled, :transfer_enabled)')
                         ->execute([
                             ':name' => $name,
                             ':initial_balance' => $initialBalance,
                             ':current_balance' => $initialBalance,
+                            ':launch_enabled' => isset($_POST['launch_enabled']) ? 1 : 0,
                             ':transfer_enabled' => isset($_POST['transfer_enabled']) ? 1 : 0,
                         ]);
                 }
@@ -900,11 +902,12 @@ function handlePost(PDO $pdo, string $module): void
                 $name = trim((string) ($_POST['name'] ?? ''));
                 $initialBalance = (float) ($_POST['initial_balance'] ?? 0);
                 if ($id > 0 && $name !== '') {
-                    $pdo->prepare('UPDATE bank_accounts SET name=:name, initial_balance=:initial_balance, transfer_enabled=:transfer_enabled WHERE id=:id')
+                    $pdo->prepare('UPDATE bank_accounts SET name=:name, initial_balance=:initial_balance, launch_enabled=:launch_enabled, transfer_enabled=:transfer_enabled WHERE id=:id')
                         ->execute([
                             ':id' => $id,
                             ':name' => $name,
                             ':initial_balance' => $initialBalance,
+                            ':launch_enabled' => isset($_POST['launch_enabled']) ? 1 : 0,
                             ':transfer_enabled' => isset($_POST['transfer_enabled']) ? 1 : 0,
                         ]);
                 }
@@ -937,22 +940,24 @@ function handlePost(PDO $pdo, string $module): void
             $action = $_POST['action'] ?? '';
             if ($action === 'bank_add') {
                 $initial = (float) $_POST['initial_balance'];
-                $stmt = $pdo->prepare('INSERT INTO bank_accounts (name, initial_balance, current_balance, transfer_enabled) VALUES (:name, :initial_balance, :current_balance, :transfer_enabled)');
+                $stmt = $pdo->prepare('INSERT INTO bank_accounts (name, initial_balance, current_balance, launch_enabled, transfer_enabled) VALUES (:name, :initial_balance, :current_balance, :launch_enabled, :transfer_enabled)');
                 $stmt->execute([
                     ':name' => trim($_POST['name']),
                     ':initial_balance' => $initial,
                     ':current_balance' => $initial,
+                    ':launch_enabled' => isset($_POST['launch_enabled']) ? 1 : 0,
                     ':transfer_enabled' => isset($_POST['transfer_enabled']) ? 1 : 0,
                 ]);
             }
 
             if ($action === 'bank_update') {
-                $stmt = $pdo->prepare('UPDATE bank_accounts SET name=:name, initial_balance=:initial_balance, current_balance=:current_balance, transfer_enabled=:transfer_enabled WHERE id=:id');
+                $stmt = $pdo->prepare('UPDATE bank_accounts SET name=:name, initial_balance=:initial_balance, current_balance=:current_balance, launch_enabled=:launch_enabled, transfer_enabled=:transfer_enabled WHERE id=:id');
                 $stmt->execute([
                     ':id' => (int) $_POST['id'],
                     ':name' => trim($_POST['name']),
                     ':initial_balance' => (float) $_POST['initial_balance'],
                     ':current_balance' => (float) $_POST['current_balance'],
+                    ':launch_enabled' => isset($_POST['launch_enabled']) ? 1 : 0,
                     ':transfer_enabled' => isset($_POST['transfer_enabled']) ? 1 : 0,
                 ]);
             }
@@ -1583,6 +1588,10 @@ $salesByLocationToday = fetchAll($pdo, 'SELECT COALESCE(NULLIF(sale_location, \'
     ORDER BY gross_total DESC', [':today' => $today]);
 $checks = fetchAll($pdo, 'SELECT * FROM checks_control ORDER BY due_date ASC');
 $banks = fetchAll($pdo, 'SELECT * FROM bank_accounts ORDER BY name');
+$banksForLaunch = array_values(array_filter($banks, static fn(array $bank): bool => (int) ($bank['launch_enabled'] ?? 1) === 1));
+if ($banksForLaunch === []) {
+    $banksForLaunch = $banks;
+}
 $transferBanks = array_values(array_filter($banks, static fn(array $bank): bool => (int) ($bank['transfer_enabled'] ?? 1) === 1));
 if ($transferBanks === []) {
     $transferBanks = $banks;
@@ -1838,7 +1847,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         </select>
         <select name="bank_account" id="fluxo_bank_account">
             <option value="caixa">Caixa</option>
-            <?php foreach ($banks as $bank): ?>
+            <?php foreach ($banksForLaunch as $bank): ?>
                 <option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option>
             <?php endforeach; ?>
         </select>
@@ -1969,7 +1978,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         </table>
         <h5>Bancos</h5>
         <table>
-            <tr><th>Banco</th><th>Saldo inicial</th><th>Saldo atual</th><th>Transferência</th><th>Salvar</th></tr>
+            <tr><th>Banco</th><th>Saldo inicial</th><th>Saldo atual</th><th>Lançamentos</th><th>Transferência</th><th>Salvar</th></tr>
             <?php foreach ($banks as $bank): ?>
                 <tr>
                     <td>
@@ -1980,6 +1989,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                     </td>
                     <td><input type="number" step="0.01" name="initial_balance" value="<?= htmlspecialchars((string) $bank['initial_balance']) ?>" required></td>
                     <td><input type="number" step="0.01" name="current_balance" value="<?= htmlspecialchars((string) $bank['current_balance']) ?>" required></td>
+                    <td><label><input type="checkbox" name="launch_enabled" <?= ((int) ($bank['launch_enabled'] ?? 1) === 1) ? 'checked' : '' ?>> Exibir</label></td>
                     <td><label><input type="checkbox" name="transfer_enabled" <?= ((int) ($bank['transfer_enabled'] ?? 1) === 1) ? 'checked' : '' ?>> Exibir</label></td>
                     <td><button>Salvar</button></form></td>
                 </tr>
@@ -2266,7 +2276,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <label>Banco:
                 <select name="bank_account_id">
                     <option value="0">Caixa</option>
-                    <?php foreach ($banks as $bank): ?>
+                    <?php foreach ($banksForLaunch as $bank): ?>
                         <option value="<?= $bank['id'] ?>"><?= htmlspecialchars($bank['name']) ?></option>
                     <?php endforeach; ?>
                 </select>
@@ -2340,7 +2350,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             </select>
             <select name="bank_account_id" id="edit_bank_account_id">
                 <option value="0">Caixa</option>
-                <?php foreach ($banks as $bank): ?>
+                <?php foreach ($banksForLaunch as $bank): ?>
                     <option value="<?= $bank['id'] ?>"><?= htmlspecialchars($bank['name']) ?></option>
                 <?php endforeach; ?>
             </select><br>
@@ -3540,7 +3550,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <label>Conta destino:
                 <select name="destination_account">
                     <option value="caixa">Caixa</option>
-                    <?php foreach ($banks as $bank): ?><option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option><?php endforeach; ?>
+                    <?php foreach ($banksForLaunch as $bank): ?><option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option><?php endforeach; ?>
                 </select>
             </label>
             <label><input type="checkbox" name="canceled"> Cancelamento de cartão</label>
@@ -3716,6 +3726,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <input type="hidden" name="action" value="bank_add">
             <input name="name" placeholder="Nome da conta" required>
             <input name="initial_balance" type="number" step="0.01" placeholder="Saldo inicial">
+            <label><input type="checkbox" name="launch_enabled" checked> Exibir em lançamentos</label>
             <label><input type="checkbox" name="transfer_enabled" checked> Exibir em transferência</label>
             <button>Adicionar conta</button>
         </form>
@@ -3729,6 +3740,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                             <input type="hidden" name="id" value="<?= (int) $b['id'] ?>">
                             <input name="name" value="<?= htmlspecialchars((string) $b['name']) ?>" required>
                             <input name="initial_balance" type="number" step="0.01" value="<?= (float) $b['initial_balance'] ?>">
+                            <label><input type="checkbox" name="launch_enabled" <?= ((int) ($b['launch_enabled'] ?? 1) === 1) ? 'checked' : '' ?>> Lançamento</label>
                             <label><input type="checkbox" name="transfer_enabled" <?= ((int) ($b['transfer_enabled'] ?? 1) === 1) ? 'checked' : '' ?>> Transferência</label>
                             <button>Salvar</button>
                         </form>
@@ -3912,11 +3924,12 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <input type="hidden" name="action" value="bank_add">
         <input name="name" placeholder="Nome do banco" required>
         <input name="initial_balance" type="number" step="0.01" placeholder="Saldo inicial" required>
+        <label><input type="checkbox" name="launch_enabled" checked> Exibir em lançamentos</label>
         <label><input type="checkbox" name="transfer_enabled" checked> Exibir em transferência entre contas</label>
         <button>Adicionar banco</button>
     </form>
     <table>
-        <tr><th>Banco</th><th>Saldo Inicial</th><th>Saldo Atual</th><th>Transferência</th><th>Salvar</th></tr>
+        <tr><th>Banco</th><th>Saldo Inicial</th><th>Saldo Atual</th><th>Lançamentos</th><th>Transferência</th><th>Salvar</th></tr>
         <?php foreach ($banks as $b): ?>
             <tr>
                 <td>
@@ -3927,6 +3940,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 </td>
                 <td><input name="initial_balance" type="number" step="0.01" value="<?= $b['initial_balance'] ?>"></td>
                 <td><input name="current_balance" type="number" step="0.01" value="<?= $b['current_balance'] ?>"></td>
+                <td><label><input type="checkbox" name="launch_enabled" <?= ((int) ($b['launch_enabled'] ?? 1) === 1) ? 'checked' : '' ?>> Exibir</label></td>
                 <td><label><input type="checkbox" name="transfer_enabled" <?= ((int) ($b['transfer_enabled'] ?? 1) === 1) ? 'checked' : '' ?>> Exibir</label></td>
                 <td><button>Atualizar</button></form></td>
             </tr>

@@ -46,11 +46,15 @@ function runMigrations(PDO $pdo): void
 {
     $columns = $pdo->query("PRAGMA table_info(bank_accounts)")->fetchAll();
     $hasInitialBalance = false;
+    $hasLaunchEnabled = false;
     $hasTransferEnabled = false;
 
     foreach ($columns as $column) {
         if (($column['name'] ?? '') === 'initial_balance') {
             $hasInitialBalance = true;
+        }
+        if (($column['name'] ?? '') === 'launch_enabled') {
+            $hasLaunchEnabled = true;
         }
         if (($column['name'] ?? '') === 'transfer_enabled') {
             $hasTransferEnabled = true;
@@ -60,6 +64,10 @@ function runMigrations(PDO $pdo): void
     if (!$hasInitialBalance) {
         $pdo->exec('ALTER TABLE bank_accounts ADD COLUMN initial_balance REAL NOT NULL DEFAULT 0');
         $pdo->exec('UPDATE bank_accounts SET initial_balance = current_balance WHERE initial_balance = 0');
+    }
+    if (!$hasLaunchEnabled) {
+        $pdo->exec('ALTER TABLE bank_accounts ADD COLUMN launch_enabled INTEGER NOT NULL DEFAULT 1');
+        $pdo->exec('UPDATE bank_accounts SET launch_enabled = 1 WHERE launch_enabled IS NULL');
     }
     if (!$hasTransferEnabled) {
         $pdo->exec('ALTER TABLE bank_accounts ADD COLUMN transfer_enabled INTEGER NOT NULL DEFAULT 1');
