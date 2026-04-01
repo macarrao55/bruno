@@ -723,6 +723,55 @@ function handlePost(PDO $pdo, string $module): void
             }
             break;
 
+        case 'desempenho_funcionarios':
+            $action = $_POST['action'] ?? '';
+            if ($action === 'attendance_add') {
+                $pdo->prepare('INSERT INTO employee_attendance_logs (employee_id, work_date, check_in_time, lunch_out_time, lunch_in_time, check_out_time, notes)
+                    VALUES (:employee_id, :work_date, :check_in_time, :lunch_out_time, :lunch_in_time, :check_out_time, :notes)')
+                    ->execute([
+                        ':employee_id' => (int) ($_POST['employee_id'] ?? 0),
+                        ':work_date' => (string) ($_POST['work_date'] ?? date('Y-m-d')),
+                        ':check_in_time' => trim((string) ($_POST['check_in_time'] ?? '')),
+                        ':lunch_out_time' => trim((string) ($_POST['lunch_out_time'] ?? '')),
+                        ':lunch_in_time' => trim((string) ($_POST['lunch_in_time'] ?? '')),
+                        ':check_out_time' => trim((string) ($_POST['check_out_time'] ?? '')),
+                        ':notes' => trim((string) ($_POST['notes'] ?? '')),
+                    ]);
+            }
+            if ($action === 'performance_add') {
+                $score = (int) ($_POST['score'] ?? 3);
+                if ($score < 1 || $score > 5) {
+                    $score = 3;
+                }
+                $pdo->prepare('INSERT INTO employee_performance_reviews (employee_id, review_date, score, strengths, improvements, notes)
+                    VALUES (:employee_id, :review_date, :score, :strengths, :improvements, :notes)')
+                    ->execute([
+                        ':employee_id' => (int) ($_POST['employee_id'] ?? 0),
+                        ':review_date' => (string) ($_POST['review_date'] ?? date('Y-m-d')),
+                        ':score' => $score,
+                        ':strengths' => trim((string) ($_POST['strengths'] ?? '')),
+                        ':improvements' => trim((string) ($_POST['improvements'] ?? '')),
+                        ':notes' => trim((string) ($_POST['notes'] ?? '')),
+                    ]);
+            }
+            if ($action === 'occurrence_add') {
+                $type = (string) ($_POST['occurrence_type'] ?? 'atraso');
+                if (!in_array($type, ['falta', 'atraso'], true)) {
+                    $type = 'atraso';
+                }
+                $pdo->prepare('INSERT INTO employee_occurrences (employee_id, occurrence_date, occurrence_type, reason, has_medical_certificate, notes)
+                    VALUES (:employee_id, :occurrence_date, :occurrence_type, :reason, :has_medical_certificate, :notes)')
+                    ->execute([
+                        ':employee_id' => (int) ($_POST['employee_id'] ?? 0),
+                        ':occurrence_date' => (string) ($_POST['occurrence_date'] ?? date('Y-m-d')),
+                        ':occurrence_type' => $type,
+                        ':reason' => trim((string) ($_POST['reason'] ?? '')),
+                        ':has_medical_certificate' => isset($_POST['has_medical_certificate']) ? 1 : 0,
+                        ':notes' => trim((string) ($_POST['notes'] ?? '')),
+                    ]);
+            }
+            break;
+
         case 'veiculos':
             $action = $_POST['action'] ?? '';
             if ($action === 'vehicle_add') {
@@ -1643,6 +1692,9 @@ $creditSalesTotals = fetchAll($pdo, 'SELECT * FROM credit_sales_totals ORDER BY 
 $financeExpenses = fetchAll($pdo, 'SELECT * FROM finance_expenses ORDER BY expense_date DESC, id DESC');
 $employees = fetchAll($pdo, 'SELECT * FROM employees ORDER BY role, name');
 $employeeDebts = fetchAll($pdo, 'SELECT d.*, e.name AS employee_name, e.role AS employee_role FROM employee_debts d JOIN employees e ON e.id=d.employee_id ORDER BY d.debt_date DESC, d.id DESC');
+$employeeAttendanceLogs = fetchAll($pdo, 'SELECT a.*, e.name AS employee_name, e.role AS employee_role FROM employee_attendance_logs a JOIN employees e ON e.id=a.employee_id ORDER BY a.work_date DESC, a.id DESC');
+$employeePerformanceReviews = fetchAll($pdo, 'SELECT r.*, e.name AS employee_name, e.role AS employee_role FROM employee_performance_reviews r JOIN employees e ON e.id=r.employee_id ORDER BY r.review_date DESC, r.id DESC');
+$employeeOccurrences = fetchAll($pdo, 'SELECT o.*, e.name AS employee_name, e.role AS employee_role FROM employee_occurrences o JOIN employees e ON e.id=o.employee_id ORDER BY o.occurrence_date DESC, o.id DESC');
 $vehicles = fetchAll($pdo, 'SELECT * FROM vehicles ORDER BY name');
 $vehicleFilterId = (int) ($_GET['vehicle_filter_id'] ?? 0);
 $vehicleFilterType = trim((string) ($_GET['vehicle_filter_type'] ?? ''));
@@ -2026,6 +2078,14 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <a href="?module=cartoes">Cartões</a>
                 <a href="?module=cheques">Cheques</a>
                 <a href="?module=dre">DRE</a>
+            </div>
+        </div>
+        <div class="menu-group">
+            <button type="button" class="menu-toggle" onclick="toggleMenu(event, 'rhMenu')">RH ▾</button>
+            <div id="rhMenu" class="menu-dropdown">
+                <a href="?module=rh">Menu RH</a>
+                <a href="?module=funcionarios">Funcionário</a>
+                <a href="?module=desempenho_funcionarios">Desempenho de Funcionários</a>
             </div>
         </div>
         <a href="?module=conciliacao">Conciliação Bancária</a>
@@ -2768,9 +2828,19 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             });
         })();
     </script>
+<?php elseif ($module === 'rh'): ?>
+    <h3>Menu RH</h3>
+    <p>Acesse os módulos de cadastro e desempenho dos funcionários.</p>
+    <p>
+        <a href="?module=funcionarios"><button type="button">Módulo Funcionário</button></a>
+        <a href="?module=desempenho_funcionarios"><button type="button">Módulo Desempenho de Funcionários</button></a>
+    </p>
+    <p>
+        <button type="button" onclick="window.location.href='?module=funcionarios#cadastro-funcionario'">Cadastro de funcionário</button>
+    </p>
 <?php elseif ($module === 'funcionarios'): ?>
     <h3>Módulo de Funcionário</h3>
-    <button type="button" onclick="document.getElementById('employeeModal').showModal()">Cadastrar funcionário</button>
+    <button id="cadastro-funcionario" type="button" onclick="document.getElementById('employeeModal').showModal()">Cadastrar funcionário</button>
     <button type="button" onclick="document.getElementById('employeeDebtModal').showModal()">Cadastrar o que o funcionário deve</button>
 
     <?php
@@ -2984,6 +3054,129 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('employeeEditModal').showModal();
         }
     </script>
+<?php elseif ($module === 'desempenho_funcionarios'): ?>
+    <h3>Desempenho de Funcionários</h3>
+    <button type="button" onclick="document.getElementById('attendanceModal').showModal()">Registrar horários de trabalho</button>
+    <button type="button" onclick="document.getElementById('performanceModal').showModal()">Cadastrar avaliação de desempenho</button>
+    <button type="button" onclick="document.getElementById('occurrenceModal').showModal()">Cadastrar falta/atraso</button>
+
+    <h4>Registro de horários</h4>
+    <table>
+        <tr><th>Data</th><th>Funcionário</th><th>Cargo</th><th>Entrada</th><th>Saída almoço</th><th>Retorno almoço</th><th>Saída</th><th>Observações</th></tr>
+        <?php foreach ($employeeAttendanceLogs as $log): ?>
+            <tr>
+                <td><?= dateBr((string) $log['work_date']) ?></td>
+                <td><?= htmlspecialchars((string) $log['employee_name']) ?></td>
+                <td><?= htmlspecialchars((string) $log['employee_role']) ?></td>
+                <td><?= htmlspecialchars((string) ($log['check_in_time'] ?? '')) ?></td>
+                <td><?= htmlspecialchars((string) ($log['lunch_out_time'] ?? '')) ?></td>
+                <td><?= htmlspecialchars((string) ($log['lunch_in_time'] ?? '')) ?></td>
+                <td><?= htmlspecialchars((string) ($log['check_out_time'] ?? '')) ?></td>
+                <td><?= htmlspecialchars((string) ($log['notes'] ?? '')) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Avaliações de desempenho</h4>
+    <table>
+        <tr><th>Data</th><th>Funcionário</th><th>Cargo</th><th>Nota (1-5)</th><th>Pontos fortes</th><th>Melhorias</th><th>Observações</th></tr>
+        <?php foreach ($employeePerformanceReviews as $review): ?>
+            <tr>
+                <td><?= dateBr((string) $review['review_date']) ?></td>
+                <td><?= htmlspecialchars((string) $review['employee_name']) ?></td>
+                <td><?= htmlspecialchars((string) $review['employee_role']) ?></td>
+                <td><?= (int) $review['score'] ?></td>
+                <td><?= htmlspecialchars((string) ($review['strengths'] ?? '')) ?></td>
+                <td><?= htmlspecialchars((string) ($review['improvements'] ?? '')) ?></td>
+                <td><?= htmlspecialchars((string) ($review['notes'] ?? '')) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Faltas e atrasos</h4>
+    <table>
+        <tr><th>Data</th><th>Funcionário</th><th>Cargo</th><th>Tipo</th><th>Motivo</th><th>Atestado</th><th>Observações</th></tr>
+        <?php foreach ($employeeOccurrences as $occurrence): ?>
+            <tr>
+                <td><?= dateBr((string) $occurrence['occurrence_date']) ?></td>
+                <td><?= htmlspecialchars((string) $occurrence['employee_name']) ?></td>
+                <td><?= htmlspecialchars((string) $occurrence['employee_role']) ?></td>
+                <td><?= htmlspecialchars((string) $occurrence['occurrence_type']) ?></td>
+                <td><?= htmlspecialchars((string) ($occurrence['reason'] ?? '')) ?></td>
+                <td><?= ((int) ($occurrence['has_medical_certificate'] ?? 0)) === 1 ? 'Sim' : 'Não' ?></td>
+                <td><?= htmlspecialchars((string) ($occurrence['notes'] ?? '')) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <dialog id="attendanceModal">
+        <form method="post">
+            <input type="hidden" name="action" value="attendance_add">
+            <select name="employee_id" required>
+                <option value="">Funcionário</option>
+                <?php foreach ($employees as $employee): ?>
+                    <option value="<?= (int) $employee['id'] ?>"><?= htmlspecialchars((string) ($employee['name'] . ' - ' . $employee['role'])) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <label>Data: <input type="date" name="work_date" value="<?= $today ?>" required></label>
+            <label>Entrada: <input type="time" name="check_in_time"></label>
+            <label>Saída almoço: <input type="time" name="lunch_out_time"></label>
+            <label>Retorno almoço: <input type="time" name="lunch_in_time"></label>
+            <label>Saída: <input type="time" name="check_out_time"></label>
+            <input name="notes" placeholder="Observações">
+            <button>Salvar horários</button>
+            <button type="button" onclick="document.getElementById('attendanceModal').close()">Fechar</button>
+        </form>
+    </dialog>
+
+    <dialog id="performanceModal">
+        <form method="post">
+            <input type="hidden" name="action" value="performance_add">
+            <select name="employee_id" required>
+                <option value="">Funcionário</option>
+                <?php foreach ($employees as $employee): ?>
+                    <option value="<?= (int) $employee['id'] ?>"><?= htmlspecialchars((string) ($employee['name'] . ' - ' . $employee['role'])) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <label>Data: <input type="date" name="review_date" value="<?= $today ?>" required></label>
+            <label>Nota:
+                <select name="score" required>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3" selected>3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                </select>
+            </label>
+            <input name="strengths" placeholder="Pontos fortes">
+            <input name="improvements" placeholder="Pontos de melhoria">
+            <input name="notes" placeholder="Observações">
+            <button>Salvar avaliação</button>
+            <button type="button" onclick="document.getElementById('performanceModal').close()">Fechar</button>
+        </form>
+    </dialog>
+
+    <dialog id="occurrenceModal">
+        <form method="post">
+            <input type="hidden" name="action" value="occurrence_add">
+            <select name="employee_id" required>
+                <option value="">Funcionário</option>
+                <?php foreach ($employees as $employee): ?>
+                    <option value="<?= (int) $employee['id'] ?>"><?= htmlspecialchars((string) ($employee['name'] . ' - ' . $employee['role'])) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <label>Data: <input type="date" name="occurrence_date" value="<?= $today ?>" required></label>
+            <select name="occurrence_type" required>
+                <option value="atraso">Atraso</option>
+                <option value="falta">Falta</option>
+            </select>
+            <input name="reason" placeholder="Motivo">
+            <label><input type="checkbox" name="has_medical_certificate" value="1"> Tem atestado</label>
+            <input name="notes" placeholder="Observações">
+            <button>Salvar ocorrência</button>
+            <button type="button" onclick="document.getElementById('occurrenceModal').close()">Fechar</button>
+        </form>
+    </dialog>
 <?php elseif ($module === 'veiculos'): ?>
     <h3>Controle de Veículos</h3>
     <button type="button" onclick="document.getElementById('vehicleModal').showModal()">Cadastrar veículo</button>

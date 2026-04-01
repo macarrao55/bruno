@@ -121,6 +121,43 @@ CREATE TABLE employee_debts (
     FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
 );
 
+CREATE TABLE employee_attendance_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    work_date TEXT NOT NULL,
+    check_in_time TEXT,
+    lunch_out_time TEXT,
+    lunch_in_time TEXT,
+    check_out_time TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+);
+
+CREATE TABLE employee_performance_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    review_date TEXT NOT NULL,
+    score INTEGER NOT NULL CHECK (score BETWEEN 1 AND 5),
+    strengths TEXT,
+    improvements TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+);
+
+CREATE TABLE employee_occurrences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    occurrence_date TEXT NOT NULL,
+    occurrence_type TEXT NOT NULL CHECK (occurrence_type IN ('falta', 'atraso')),
+    reason TEXT,
+    has_medical_certificate INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+);
+
 CREATE TABLE vehicles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
