@@ -1882,6 +1882,7 @@ $dreSalesPix = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM front_cash_sa
 $dreCardFees = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value - net_value + anticipation_discount),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
 $dreReturns = sumValue($pdo, 'SELECT COALESCE(SUM(return_on_credit + return_exchange_credit),0) FROM credit_sales_totals WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
 $dreDiscounts = sumValue($pdo, 'SELECT COALESCE(SUM(discount),0) FROM customer_receipts WHERE receipt_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
+$dreVehicleDepreciation = sumValue($pdo, 'SELECT COALESCE(SUM((COALESCE(vehicle_value,0) * COALESCE(depreciation_percent,0) / 100.0) / 12.0),0) FROM vehicles');
 
 $dre = [];
 $dre['vendas_vista'] = $dreSalesCash;
@@ -1901,7 +1902,8 @@ $dre['cmv'] = $dreConfig['inventory_initial'] + $dreConfig['purchases'] + $dreCo
 $dre['lucro_bruto'] = $dre['receita_liquida'] - $dre['cmv'];
 
 $dre['despesas_variaveis'] = $dreConfig['sales_commission'] + $dreConfig['extra_card_fees'] + $dreConfig['delivery_freight'] + $dreConfig['packaging'];
-$dre['despesas_fixas'] = $dreConfig['payroll'] + $dreConfig['rent'] + $dreConfig['electricity'] + $dreConfig['water_internet'] + $dreConfig['software'] + $dreConfig['accounting'];
+$dre['depreciacao_veiculos'] = $dreVehicleDepreciation;
+$dre['despesas_fixas'] = $dreConfig['payroll'] + $dreConfig['rent'] + $dreConfig['electricity'] + $dreConfig['water_internet'] + $dreConfig['software'] + $dreConfig['accounting'] + $dre['depreciacao_veiculos'];
 $dre['resultado_operacional'] = $dre['lucro_bruto'] - $dre['despesas_variaveis'] - $dre['despesas_fixas'];
 
 $dre['despesas_financeiras'] = $dreConfig['loan_interest'] + $dreConfig['late_interest'] + $dreConfig['card_anticipation'];
@@ -4233,6 +4235,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 
         <tr><td><strong>4. Despesas Operacionais</strong></td><td></td></tr>
         <tr><td>Despesas Variáveis</td><td><?= money($dre['despesas_variaveis']) ?></td></tr>
+        <tr><td>Depreciação de veículos (automática)</td><td><?= money($dre['depreciacao_veiculos']) ?></td></tr>
         <tr><td>Despesas Fixas</td><td><?= money($dre['despesas_fixas']) ?></td></tr>
         <tr><td><strong>Resultado Operacional</strong></td><td><strong><?= money($dre['resultado_operacional']) ?></strong></td></tr>
 
