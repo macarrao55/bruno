@@ -1272,20 +1272,20 @@ $period = $_GET['period'] ?? '30';
 $days = in_array($period, ['7', '30', '90'], true) ? (int) $period : 30;
 $periodStart = date('Y-m-d', strtotime("-$days days"));
 
-$cashBalance = sumValue($pdo, "SELECT COALESCE(SUM(CASE WHEN movement_type='entrada' THEN amount ELSE -amount END),0) FROM transactions");
+$cashBalance = sumValue($pdo, "SELECT COALESCE(SUM(CASE WHEN movement_type='entrada' THEN amount ELSE -amount END),0) FROM transactions WHERE COALESCE(category, '') <> 'Transferência'");
 $bankBalance = sumValue($pdo, 'SELECT COALESCE(SUM(current_balance),0) FROM bank_accounts');
 $payToday = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM accounts_payable WHERE due_date=:d AND status='aberto'", [':d' => $today]);
 $receiveToday = sumValue($pdo, "SELECT COALESCE(SUM(amount-amount_received),0) FROM accounts_receivable WHERE due_date=:d AND status IN ('aberto','parcial')", [':d' => $today]);
 $cardsReceive = sumValue($pdo, 'SELECT COALESCE(SUM(net_value),0) FROM card_receivables WHERE received=0');
 $checksToCompensate = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM checks_control WHERE compensated=0 AND returned=0');
-$monthEntries = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='entrada' AND occurred_on>=:m", [':m' => $monthStart]);
-$monthExits = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='saida' AND occurred_on>=:m", [':m' => $monthStart]);
+$monthEntries = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='entrada' AND occurred_on>=:m AND COALESCE(category, '') <> 'Transferência'", [':m' => $monthStart]);
+$monthExits = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='saida' AND occurred_on>=:m AND COALESCE(category, '') <> 'Transferência'", [':m' => $monthStart]);
 $estimatedProfit = $monthEntries - $monthExits;
 
 $chartRows = fetchAll($pdo, "SELECT occurred_on,
     SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas,
     SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas
-    FROM transactions WHERE occurred_on>=:start GROUP BY occurred_on ORDER BY occurred_on", [':start' => $periodStart]);
+    FROM transactions WHERE occurred_on>=:start AND COALESCE(category, '') <> 'Transferência' GROUP BY occurred_on ORDER BY occurred_on", [':start' => $periodStart]);
 
 $transactionFilter = $_GET['filtro'] ?? 'mes';
 $filterStart = match ($transactionFilter) {
@@ -1295,12 +1295,13 @@ $filterStart = match ($transactionFilter) {
     default => date('Y-m-01')
 };
 $filterEnd = $transactionFilter === 'periodo' ? ($_GET['fim'] ?? date('Y-m-d')) : date('Y-m-d');
-$transactions = fetchAll($pdo, 'SELECT * FROM transactions WHERE occurred_on BETWEEN :s AND :e ORDER BY occurred_on DESC, id DESC', [':s' => $filterStart, ':e' => $filterEnd]);
+$transactions = fetchAll($pdo, "SELECT * FROM transactions WHERE occurred_on BETWEEN :s AND :e AND COALESCE(category, '') <> 'Transferência' ORDER BY occurred_on DESC, id DESC", [':s' => $filterStart, ':e' => $filterEnd]);
 $dailyFlowRows = fetchAll($pdo, "SELECT occurred_on,
     SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) AS entradas,
     SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) AS saidas
     FROM transactions
     WHERE occurred_on BETWEEN :s AND :e
+      AND COALESCE(category, '') <> 'Transferência'
     GROUP BY occurred_on
     ORDER BY occurred_on ASC", [':s' => $filterStart, ':e' => $filterEnd]);
 $runningBalance = 0.0;
@@ -1315,6 +1316,7 @@ $cashflowByPayment = fetchAll($pdo, "SELECT
     SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) AS saidas
     FROM transactions
     WHERE occurred_on BETWEEN :s AND :e
+      AND COALESCE(category, '') <> 'Transferência'
     GROUP BY payment_method
     ORDER BY entradas DESC", [':s' => $filterStart, ':e' => $filterEnd]);
 $cashflowByCategory = fetchAll($pdo, "SELECT
@@ -1324,6 +1326,7 @@ $cashflowByCategory = fetchAll($pdo, "SELECT
     SUM(CASE WHEN movement_type='entrada' THEN amount ELSE -amount END) AS saldo
     FROM transactions
     WHERE occurred_on BETWEEN :s AND :e
+      AND COALESCE(category, '') <> 'Transferência'
     GROUP BY category
     ORDER BY saldo DESC", [':s' => $filterStart, ':e' => $filterEnd]);
 
@@ -1335,6 +1338,7 @@ $cashflowBySubcategory = fetchAll($pdo, "SELECT
     SUM(CASE WHEN movement_type='entrada' THEN amount ELSE -amount END) AS saldo
     FROM transactions
     WHERE occurred_on BETWEEN :s AND :e
+      AND COALESCE(category, '') <> 'Transferência'
     GROUP BY category, subcategory
     ORDER BY category, saldo DESC", [':s' => $filterStart, ':e' => $filterEnd]);
 
