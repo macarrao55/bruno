@@ -1644,7 +1644,36 @@ $financeExpenses = fetchAll($pdo, 'SELECT * FROM finance_expenses ORDER BY expen
 $employees = fetchAll($pdo, 'SELECT * FROM employees ORDER BY role, name');
 $employeeDebts = fetchAll($pdo, 'SELECT d.*, e.name AS employee_name, e.role AS employee_role FROM employee_debts d JOIN employees e ON e.id=d.employee_id ORDER BY d.debt_date DESC, d.id DESC');
 $vehicles = fetchAll($pdo, 'SELECT * FROM vehicles ORDER BY name');
-$vehicleExpenses = fetchAll($pdo, 'SELECT ve.*, v.name AS vehicle_name, v.plate AS vehicle_plate FROM vehicle_expenses ve JOIN vehicles v ON v.id=ve.vehicle_id ORDER BY ve.expense_date DESC, ve.id DESC');
+$vehicleFilterId = (int) ($_GET['vehicle_filter_id'] ?? 0);
+$vehicleFilterType = trim((string) ($_GET['vehicle_filter_type'] ?? ''));
+$vehicleFilterDateFrom = trim((string) ($_GET['vehicle_filter_date_from'] ?? ''));
+$vehicleFilterDateTo = trim((string) ($_GET['vehicle_filter_date_to'] ?? ''));
+$vehicleExpenseSql = 'SELECT ve.*, v.name AS vehicle_name, v.plate AS vehicle_plate FROM vehicle_expenses ve JOIN vehicles v ON v.id=ve.vehicle_id';
+$vehicleExpenseConditions = [];
+$vehicleExpenseParams = [];
+if ($vehicleFilterId > 0) {
+    $vehicleExpenseConditions[] = 've.vehicle_id = :vehicle_filter_id';
+    $vehicleExpenseParams[':vehicle_filter_id'] = $vehicleFilterId;
+}
+if ($vehicleFilterType !== '') {
+    $vehicleExpenseConditions[] = '(ve.expense_type = :vehicle_filter_type OR ve.expense_subtype = :vehicle_filter_type)';
+    $vehicleExpenseParams[':vehicle_filter_type'] = $vehicleFilterType;
+}
+if ($vehicleFilterDateFrom !== '') {
+    $vehicleExpenseConditions[] = 've.expense_date >= :vehicle_filter_date_from';
+    $vehicleExpenseParams[':vehicle_filter_date_from'] = $vehicleFilterDateFrom;
+}
+if ($vehicleFilterDateTo !== '') {
+    $vehicleExpenseConditions[] = 've.expense_date <= :vehicle_filter_date_to';
+    $vehicleExpenseParams[':vehicle_filter_date_to'] = $vehicleFilterDateTo;
+}
+if ($vehicleExpenseConditions !== []) {
+    $vehicleExpenseSql .= ' WHERE ' . implode(' AND ', $vehicleExpenseConditions);
+}
+$vehicleExpenseSql .= ' ORDER BY ve.expense_date DESC, ve.id DESC';
+$stmtVehicleExpenses = $pdo->prepare($vehicleExpenseSql);
+$stmtVehicleExpenses->execute($vehicleExpenseParams);
+$vehicleExpenses = $stmtVehicleExpenses->fetchAll();
 $vehicleAnalysis = [];
 foreach ($vehicles as $vehicle) {
     $vehicleId = (int) ($vehicle['id'] ?? 0);
@@ -2977,6 +3006,29 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <?php endforeach; ?>
     </table>
 
+    <h4>Filtrar lançamentos</h4>
+    <form method="get">
+        <input type="hidden" name="module" value="veiculos">
+        <select name="vehicle_filter_id">
+            <option value="">Todos os veículos</option>
+            <?php foreach ($vehicles as $vehicle): ?>
+                <option value="<?= (int) $vehicle['id'] ?>" <?= $vehicleFilterId === (int) $vehicle['id'] ? 'selected' : '' ?>>
+                    <?= htmlspecialchars((string) ($vehicle['name'] . ($vehicle['plate'] ? ' (' . $vehicle['plate'] . ')' : ''))) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <select name="vehicle_filter_type">
+            <option value="">Todos os tipos</option>
+            <?php foreach (['despesa', 'abastecimento', 'manutencao', 'troca_oleo', 'revisao'] as $typeOption): ?>
+                <option value="<?= $typeOption ?>" <?= $vehicleFilterType === $typeOption ? 'selected' : '' ?>><?= htmlspecialchars($typeOption) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <label>De: <input type="date" name="vehicle_filter_date_from" value="<?= htmlspecialchars($vehicleFilterDateFrom) ?>"></label>
+        <label>Até: <input type="date" name="vehicle_filter_date_to" value="<?= htmlspecialchars($vehicleFilterDateTo) ?>"></label>
+        <button type="submit">Filtrar</button>
+        <a href="?module=veiculos">Limpar filtros</a>
+    </form>
+
     <h4>Lançamentos de despesas</h4>
     <table>
         <tr><th>Data</th><th>Veículo</th><th>Tipo</th><th>KM atual</th><th>Próx. troca óleo</th><th>Próx. revisão</th><th>Litros</th><th>Descrição</th><th>Valor</th><th>Ação</th></tr>
@@ -3004,6 +3056,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </table>
 
     <h4>Análise dos veículos</h4>
+    <canvas id="vehicleAnalysisChart" width="960" height="280" aria-label="Gráfico de custo por KM dos veículos"></canvas>
     <table>
         <tr><th>Veículo</th><th>KM rodado base</th><th>Média KM/L</th><th>Depreciação anual</th><th>Custo por KM</th><th>Custo total (c/ depreciação)</th></tr>
         <?php foreach ($vehicleAnalysis as $analysis): ?>
@@ -3136,6 +3189,46 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('vehicle_expense_edit_amount').value = expense.amount || 0;
             document.getElementById('vehicleExpenseEditModal').showModal();
         }
+
+        (function drawVehicleAnalysisChart() {
+            const canvas = document.getElementById('vehicleAnalysisChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const data = <?= json_encode($vehicleAnalysis, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+            if (!ctx || !Array.isArray(data) || data.length === 0) return;
+
+            const width = canvas.width;
+            const height = canvas.height;
+            const padding = 36;
+            const chartHeight = height - (padding * 2);
+            const barAreaWidth = width - (padding * 2);
+            const maxCostPerKm = Math.max(...data.map(item => Number(item.cost_per_km || 0)), 1);
+            const barWidth = Math.max(24, Math.floor(barAreaWidth / (data.length * 1.6)));
+            const gap = barWidth * 0.6;
+
+            ctx.clearRect(0, 0, width, height);
+            ctx.fillStyle = '#111827';
+            ctx.font = '12px Arial';
+            ctx.fillText('Gráfico: Custo por KM (com depreciação)', padding, 20);
+            ctx.strokeStyle = '#d1d5db';
+            ctx.beginPath();
+            ctx.moveTo(padding, height - padding);
+            ctx.lineTo(width - padding, height - padding);
+            ctx.stroke();
+
+            data.forEach((item, index) => {
+                const value = Number(item.cost_per_km || 0);
+                const barHeight = (value / maxCostPerKm) * (chartHeight - 16);
+                const x = padding + (index * (barWidth + gap));
+                const y = height - padding - barHeight;
+                ctx.fillStyle = '#2563eb';
+                ctx.fillRect(x, y, barWidth, barHeight);
+                ctx.fillStyle = '#374151';
+                ctx.fillText((item.name || '').slice(0, 12), x, height - 14);
+                ctx.fillStyle = '#111827';
+                ctx.fillText(value.toFixed(2), x, y - 4);
+            });
+        })();
     </script>
 <?php elseif ($module === 'recebimento_clientes'): ?>
     <h3>Recebimento de Clientes</h3>
