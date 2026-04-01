@@ -837,11 +837,11 @@ function handlePost(PDO $pdo, string $module): void
                         ]);
 
                     if (!$isCanceled && !$wasReceived && $receivedAmount > 0) {
-                        $defaultBankName = 'caixa';
-                        $bankStmt = $pdo->query('SELECT name FROM bank_accounts ORDER BY id LIMIT 1');
-                        $bankName = (string) ($bankStmt->fetchColumn() ?: '');
-                        if ($bankName !== '') {
-                            $defaultBankName = $bankName;
+                        $destinationAccount = trim((string) ($_POST['destination_account'] ?? ''));
+                        $defaultBankName = $destinationAccount !== '' ? $destinationAccount : 'caixa';
+                        $receivedOn = trim((string) ($_POST['received_on'] ?? ''));
+                        if ($receivedOn === '') {
+                            $receivedOn = date('Y-m-d');
                         }
                         $settleCategory = trim((string) ($_POST['settle_category'] ?? ''));
                         $settleSubcategory = trim((string) ($_POST['settle_subcategory'] ?? ''));
@@ -856,7 +856,7 @@ function handlePost(PDO $pdo, string $module): void
                                 ':origin_account' => $defaultBankName,
                                 ':destination_account' => $defaultBankName,
                                 ':description' => $description,
-                                ':occurred_on' => date('Y-m-d'),
+                                ':occurred_on' => $receivedOn,
                             ]);
                     }
                 }
@@ -3327,7 +3327,17 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </dialog>
     <table><tr><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Local</th><th>Taxa</th><th>Bruto</th><th>Líquido</th><th>Venda</th><th>Liberação</th><th>Recebido</th><th>Ações</th></tr>
         <?php foreach ($cards as $c): ?>
-            <tr>
+            <?php
+                $cardRowClass = '';
+                if ((int) $c['received'] === 1) {
+                    $cardRowClass = 'card-paid';
+                } elseif ((string) $c['expected_release_date'] === $today) {
+                    $cardRowClass = 'card-today';
+                } elseif ((string) $c['expected_release_date'] < $today) {
+                    $cardRowClass = 'card-overdue';
+                }
+            ?>
+            <tr class="<?= $cardRowClass ?>">
                 <td><?= htmlspecialchars($c['machine']) ?></td>
                 <td><?= htmlspecialchars($c['brand']) ?></td>
                 <td><?= $c['card_type'] ?></td>
