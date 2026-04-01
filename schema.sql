@@ -138,8 +138,12 @@ CREATE TABLE vehicle_expenses (
     vehicle_id INTEGER NOT NULL,
     expense_date TEXT NOT NULL,
     expense_type TEXT NOT NULL CHECK (expense_type IN ('despesa', 'manutencao', 'abastecimento')),
+    expense_subtype TEXT,
     description TEXT,
     km_current REAL,
+    liters REAL,
+    next_oil_km REAL,
+    next_review_km REAL,
     amount REAL NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE

@@ -497,8 +497,12 @@ function runMigrations(PDO $pdo): void
             vehicle_id INTEGER NOT NULL,
             expense_date TEXT NOT NULL,
             expense_type TEXT NOT NULL CHECK (expense_type IN (\'despesa\', \'manutencao\', \'abastecimento\')),
+            expense_subtype TEXT,
             description TEXT,
             km_current REAL,
+            liters REAL,
+            next_oil_km REAL,
+            next_review_km REAL,
             amount REAL NOT NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
@@ -508,6 +512,18 @@ function runMigrations(PDO $pdo): void
     $vehicleExpenseColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $vehicleExpenseColumns);
     if (!in_array('km_current', $vehicleExpenseColumnNames, true)) {
         $pdo->exec('ALTER TABLE vehicle_expenses ADD COLUMN km_current REAL');
+    }
+    if (!in_array('expense_subtype', $vehicleExpenseColumnNames, true)) {
+        $pdo->exec('ALTER TABLE vehicle_expenses ADD COLUMN expense_subtype TEXT');
+    }
+    if (!in_array('liters', $vehicleExpenseColumnNames, true)) {
+        $pdo->exec('ALTER TABLE vehicle_expenses ADD COLUMN liters REAL');
+    }
+    if (!in_array('next_oil_km', $vehicleExpenseColumnNames, true)) {
+        $pdo->exec('ALTER TABLE vehicle_expenses ADD COLUMN next_oil_km REAL');
+    }
+    if (!in_array('next_review_km', $vehicleExpenseColumnNames, true)) {
+        $pdo->exec('ALTER TABLE vehicle_expenses ADD COLUMN next_review_km REAL');
     }
 
 }

@@ -752,37 +752,53 @@ function handlePost(PDO $pdo, string $module): void
             }
             if ($action === 'vehicle_expense_add') {
                 $expenseType = (string) ($_POST['expense_type'] ?? 'despesa');
+                $expenseSubtype = '';
                 if (in_array($expenseType, ['troca_oleo', 'revisao'], true)) {
+                    $expenseSubtype = $expenseType;
                     $expenseType = 'manutencao';
                 }
-                $pdo->prepare('INSERT INTO vehicle_expenses (vehicle_id, expense_date, expense_type, description, km_current, amount)
-                    VALUES (:vehicle_id, :expense_date, :expense_type, :description, :km_current, :amount)')
+                $pdo->prepare('INSERT INTO vehicle_expenses (vehicle_id, expense_date, expense_type, expense_subtype, description, km_current, liters, next_oil_km, next_review_km, amount)
+                    VALUES (:vehicle_id, :expense_date, :expense_type, :expense_subtype, :description, :km_current, :liters, :next_oil_km, :next_review_km, :amount)')
                     ->execute([
                         ':vehicle_id' => (int) $_POST['vehicle_id'],
                         ':expense_date' => $_POST['expense_date'],
                         ':expense_type' => in_array($expenseType, ['despesa', 'manutencao', 'abastecimento'], true) ? $expenseType : 'despesa',
+                        ':expense_subtype' => $expenseSubtype,
                         ':description' => trim((string) ($_POST['description'] ?? '')),
                         ':km_current' => (float) ($_POST['km_current'] ?? 0),
+                        ':liters' => (float) ($_POST['liters'] ?? 0),
+                        ':next_oil_km' => (float) ($_POST['next_oil_km'] ?? 0),
+                        ':next_review_km' => (float) ($_POST['next_review_km'] ?? 0),
                         ':amount' => moneyInput($_POST['amount'] ?? 0),
                     ]);
             }
             if ($action === 'vehicle_expense_edit') {
                 $expenseType = (string) ($_POST['expense_type'] ?? 'despesa');
+                $expenseSubtype = '';
                 if (in_array($expenseType, ['troca_oleo', 'revisao'], true)) {
+                    $expenseSubtype = $expenseType;
                     $expenseType = 'manutencao';
                 }
                 $pdo->prepare('UPDATE vehicle_expenses
-                    SET vehicle_id=:vehicle_id, expense_date=:expense_date, expense_type=:expense_type, description=:description, km_current=:km_current, amount=:amount
+                    SET vehicle_id=:vehicle_id, expense_date=:expense_date, expense_type=:expense_type, expense_subtype=:expense_subtype, description=:description, km_current=:km_current, liters=:liters, next_oil_km=:next_oil_km, next_review_km=:next_review_km, amount=:amount
                     WHERE id=:id')
                     ->execute([
                         ':id' => (int) ($_POST['id'] ?? 0),
                         ':vehicle_id' => (int) $_POST['vehicle_id'],
                         ':expense_date' => $_POST['expense_date'],
                         ':expense_type' => in_array($expenseType, ['despesa', 'manutencao', 'abastecimento'], true) ? $expenseType : 'despesa',
+                        ':expense_subtype' => $expenseSubtype,
                         ':description' => trim((string) ($_POST['description'] ?? '')),
                         ':km_current' => (float) ($_POST['km_current'] ?? 0),
+                        ':liters' => (float) ($_POST['liters'] ?? 0),
+                        ':next_oil_km' => (float) ($_POST['next_oil_km'] ?? 0),
+                        ':next_review_km' => (float) ($_POST['next_review_km'] ?? 0),
                         ':amount' => moneyInput($_POST['amount'] ?? 0),
                     ]);
+            }
+            if ($action === 'vehicle_expense_delete') {
+                $pdo->prepare('DELETE FROM vehicle_expenses WHERE id=:id')
+                    ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
             }
             break;
 
@@ -1629,6 +1645,32 @@ $employees = fetchAll($pdo, 'SELECT * FROM employees ORDER BY role, name');
 $employeeDebts = fetchAll($pdo, 'SELECT d.*, e.name AS employee_name, e.role AS employee_role FROM employee_debts d JOIN employees e ON e.id=d.employee_id ORDER BY d.debt_date DESC, d.id DESC');
 $vehicles = fetchAll($pdo, 'SELECT * FROM vehicles ORDER BY name');
 $vehicleExpenses = fetchAll($pdo, 'SELECT ve.*, v.name AS vehicle_name, v.plate AS vehicle_plate FROM vehicle_expenses ve JOIN vehicles v ON v.id=ve.vehicle_id ORDER BY ve.expense_date DESC, ve.id DESC');
+$vehicleAnalysis = [];
+foreach ($vehicles as $vehicle) {
+    $vehicleId = (int) ($vehicle['id'] ?? 0);
+    $expenses = array_values(array_filter($vehicleExpenses, static fn(array $row): bool => (int) ($row['vehicle_id'] ?? 0) === $vehicleId));
+    $kms = array_values(array_map(static fn(array $row): float => (float) ($row['km_current'] ?? 0), array_filter($expenses, static fn(array $row): bool => (float) ($row['km_current'] ?? 0) > 0)));
+    $distance = 0.0;
+    if ($kms !== []) {
+        $distance = max($kms) - min($kms);
+    }
+    $liters = 0.0;
+    $totalCost = 0.0;
+    foreach ($expenses as $expense) {
+        $totalCost += (float) ($expense['amount'] ?? 0);
+        if ((string) ($expense['expense_type'] ?? '') === 'abastecimento') {
+            $liters += (float) ($expense['liters'] ?? 0);
+        }
+    }
+    $vehicleAnalysis[] = [
+        'name' => (string) ($vehicle['name'] ?? ''),
+        'plate' => (string) ($vehicle['plate'] ?? ''),
+        'avg_km_l' => $liters > 0 ? $distance / $liters : 0,
+        'cost_per_km' => $distance > 0 ? $totalCost / $distance : 0,
+        'distance' => $distance,
+        'total_cost' => $totalCost,
+    ];
+}
 $overdueDateFrom = trim((string) ($_GET['overdue_date_from'] ?? ''));
 $overdueDateTo = trim((string) ($_GET['overdue_date_to'] ?? ''));
 $overdueStatusFilter = trim((string) ($_GET['overdue_status'] ?? ''));
@@ -2933,16 +2975,40 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 
     <h4>Lançamentos de despesas</h4>
     <table>
-        <tr><th>Data</th><th>Veículo</th><th>Tipo</th><th>KM atual</th><th>Descrição</th><th>Valor</th><th>Ação</th></tr>
+        <tr><th>Data</th><th>Veículo</th><th>Tipo</th><th>KM atual</th><th>Próx. troca óleo</th><th>Próx. revisão</th><th>Litros</th><th>Descrição</th><th>Valor</th><th>Ação</th></tr>
         <?php foreach ($vehicleExpenses as $expense): ?>
             <tr>
                 <td><?= dateBr((string) $expense['expense_date']) ?></td>
                 <td><?= htmlspecialchars((string) ($expense['vehicle_name'] . ' ' . ($expense['vehicle_plate'] ? '(' . $expense['vehicle_plate'] . ')' : ''))) ?></td>
-                <td><?= htmlspecialchars((string) $expense['expense_type']) ?></td>
+                <td><?= htmlspecialchars((string) (($expense['expense_subtype'] ?? '') !== '' ? $expense['expense_subtype'] : $expense['expense_type'])) ?></td>
                 <td><?= htmlspecialchars((string) ($expense['km_current'] ?? '')) ?></td>
+                <td><?= htmlspecialchars((string) ($expense['next_oil_km'] ?? '')) ?></td>
+                <td><?= htmlspecialchars((string) ($expense['next_review_km'] ?? '')) ?></td>
+                <td><?= htmlspecialchars((string) ($expense['liters'] ?? '')) ?></td>
                 <td><?= htmlspecialchars((string) $expense['description']) ?></td>
                 <td><?= money((float) $expense['amount']) ?></td>
-                <td><button type="button" onclick='openVehicleExpenseEditModal(<?= json_encode($expense, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button></td>
+                <td>
+                    <button type="button" onclick='openVehicleExpenseEditModal(<?= json_encode($expense, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir lançamento de despesa?')">
+                        <input type="hidden" name="action" value="vehicle_expense_delete">
+                        <input type="hidden" name="id" value="<?= (int) $expense['id'] ?>">
+                        <button class="btn-danger">Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Análise dos veículos</h4>
+    <table>
+        <tr><th>Veículo</th><th>KM rodado base</th><th>Média KM/L</th><th>Custo por KM</th><th>Custo total</th></tr>
+        <?php foreach ($vehicleAnalysis as $analysis): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) ($analysis['name'] . ($analysis['plate'] !== '' ? ' (' . $analysis['plate'] . ')' : ''))) ?></td>
+                <td><?= number_format((float) $analysis['distance'], 1, ',', '.') ?></td>
+                <td><?= number_format((float) $analysis['avg_km_l'], 2, ',', '.') ?></td>
+                <td><?= money((float) $analysis['cost_per_km']) ?></td>
+                <td><?= money((float) $analysis['total_cost']) ?></td>
             </tr>
         <?php endforeach; ?>
     </table>
@@ -2996,6 +3062,9 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <option value="revisao">revisão</option>
             </select>
             <input type="number" step="0.1" min="0" name="km_current" placeholder="KM atual">
+            <input type="number" step="0.01" min="0" name="next_oil_km" placeholder="Próxima troca de óleo (KM)">
+            <input type="number" step="0.01" min="0" name="next_review_km" placeholder="Próxima revisão (KM)">
+            <input type="number" step="0.01" min="0" name="liters" placeholder="Litros (abastecimento)">
             <input name="description" placeholder="Descrição">
             <input type="number" step="0.01" min="0" name="amount" placeholder="Valor" required>
             <button>Salvar lançamento</button>
@@ -3020,6 +3089,9 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <option value="revisao">revisão</option>
             </select>
             <input type="number" step="0.1" min="0" name="km_current" id="vehicle_expense_edit_km" placeholder="KM atual">
+            <input type="number" step="0.01" min="0" name="next_oil_km" id="vehicle_expense_edit_next_oil" placeholder="Próxima troca de óleo (KM)">
+            <input type="number" step="0.01" min="0" name="next_review_km" id="vehicle_expense_edit_next_review" placeholder="Próxima revisão (KM)">
+            <input type="number" step="0.01" min="0" name="liters" id="vehicle_expense_edit_liters" placeholder="Litros (abastecimento)">
             <input name="description" id="vehicle_expense_edit_description" placeholder="Descrição">
             <input type="number" step="0.01" min="0" name="amount" id="vehicle_expense_edit_amount" required>
             <button>Salvar edição</button>
@@ -3042,8 +3114,11 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('vehicle_expense_edit_id').value = expense.id || '';
             document.getElementById('vehicle_expense_edit_vehicle_id').value = expense.vehicle_id || '';
             document.getElementById('vehicle_expense_edit_date').value = expense.expense_date || '';
-            document.getElementById('vehicle_expense_edit_type').value = expense.expense_type || 'despesa';
+            document.getElementById('vehicle_expense_edit_type').value = expense.expense_subtype || expense.expense_type || 'despesa';
             document.getElementById('vehicle_expense_edit_km').value = expense.km_current || '';
+            document.getElementById('vehicle_expense_edit_next_oil').value = expense.next_oil_km || '';
+            document.getElementById('vehicle_expense_edit_next_review').value = expense.next_review_km || '';
+            document.getElementById('vehicle_expense_edit_liters').value = expense.liters || '';
             document.getElementById('vehicle_expense_edit_description').value = expense.description || '';
             document.getElementById('vehicle_expense_edit_amount').value = expense.amount || 0;
             document.getElementById('vehicleExpenseEditModal').showModal();
