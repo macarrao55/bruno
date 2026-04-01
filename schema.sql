@@ -127,6 +127,9 @@ CREATE TABLE vehicles (
     plate TEXT,
     model TEXT,
     year TEXT,
+    vehicle_value REAL NOT NULL DEFAULT 0,
+    depreciation_percent REAL NOT NULL DEFAULT 0,
+    vehicle_notes TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -136,6 +139,7 @@ CREATE TABLE vehicle_expenses (
     expense_date TEXT NOT NULL,
     expense_type TEXT NOT NULL CHECK (expense_type IN ('despesa', 'manutencao', 'abastecimento')),
     description TEXT,
+    km_current REAL,
     amount REAL NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE

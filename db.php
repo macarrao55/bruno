@@ -473,9 +473,22 @@ function runMigrations(PDO $pdo): void
             plate TEXT,
             model TEXT,
             year TEXT,
+            vehicle_value REAL NOT NULL DEFAULT 0,
+            depreciation_percent REAL NOT NULL DEFAULT 0,
+            vehicle_notes TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )');
     }
+    $vehicleColumns = $pdo->query("PRAGMA table_info(vehicles)")->fetchAll();
+    $vehicleColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $vehicleColumns);
+    $addVehicleColumn = static function (PDO $conn, string $name, string $type) use ($vehicleColumnNames): void {
+        if (!in_array($name, $vehicleColumnNames, true)) {
+            $conn->exec("ALTER TABLE vehicles ADD COLUMN $name $type");
+        }
+    };
+    $addVehicleColumn($pdo, 'vehicle_value', 'REAL NOT NULL DEFAULT 0');
+    $addVehicleColumn($pdo, 'depreciation_percent', 'REAL NOT NULL DEFAULT 0');
+    $addVehicleColumn($pdo, 'vehicle_notes', 'TEXT');
 
     $vehicleExpensesTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicle_expenses'")->fetch();
     if (!$vehicleExpensesTable) {
@@ -485,10 +498,16 @@ function runMigrations(PDO $pdo): void
             expense_date TEXT NOT NULL,
             expense_type TEXT NOT NULL CHECK (expense_type IN (\'despesa\', \'manutencao\', \'abastecimento\')),
             description TEXT,
+            km_current REAL,
             amount REAL NOT NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
         )');
+    }
+    $vehicleExpenseColumns = $pdo->query("PRAGMA table_info(vehicle_expenses)")->fetchAll();
+    $vehicleExpenseColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $vehicleExpenseColumns);
+    if (!in_array('km_current', $vehicleExpenseColumnNames, true)) {
+        $pdo->exec('ALTER TABLE vehicle_expenses ADD COLUMN km_current REAL');
     }
 
 }

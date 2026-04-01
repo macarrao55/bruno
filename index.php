@@ -726,22 +726,61 @@ function handlePost(PDO $pdo, string $module): void
         case 'veiculos':
             $action = $_POST['action'] ?? '';
             if ($action === 'vehicle_add') {
-                $pdo->prepare('INSERT INTO vehicles (name, plate, model, year) VALUES (:name, :plate, :model, :year)')
+                $pdo->prepare('INSERT INTO vehicles (name, plate, model, year, vehicle_value, depreciation_percent, vehicle_notes) VALUES (:name, :plate, :model, :year, :vehicle_value, :depreciation_percent, :vehicle_notes)')
                     ->execute([
                         ':name' => trim((string) $_POST['name']),
                         ':plate' => trim((string) ($_POST['plate'] ?? '')),
                         ':model' => trim((string) ($_POST['model'] ?? '')),
                         ':year' => trim((string) ($_POST['year'] ?? '')),
+                        ':vehicle_value' => moneyInput($_POST['vehicle_value'] ?? 0),
+                        ':depreciation_percent' => (float) ($_POST['depreciation_percent'] ?? 0),
+                        ':vehicle_notes' => trim((string) ($_POST['vehicle_notes'] ?? '')),
+                    ]);
+            }
+            if ($action === 'vehicle_edit') {
+                $pdo->prepare('UPDATE vehicles SET name=:name, plate=:plate, model=:model, year=:year, vehicle_value=:vehicle_value, depreciation_percent=:depreciation_percent, vehicle_notes=:vehicle_notes WHERE id=:id')
+                    ->execute([
+                        ':id' => (int) ($_POST['id'] ?? 0),
+                        ':name' => trim((string) $_POST['name']),
+                        ':plate' => trim((string) ($_POST['plate'] ?? '')),
+                        ':model' => trim((string) ($_POST['model'] ?? '')),
+                        ':year' => trim((string) ($_POST['year'] ?? '')),
+                        ':vehicle_value' => moneyInput($_POST['vehicle_value'] ?? 0),
+                        ':depreciation_percent' => (float) ($_POST['depreciation_percent'] ?? 0),
+                        ':vehicle_notes' => trim((string) ($_POST['vehicle_notes'] ?? '')),
                     ]);
             }
             if ($action === 'vehicle_expense_add') {
-                $pdo->prepare('INSERT INTO vehicle_expenses (vehicle_id, expense_date, expense_type, description, amount)
-                    VALUES (:vehicle_id, :expense_date, :expense_type, :description, :amount)')
+                $expenseType = (string) ($_POST['expense_type'] ?? 'despesa');
+                if (in_array($expenseType, ['troca_oleo', 'revisao'], true)) {
+                    $expenseType = 'manutencao';
+                }
+                $pdo->prepare('INSERT INTO vehicle_expenses (vehicle_id, expense_date, expense_type, description, km_current, amount)
+                    VALUES (:vehicle_id, :expense_date, :expense_type, :description, :km_current, :amount)')
                     ->execute([
                         ':vehicle_id' => (int) $_POST['vehicle_id'],
                         ':expense_date' => $_POST['expense_date'],
-                        ':expense_type' => in_array((string) $_POST['expense_type'], ['despesa', 'manutencao', 'abastecimento'], true) ? $_POST['expense_type'] : 'despesa',
+                        ':expense_type' => in_array($expenseType, ['despesa', 'manutencao', 'abastecimento'], true) ? $expenseType : 'despesa',
                         ':description' => trim((string) ($_POST['description'] ?? '')),
+                        ':km_current' => (float) ($_POST['km_current'] ?? 0),
+                        ':amount' => moneyInput($_POST['amount'] ?? 0),
+                    ]);
+            }
+            if ($action === 'vehicle_expense_edit') {
+                $expenseType = (string) ($_POST['expense_type'] ?? 'despesa');
+                if (in_array($expenseType, ['troca_oleo', 'revisao'], true)) {
+                    $expenseType = 'manutencao';
+                }
+                $pdo->prepare('UPDATE vehicle_expenses
+                    SET vehicle_id=:vehicle_id, expense_date=:expense_date, expense_type=:expense_type, description=:description, km_current=:km_current, amount=:amount
+                    WHERE id=:id')
+                    ->execute([
+                        ':id' => (int) ($_POST['id'] ?? 0),
+                        ':vehicle_id' => (int) $_POST['vehicle_id'],
+                        ':expense_date' => $_POST['expense_date'],
+                        ':expense_type' => in_array($expenseType, ['despesa', 'manutencao', 'abastecimento'], true) ? $expenseType : 'despesa',
+                        ':description' => trim((string) ($_POST['description'] ?? '')),
+                        ':km_current' => (float) ($_POST['km_current'] ?? 0),
                         ':amount' => moneyInput($_POST['amount'] ?? 0),
                     ]);
             }
@@ -2875,27 +2914,33 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 
     <h4>Veículos cadastrados</h4>
     <table>
-        <tr><th>Nome</th><th>Placa</th><th>Modelo</th><th>Ano</th></tr>
+        <tr><th>Nome</th><th>Placa</th><th>Modelo</th><th>Ano</th><th>Valor</th><th>% Depreciação</th><th>Observação</th><th>Ação</th></tr>
         <?php foreach ($vehicles as $vehicle): ?>
             <tr>
                 <td><?= htmlspecialchars((string) $vehicle['name']) ?></td>
                 <td><?= htmlspecialchars((string) $vehicle['plate']) ?></td>
                 <td><?= htmlspecialchars((string) $vehicle['model']) ?></td>
                 <td><?= htmlspecialchars((string) $vehicle['year']) ?></td>
+                <td><?= money((float) ($vehicle['vehicle_value'] ?? 0)) ?></td>
+                <td><?= htmlspecialchars((string) ($vehicle['depreciation_percent'] ?? 0)) ?>%</td>
+                <td><?= htmlspecialchars((string) ($vehicle['vehicle_notes'] ?? '')) ?></td>
+                <td><button type="button" onclick='openVehicleEditModal(<?= json_encode($vehicle, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button></td>
             </tr>
         <?php endforeach; ?>
     </table>
 
     <h4>Lançamentos de despesas</h4>
     <table>
-        <tr><th>Data</th><th>Veículo</th><th>Tipo</th><th>Descrição</th><th>Valor</th></tr>
+        <tr><th>Data</th><th>Veículo</th><th>Tipo</th><th>KM atual</th><th>Descrição</th><th>Valor</th><th>Ação</th></tr>
         <?php foreach ($vehicleExpenses as $expense): ?>
             <tr>
                 <td><?= dateBr((string) $expense['expense_date']) ?></td>
                 <td><?= htmlspecialchars((string) ($expense['vehicle_name'] . ' ' . ($expense['vehicle_plate'] ? '(' . $expense['vehicle_plate'] . ')' : ''))) ?></td>
                 <td><?= htmlspecialchars((string) $expense['expense_type']) ?></td>
+                <td><?= htmlspecialchars((string) ($expense['km_current'] ?? '')) ?></td>
                 <td><?= htmlspecialchars((string) $expense['description']) ?></td>
                 <td><?= money((float) $expense['amount']) ?></td>
+                <td><button type="button" onclick='openVehicleExpenseEditModal(<?= json_encode($expense, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button></td>
             </tr>
         <?php endforeach; ?>
     </table>
@@ -2907,8 +2952,27 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <input name="plate" placeholder="Placa">
             <input name="model" placeholder="Modelo">
             <input name="year" placeholder="Ano">
+            <input name="vehicle_value" type="number" step="0.01" min="0" placeholder="Valor do veículo">
+            <input name="depreciation_percent" type="number" step="0.01" min="0" placeholder="% de depreciação">
+            <input name="vehicle_notes" placeholder="Observação do veículo">
             <button>Salvar veículo</button>
             <button type="button" onclick="document.getElementById('vehicleModal').close()">Fechar</button>
+        </form>
+    </dialog>
+
+    <dialog id="vehicleEditModal">
+        <form method="post">
+            <input type="hidden" name="action" value="vehicle_edit">
+            <input type="hidden" name="id" id="vehicle_edit_id">
+            <input name="name" id="vehicle_edit_name" required>
+            <input name="plate" id="vehicle_edit_plate">
+            <input name="model" id="vehicle_edit_model">
+            <input name="year" id="vehicle_edit_year">
+            <input name="vehicle_value" id="vehicle_edit_value" type="number" step="0.01" min="0" placeholder="Valor do veículo">
+            <input name="depreciation_percent" id="vehicle_edit_depreciation" type="number" step="0.01" min="0" placeholder="% de depreciação">
+            <input name="vehicle_notes" id="vehicle_edit_notes" placeholder="Observação do veículo">
+            <button>Salvar edição</button>
+            <button type="button" onclick="document.getElementById('vehicleEditModal').close()">Fechar</button>
         </form>
     </dialog>
 
@@ -2926,13 +2990,63 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <option value="despesa">despesa</option>
                 <option value="manutencao">manutenção</option>
                 <option value="abastecimento">abastecimento</option>
+                <option value="troca_oleo">troca de óleo</option>
+                <option value="revisao">revisão</option>
             </select>
+            <input type="number" step="0.1" min="0" name="km_current" placeholder="KM atual">
             <input name="description" placeholder="Descrição">
             <input type="number" step="0.01" min="0" name="amount" placeholder="Valor" required>
             <button>Salvar lançamento</button>
             <button type="button" onclick="document.getElementById('vehicleExpenseModal').close()">Fechar</button>
         </form>
     </dialog>
+    <dialog id="vehicleExpenseEditModal">
+        <form method="post">
+            <input type="hidden" name="action" value="vehicle_expense_edit">
+            <input type="hidden" name="id" id="vehicle_expense_edit_id">
+            <select name="vehicle_id" id="vehicle_expense_edit_vehicle_id" required>
+                <?php foreach ($vehicles as $vehicle): ?>
+                    <option value="<?= (int) $vehicle['id'] ?>"><?= htmlspecialchars((string) ($vehicle['name'] . ' ' . ($vehicle['plate'] ? '(' . $vehicle['plate'] . ')' : ''))) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <label>Data: <input type="date" name="expense_date" id="vehicle_expense_edit_date" required></label>
+            <select name="expense_type" id="vehicle_expense_edit_type" required>
+                <option value="despesa">despesa</option>
+                <option value="manutencao">manutenção</option>
+                <option value="abastecimento">abastecimento</option>
+                <option value="troca_oleo">troca de óleo</option>
+                <option value="revisao">revisão</option>
+            </select>
+            <input type="number" step="0.1" min="0" name="km_current" id="vehicle_expense_edit_km" placeholder="KM atual">
+            <input name="description" id="vehicle_expense_edit_description" placeholder="Descrição">
+            <input type="number" step="0.01" min="0" name="amount" id="vehicle_expense_edit_amount" required>
+            <button>Salvar edição</button>
+            <button type="button" onclick="document.getElementById('vehicleExpenseEditModal').close()">Fechar</button>
+        </form>
+    </dialog>
+    <script>
+        function openVehicleEditModal(vehicle) {
+            document.getElementById('vehicle_edit_id').value = vehicle.id || '';
+            document.getElementById('vehicle_edit_name').value = vehicle.name || '';
+            document.getElementById('vehicle_edit_plate').value = vehicle.plate || '';
+            document.getElementById('vehicle_edit_model').value = vehicle.model || '';
+            document.getElementById('vehicle_edit_year').value = vehicle.year || '';
+            document.getElementById('vehicle_edit_value').value = vehicle.vehicle_value || 0;
+            document.getElementById('vehicle_edit_depreciation').value = vehicle.depreciation_percent || 0;
+            document.getElementById('vehicle_edit_notes').value = vehicle.vehicle_notes || '';
+            document.getElementById('vehicleEditModal').showModal();
+        }
+        function openVehicleExpenseEditModal(expense) {
+            document.getElementById('vehicle_expense_edit_id').value = expense.id || '';
+            document.getElementById('vehicle_expense_edit_vehicle_id').value = expense.vehicle_id || '';
+            document.getElementById('vehicle_expense_edit_date').value = expense.expense_date || '';
+            document.getElementById('vehicle_expense_edit_type').value = expense.expense_type || 'despesa';
+            document.getElementById('vehicle_expense_edit_km').value = expense.km_current || '';
+            document.getElementById('vehicle_expense_edit_description').value = expense.description || '';
+            document.getElementById('vehicle_expense_edit_amount').value = expense.amount || 0;
+            document.getElementById('vehicleExpenseEditModal').showModal();
+        }
+    </script>
 <?php elseif ($module === 'recebimento_clientes'): ?>
     <h3>Recebimento de Clientes</h3>
     <form method="post" id="customerReceiptForm">
