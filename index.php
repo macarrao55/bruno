@@ -917,6 +917,28 @@ function handlePost(PDO $pdo, string $module): void
                     $pdo->prepare('UPDATE checks_control SET cleared=1, compensated=1, returned=0 WHERE id=:id')
                         ->execute([':id' => $id]);
 
+                    $cashflowDescription = 'Recebimento cheque #' . $id . ' - ' . (string) ($check['customer'] ?? '');
+                    $txExistsStmt = $pdo->prepare('SELECT id FROM transactions WHERE description=:description AND occurred_on=:occurred_on LIMIT 1');
+                    $txExistsStmt->execute([
+                        ':description' => $cashflowDescription,
+                        ':occurred_on' => $settleDate,
+                    ]);
+                    $txExistingId = (int) ($txExistsStmt->fetchColumn() ?: 0);
+                    if ($txExistingId === 0) {
+                        $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                            VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)')
+                            ->execute([
+                                ':movement_type' => 'entrada',
+                                ':amount' => (float) ($check['amount'] ?? 0),
+                                ':category' => 'Cheques',
+                                ':subcategory' => (string) ($check['check_type'] ?? 'Cheque'),
+                                ':origin_account' => $originAccount,
+                                ':destination_account' => $destinationAccount,
+                                ':description' => $cashflowDescription,
+                                ':occurred_on' => $settleDate,
+                            ]);
+                    }
+
                     $bankIdStmt = $pdo->prepare('SELECT id FROM bank_accounts WHERE name=:name LIMIT 1');
                     $bankIdStmt->execute([':name' => $destinationAccount]);
                     $bankAccountId = (int) ($bankIdStmt->fetchColumn() ?: 0);
