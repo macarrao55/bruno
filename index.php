@@ -905,13 +905,42 @@ function handlePost(PDO $pdo, string $module): void
                     ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
             }
             if ($action === 'settle') {
+                $id = (int) ($_POST['id'] ?? 0);
+                $bankAccountId = (int) ($_POST['bank_account_id'] ?? 0);
+                $settleDate = trim((string) ($_POST['settle_date'] ?? date('Y-m-d')));
                 $pdo->prepare('UPDATE checks_control SET cleared=:cleared, compensated=:compensated, returned=:returned WHERE id=:id')
                     ->execute([
-                        ':id' => (int) ($_POST['id'] ?? 0),
+                        ':id' => $id,
                         ':cleared' => isset($_POST['cleared']) ? 1 : 0,
                         ':compensated' => isset($_POST['compensated']) ? 1 : 0,
                         ':returned' => isset($_POST['returned']) ? 1 : 0,
                     ]);
+                if ($bankAccountId > 0 && isset($_POST['cleared']) && !isset($_POST['returned'])) {
+                    $checkStmt = $pdo->prepare('SELECT * FROM checks_control WHERE id=:id');
+                    $checkStmt->execute([':id' => $id]);
+                    $check = $checkStmt->fetch();
+                    if ($check) {
+                        $description = 'Baixa cheque #' . $id . ' - ' . (string) ($check['customer'] ?? '');
+                        $existsStmt = $pdo->prepare('SELECT id FROM bank_reconciliation WHERE bank_account_id=:bank_account_id AND movement_date=:movement_date AND description=:description LIMIT 1');
+                        $existsStmt->execute([
+                            ':bank_account_id' => $bankAccountId,
+                            ':movement_date' => $settleDate,
+                            ':description' => $description,
+                        ]);
+                        $existingId = (int) ($existsStmt->fetchColumn() ?: 0);
+                        if ($existingId === 0) {
+                            $pdo->prepare('INSERT INTO bank_reconciliation (bank_account_id, movement_date, description, system_amount, bank_amount, reconciled)
+                                VALUES (:bank_account_id, :movement_date, :description, :system_amount, :bank_amount, 1)')
+                                ->execute([
+                                    ':bank_account_id' => $bankAccountId,
+                                    ':movement_date' => $settleDate,
+                                    ':description' => $description,
+                                    ':system_amount' => (float) ($check['amount'] ?? 0),
+                                    ':bank_amount' => (float) ($check['amount'] ?? 0),
+                                ]);
+                        }
+                    }
+                }
             }
             break;
 
@@ -1649,8 +1678,8 @@ if ($checkFilters['due_date_to'] !== '') {
     $checksParams[':check_due_date_to'] = $checkFilters['due_date_to'];
 }
 if ($checkFilters['bank'] !== '') {
-    $checksWhere[] = 'bank = :check_bank';
-    $checksParams[':check_bank'] = $checkFilters['bank'];
+    $checksWhere[] = 'bank LIKE :check_bank';
+    $checksParams[':check_bank'] = '%' . $checkFilters['bank'] . '%';
 }
 if ($checkFilters['customer'] !== '') {
     $checksWhere[] = 'customer LIKE :check_customer';
@@ -3767,23 +3796,22 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 <?php elseif ($module === 'cheques'): ?>
     <h3>Cheques a Receber</h3>
     <button type="button" onclick="document.getElementById('checkFilterModal').showModal()">Filtrar</button>
-    <form method="post">
-        <input type="hidden" name="action" value="create">
-        <select name="check_type" required><option value="avista">À vista</option><option value="parcelado">Pré-datado</option></select>
-        <input name="customer" placeholder="Cliente" required>
-        <select name="bank" required>
-            <option value="">Banco</option>
-            <?php foreach ($banks as $bank): ?>
-                <option value="<?= htmlspecialchars((string) $bank['name']) ?>"><?= htmlspecialchars((string) $bank['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <input name="check_number" placeholder="Número do cheque" required>
-        <label>Data do cheque <input name="check_date" type="date" value="<?= $today ?>" required></label>
-        <label>Data para compensar <input name="due_date" type="date" required></label>
-        <input name="amount" type="number" step="0.01" placeholder="Valor" required>
-        <input name="notes" placeholder="Observação">
-        <button>Salvar</button>
-    </form>
+    <button type="button" onclick="document.getElementById('checkCreateModal').showModal()">Lançar cheque</button>
+    <dialog id="checkCreateModal">
+        <form method="post">
+            <input type="hidden" name="action" value="create">
+            <select name="check_type" required><option value="avista">À vista</option><option value="parcelado">Pré-datado</option></select>
+            <input name="customer" placeholder="Cliente" required>
+            <input name="bank" placeholder="Banco (digitado)" required>
+            <input name="check_number" placeholder="Número do cheque" required>
+            <label>Data do cheque <input name="check_date" type="date" value="<?= $today ?>" required></label>
+            <label>Data para compensar <input name="due_date" type="date" required></label>
+            <input name="amount" type="number" step="0.01" placeholder="Valor" required>
+            <input name="notes" placeholder="Observação">
+            <button>Salvar lançamento</button>
+            <button type="button" onclick="document.getElementById('checkCreateModal').close()">Fechar</button>
+        </form>
+    </dialog>
 
     <dialog id="checkFilterModal">
         <h4>Filtrar cheques</h4>
@@ -3793,14 +3821,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <label>Data do cheque (até) <input type="date" name="check_date_to" value="<?= htmlspecialchars($checkFilters['check_date_to']) ?>"></label>
             <label>Data de compensação (de) <input type="date" name="check_due_date_from" value="<?= htmlspecialchars($checkFilters['due_date_from']) ?>"></label>
             <label>Data de compensação (até) <input type="date" name="check_due_date_to" value="<?= htmlspecialchars($checkFilters['due_date_to']) ?>"></label>
-            <label>Banco
-                <select name="check_bank">
-                    <option value="">Todos</option>
-                    <?php foreach ($banks as $bank): ?>
-                        <option value="<?= htmlspecialchars((string) $bank['name']) ?>" <?= $checkFilters['bank'] === (string) $bank['name'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $bank['name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
+            <input name="check_bank" value="<?= htmlspecialchars($checkFilters['bank']) ?>" placeholder="Banco">
             <input name="check_customer" value="<?= htmlspecialchars($checkFilters['customer']) ?>" placeholder="Cliente">
             <label>Situação
                 <select name="check_status">
@@ -3849,9 +3870,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <input type="hidden" name="id" id="check_edit_id">
             <select name="check_type" id="check_edit_type" required><option value="avista">À vista</option><option value="parcelado">Pré-datado</option></select>
             <input name="customer" id="check_edit_customer" required>
-            <select name="bank" id="check_edit_bank" required>
-                <?php foreach ($banks as $bank): ?><option value="<?= htmlspecialchars((string) $bank['name']) ?>"><?= htmlspecialchars((string) $bank['name']) ?></option><?php endforeach; ?>
-            </select>
+            <input name="bank" id="check_edit_bank" required>
             <input name="check_number" id="check_edit_number" required>
             <input name="check_date" id="check_edit_date" type="date" required>
             <input name="due_date" id="check_edit_due_date" type="date" required>
@@ -3865,6 +3884,15 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <form method="post">
             <input type="hidden" name="action" value="settle">
             <input type="hidden" name="id" id="check_settle_id">
+            <label>Data da baixa: <input name="settle_date" type="date" value="<?= $today ?>" required></label>
+            <label>Conta para conciliação:
+                <select name="bank_account_id">
+                    <option value="0">Selecionar conta</option>
+                    <?php foreach ($banks as $bank): ?>
+                        <option value="<?= (int) $bank['id'] ?>"><?= htmlspecialchars((string) $bank['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
             <label><input type="checkbox" name="cleared" id="check_settle_cleared"> Baixa</label>
             <label><input type="checkbox" name="compensated" id="check_settle_compensated"> Compensado</label>
             <label><input type="checkbox" name="returned" id="check_settle_returned"> Devolvido</label>
