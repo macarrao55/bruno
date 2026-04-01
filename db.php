@@ -511,6 +511,23 @@ function runMigrations(PDO $pdo): void
         )');
     }
 
+    $employeeMonthlyCostsTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='employee_monthly_costs'")->fetch();
+    if (!$employeeMonthlyCostsTable) {
+        $pdo->exec('CREATE TABLE employee_monthly_costs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            reference_month TEXT NOT NULL,
+            base_salary REAL NOT NULL,
+            inss_patronal REAL NOT NULL,
+            fgts REAL NOT NULL,
+            thirteenth_provision REAL NOT NULL,
+            vacation_provision REAL NOT NULL,
+            total_monthly_cost REAL NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+        )');
+    }
+
     $vehiclesTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicles'")->fetch();
     if (!$vehiclesTable) {
         $pdo->exec('CREATE TABLE vehicles (

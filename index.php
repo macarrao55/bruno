@@ -774,6 +774,33 @@ function handlePost(PDO $pdo, string $module): void
             }
             break;
 
+        case 'custo_funcionario_clt':
+            $action = (string) ($_POST['action'] ?? '');
+            if ($action === 'employee_cost_add') {
+                $baseSalary = moneyInput($_POST['base_salary'] ?? 0);
+                $inssRate = (float) ($_POST['inss_rate'] ?? 20);
+                $fgtsRate = (float) ($_POST['fgts_rate'] ?? 8);
+                $vacationRate = (float) ($_POST['vacation_rate'] ?? 11.11);
+                $inssPatronal = $baseSalary * ($inssRate / 100);
+                $fgts = $baseSalary * ($fgtsRate / 100);
+                $thirteenthProvision = $baseSalary / 12;
+                $vacationProvision = $baseSalary * ($vacationRate / 100);
+                $totalMonthlyCost = $baseSalary + $inssPatronal + $fgts + $thirteenthProvision + $vacationProvision;
+                $pdo->prepare('INSERT INTO employee_monthly_costs (employee_id, reference_month, base_salary, inss_patronal, fgts, thirteenth_provision, vacation_provision, total_monthly_cost)
+                    VALUES (:employee_id, :reference_month, :base_salary, :inss_patronal, :fgts, :thirteenth_provision, :vacation_provision, :total_monthly_cost)')
+                    ->execute([
+                        ':employee_id' => (int) ($_POST['employee_id'] ?? 0),
+                        ':reference_month' => (string) ($_POST['reference_month'] ?? date('Y-m')),
+                        ':base_salary' => $baseSalary,
+                        ':inss_patronal' => $inssPatronal,
+                        ':fgts' => $fgts,
+                        ':thirteenth_provision' => $thirteenthProvision,
+                        ':vacation_provision' => $vacationProvision,
+                        ':total_monthly_cost' => $totalMonthlyCost,
+                    ]);
+            }
+            break;
+
         case 'veiculos':
             $action = $_POST['action'] ?? '';
             if ($action === 'vehicle_add') {
@@ -1697,6 +1724,7 @@ $employeeDebts = fetchAll($pdo, 'SELECT d.*, e.name AS employee_name, e.role AS 
 $employeeAttendanceLogs = fetchAll($pdo, 'SELECT a.*, e.name AS employee_name, e.role AS employee_role FROM employee_attendance_logs a JOIN employees e ON e.id=a.employee_id ORDER BY a.work_date DESC, a.id DESC');
 $employeePerformanceReviews = fetchAll($pdo, 'SELECT r.*, e.name AS employee_name, e.role AS employee_role FROM employee_performance_reviews r JOIN employees e ON e.id=r.employee_id ORDER BY r.review_date DESC, r.id DESC');
 $employeeOccurrences = fetchAll($pdo, 'SELECT o.*, e.name AS employee_name, e.role AS employee_role FROM employee_occurrences o JOIN employees e ON e.id=o.employee_id ORDER BY o.occurrence_date DESC, o.id DESC');
+$employeeMonthlyCosts = fetchAll($pdo, 'SELECT c.*, e.name AS employee_name, e.role AS employee_role FROM employee_monthly_costs c JOIN employees e ON e.id=c.employee_id ORDER BY c.reference_month DESC, c.id DESC');
 $vehicles = fetchAll($pdo, 'SELECT * FROM vehicles ORDER BY name');
 $vehicleFilterId = (int) ($_GET['vehicle_filter_id'] ?? 0);
 $vehicleFilterType = trim((string) ($_GET['vehicle_filter_type'] ?? ''));
@@ -2012,6 +2040,11 @@ $dreCardFees = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value - net_value + ant
 $dreReturns = sumValue($pdo, 'SELECT COALESCE(SUM(return_on_credit + return_exchange_credit),0) FROM credit_sales_totals WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
 $dreDiscounts = sumValue($pdo, 'SELECT COALESCE(SUM(discount),0) FROM customer_receipts WHERE receipt_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
 $dreVehicleDepreciation = sumValue($pdo, 'SELECT COALESCE(SUM((COALESCE(vehicle_value,0) * COALESCE(depreciation_percent,0) / 100.0) / 12.0),0) FROM vehicles');
+$drePayrollSalaries = sumValue($pdo, 'SELECT COALESCE(SUM(base_salary),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $dreMonth]);
+$drePayrollInss = sumValue($pdo, 'SELECT COALESCE(SUM(inss_patronal),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $dreMonth]);
+$drePayrollFgts = sumValue($pdo, 'SELECT COALESCE(SUM(fgts),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $dreMonth]);
+$drePayrollThirteenth = sumValue($pdo, 'SELECT COALESCE(SUM(thirteenth_provision),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $dreMonth]);
+$drePayrollVacation = sumValue($pdo, 'SELECT COALESCE(SUM(vacation_provision),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $dreMonth]);
 
 $dre = [];
 $dre['vendas_vista'] = $dreSalesCash;
@@ -2032,7 +2065,13 @@ $dre['lucro_bruto'] = $dre['receita_liquida'] - $dre['cmv'];
 
 $dre['despesas_variaveis'] = $dreConfig['sales_commission'] + $dreConfig['extra_card_fees'] + $dreConfig['delivery_freight'] + $dreConfig['packaging'];
 $dre['depreciacao_veiculos'] = $dreVehicleDepreciation;
-$dre['despesas_fixas'] = $dreConfig['payroll'] + $dreConfig['rent'] + $dreConfig['electricity'] + $dreConfig['water_internet'] + $dreConfig['software'] + $dreConfig['accounting'] + $dre['depreciacao_veiculos'];
+$dre['despesas_pessoal_salarios'] = $drePayrollSalaries;
+$dre['despesas_pessoal_inss_patronal'] = $drePayrollInss;
+$dre['despesas_pessoal_fgts'] = $drePayrollFgts;
+$dre['despesas_pessoal_provisao_13'] = $drePayrollThirteenth;
+$dre['despesas_pessoal_provisao_ferias'] = $drePayrollVacation;
+$dre['despesas_com_pessoal'] = $dre['despesas_pessoal_salarios'] + $dre['despesas_pessoal_inss_patronal'] + $dre['despesas_pessoal_fgts'] + $dre['despesas_pessoal_provisao_13'] + $dre['despesas_pessoal_provisao_ferias'];
+$dre['despesas_fixas'] = $dreConfig['payroll'] + $dreConfig['rent'] + $dreConfig['electricity'] + $dreConfig['water_internet'] + $dreConfig['software'] + $dreConfig['accounting'] + $dre['depreciacao_veiculos'] + $dre['despesas_com_pessoal'];
 $dre['resultado_operacional'] = $dre['lucro_bruto'] - $dre['despesas_variaveis'] - $dre['despesas_fixas'];
 
 $dre['despesas_financeiras'] = $dreConfig['loan_interest'] + $dreConfig['late_interest'] + $dreConfig['card_anticipation'];
@@ -2088,6 +2127,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <a href="?module=rh">Menu RH</a>
                 <a href="?module=funcionarios">Funcionário</a>
                 <a href="?module=desempenho_funcionarios">Desempenho de Funcionários</a>
+                <a href="?module=custo_funcionario_clt">Cálculo custo mensal CLT</a>
             </div>
         </div>
         <a href="?module=conciliacao">Conciliação Bancária</a>
@@ -2843,6 +2883,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <p>
         <a href="?module=funcionarios"><button type="button">Módulo Funcionário</button></a>
         <a href="?module=desempenho_funcionarios"><button type="button">Módulo Desempenho de Funcionários</button></a>
+        <a href="?module=custo_funcionario_clt"><button type="button">Cálculo custo mensal CLT</button></a>
     </p>
     <p>
         <button type="button" onclick="window.location.href='?module=funcionarios#cadastro-funcionario'">Cadastro de funcionário</button>
@@ -3186,6 +3227,41 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" onclick="document.getElementById('occurrenceModal').close()">Fechar</button>
         </form>
     </dialog>
+<?php elseif ($module === 'custo_funcionario_clt'): ?>
+    <h3>Cálculo de custo mensal de funcionário (CLT)</h3>
+    <p>Este módulo calcula o custo mensal real do funcionário incluindo salário, encargos e provisões.</p>
+    <form method="post">
+        <input type="hidden" name="action" value="employee_cost_add">
+        <select name="employee_id" required>
+            <option value="">Funcionário</option>
+            <?php foreach ($employees as $employee): ?>
+                <option value="<?= (int) $employee['id'] ?>"><?= htmlspecialchars((string) ($employee['name'] . ' - ' . $employee['role'])) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <label>Mês referência: <input type="month" name="reference_month" value="<?= date('Y-m') ?>" required></label>
+        <input type="number" step="0.01" min="0" name="base_salary" placeholder="Salário base" required>
+        <input type="number" step="0.01" min="0" name="inss_rate" value="20" placeholder="% INSS Patronal">
+        <input type="number" step="0.01" min="0" name="fgts_rate" value="8" placeholder="% FGTS">
+        <input type="number" step="0.01" min="0" name="vacation_rate" value="11.11" placeholder="% Provisão Férias">
+        <button>Calcular e salvar</button>
+    </form>
+
+    <h4>Lançamentos salvos</h4>
+    <table>
+        <tr><th>Mês</th><th>Funcionário</th><th>Salários</th><th>INSS Patronal</th><th>FGTS</th><th>Provisão 13º</th><th>Provisão Férias</th><th>Total mensal</th></tr>
+        <?php foreach ($employeeMonthlyCosts as $cost): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $cost['reference_month']) ?></td>
+                <td><?= htmlspecialchars((string) $cost['employee_name']) ?></td>
+                <td><?= money((float) $cost['base_salary']) ?></td>
+                <td><?= money((float) $cost['inss_patronal']) ?></td>
+                <td><?= money((float) $cost['fgts']) ?></td>
+                <td><?= money((float) $cost['thirteenth_provision']) ?></td>
+                <td><?= money((float) $cost['vacation_provision']) ?></td>
+                <td><strong><?= money((float) $cost['total_monthly_cost']) ?></strong></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
 <?php elseif ($module === 'veiculos'): ?>
     <h3>Controle de Veículos</h3>
     <button type="button" onclick="document.getElementById('vehicleModal').showModal()">Cadastrar veículo</button>
@@ -4618,6 +4694,13 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 
         <tr><td><strong>4. Despesas Operacionais</strong></td><td></td></tr>
         <tr><td>Despesas Variáveis</td><td><?= money($dre['despesas_variaveis']) ?></td></tr>
+        <tr><td><strong>DESPESAS_COM_PESSOAL</strong></td><td></td></tr>
+        <tr><td>&nbsp;&nbsp;Salários</td><td><?= money($dre['despesas_pessoal_salarios']) ?></td></tr>
+        <tr><td>&nbsp;&nbsp;INSS Patronal</td><td><?= money($dre['despesas_pessoal_inss_patronal']) ?></td></tr>
+        <tr><td>&nbsp;&nbsp;FGTS</td><td><?= money($dre['despesas_pessoal_fgts']) ?></td></tr>
+        <tr><td>&nbsp;&nbsp;Provisão 13º</td><td><?= money($dre['despesas_pessoal_provisao_13']) ?></td></tr>
+        <tr><td>&nbsp;&nbsp;Provisão Férias</td><td><?= money($dre['despesas_pessoal_provisao_ferias']) ?></td></tr>
+        <tr><td><strong>Total Despesas com Pessoal</strong></td><td><strong><?= money($dre['despesas_com_pessoal']) ?></strong></td></tr>
         <tr><td>Depreciação de veículos (automática)</td><td><?= money($dre['depreciacao_veiculos']) ?></td></tr>
         <tr><td>Despesas Fixas</td><td><?= money($dre['despesas_fixas']) ?></td></tr>
         <tr><td><strong>Resultado Operacional</strong></td><td><strong><?= money($dre['resultado_operacional']) ?></strong></td></tr>
