@@ -730,30 +730,6 @@ function handlePost(PDO $pdo, string $module): void
             }
             break;
 
-        case 'funcionarios_lancamentos':
-            $action = (string) ($_POST['action'] ?? '');
-            if ($action === 'debt_add') {
-                $debtType = (string) ($_POST['debt_type'] ?? 'outras_despesas');
-                if (!in_array($debtType, ['vale', 'debito', 'compra_loja', 'emprestimo', 'outras_despesas'], true)) {
-                    $debtType = 'outras_despesas';
-                }
-                $pdo->prepare('INSERT INTO employee_debts (employee_id, debt_date, debt_type, description, amount, status)
-                    VALUES (:employee_id, :debt_date, :debt_type, :description, :amount, :status)')
-                    ->execute([
-                        ':employee_id' => (int) ($_POST['employee_id'] ?? 0),
-                        ':debt_date' => (string) ($_POST['debt_date'] ?? date('Y-m-d')),
-                        ':debt_type' => $debtType,
-                        ':description' => trim((string) ($_POST['description'] ?? '')),
-                        ':amount' => moneyInput($_POST['amount'] ?? 0),
-                        ':status' => in_array((string) ($_POST['status'] ?? ''), ['aberto', 'quitado'], true) ? $_POST['status'] : 'aberto',
-                    ]);
-            }
-            if ($action === 'debt_delete') {
-                $pdo->prepare('DELETE FROM employee_debts WHERE id=:id')
-                    ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
-            }
-            break;
-
         case 'desempenho_funcionarios':
             $action = $_POST['action'] ?? '';
             if ($action === 'attendance_add') {
@@ -2208,7 +2184,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <a href="?module=saida_financeiro">Saída</a>
                 <a href="?module=vendas_prazo">Vendas a Prazo</a>
                 <a href="?module=clientes_atraso">Clientes em Atraso</a>
-                <a href="?module=funcionarios_lancamentos">Funcionários Lançamento</a>
             </div>
         </div>
         <div class="menu-group">
@@ -3454,58 +3429,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('employeeCostEditModal').showModal();
         }
     </script>
-<?php elseif ($module === 'funcionarios_lancamentos'): ?>
-    <h3>Módulo Funcionários Lançamento</h3>
-    <button type="button" onclick="document.getElementById('employeeLaunchModal').showModal()">Lançar movimentação</button>
-    <table>
-        <tr><th>Data</th><th>Funcionário</th><th>Cargo</th><th>Tipo</th><th>Descrição</th><th>Valor</th><th>Situação</th><th>Ações</th></tr>
-        <?php foreach ($employeeDebts as $debt): ?>
-            <tr>
-                <td><?= dateBr((string) $debt['debt_date']) ?></td>
-                <td><?= htmlspecialchars((string) $debt['employee_name']) ?></td>
-                <td><?= htmlspecialchars((string) $debt['employee_role']) ?></td>
-                <td><?= htmlspecialchars((string) ($debt['debt_type'] ?? 'outras_despesas')) ?></td>
-                <td><?= htmlspecialchars((string) $debt['description']) ?></td>
-                <td><?= money((float) $debt['amount']) ?></td>
-                <td><?= htmlspecialchars((string) $debt['status']) ?></td>
-                <td>
-                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir lançamento?')">
-                        <input type="hidden" name="action" value="debt_delete">
-                        <input type="hidden" name="id" value="<?= (int) $debt['id'] ?>">
-                        <button class="btn-danger">Excluir</button>
-                    </form>
-                </td>
-            </tr>
-        <?php endforeach; ?>
-    </table>
-
-    <dialog id="employeeLaunchModal">
-        <form method="post">
-            <input type="hidden" name="action" value="debt_add">
-            <select name="employee_id" required>
-                <option value="">Funcionário</option>
-                <?php foreach ($employees as $employee): ?>
-                    <option value="<?= (int) $employee['id'] ?>"><?= htmlspecialchars((string) ($employee['name'] . ' - ' . $employee['role'])) ?></option>
-                <?php endforeach; ?>
-            </select>
-            <label>Data: <input type="date" name="debt_date" value="<?= $today ?>" required></label>
-            <select name="debt_type" required>
-                <option value="vale">Vale</option>
-                <option value="debito">Débitos dos funcionários</option>
-                <option value="compra_loja">Compras na loja</option>
-                <option value="emprestimo">Empréstimo</option>
-                <option value="outras_despesas">Outras despesas</option>
-            </select>
-            <input name="description" placeholder="Descrição">
-            <input type="number" step="0.01" min="0" name="amount" placeholder="Valor" required>
-            <select name="status">
-                <option value="aberto">Aberto</option>
-                <option value="quitado">Quitado</option>
-            </select>
-            <button>Salvar lançamento</button>
-            <button type="button" onclick="document.getElementById('employeeLaunchModal').close()">Fechar</button>
-        </form>
-    </dialog>
 <?php elseif ($module === 'veiculos'): ?>
     <h3>Controle de Veículos</h3>
     <button type="button" onclick="document.getElementById('vehicleModal').showModal()">Cadastrar veículo</button>
