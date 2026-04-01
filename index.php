@@ -20,13 +20,14 @@ function handlePost(PDO $pdo, string $module): void
             $action = (string) ($_POST['action'] ?? 'create');
             if ($action === 'create') {
                 $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
+                $subcategory = trim((string) ($_POST['subcategory'] ?? ''));
                 $stmt = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
                     VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)');
                 $stmt->execute([
                     ':movement_type' => $_POST['movement_type'],
                     ':amount' => (float) $_POST['amount'],
                     ':category' => trim($_POST['category']),
-                    ':subcategory' => $paymentMethod !== '' ? $paymentMethod : trim($_POST['subcategory']),
+                    ':subcategory' => $subcategory !== '' ? $subcategory : $paymentMethod,
                     ':origin_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
                     ':destination_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
                     ':description' => trim($_POST['description']),
@@ -35,6 +36,7 @@ function handlePost(PDO $pdo, string $module): void
             }
             if ($action === 'edit') {
                 $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
+                $subcategory = trim((string) ($_POST['subcategory'] ?? ''));
                 $pdo->prepare('UPDATE transactions
                     SET movement_type=:movement_type, amount=:amount, category=:category, subcategory=:subcategory, origin_account=:origin_account, destination_account=:destination_account, description=:description, occurred_on=:occurred_on
                     WHERE id=:id')
@@ -43,7 +45,7 @@ function handlePost(PDO $pdo, string $module): void
                         ':movement_type' => $_POST['movement_type'],
                         ':amount' => (float) $_POST['amount'],
                         ':category' => trim($_POST['category']),
-                        ':subcategory' => $paymentMethod !== '' ? $paymentMethod : trim($_POST['subcategory']),
+                        ':subcategory' => $subcategory !== '' ? $subcategory : $paymentMethod,
                         ':origin_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
                         ':destination_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
                         ':description' => trim($_POST['description']),
@@ -2171,6 +2173,12 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <option value="<?= htmlspecialchars((string) $method['name']) ?>"><?= htmlspecialchars((string) $method['name']) ?></option>
             <?php endforeach; ?>
         </select>
+        <select name="subcategory" id="fluxo_subcategory">
+            <option value="">Subcategoria</option>
+            <?php foreach ($subcategories as $subcategory): ?>
+                <option value="<?= htmlspecialchars((string) $subcategory['name']) ?>"><?= htmlspecialchars((string) ($subcategory['parent_name'] . ' > ' . $subcategory['name'])) ?></option>
+            <?php endforeach; ?>
+        </select>
         <select name="bank_account" id="fluxo_bank_account">
             <option value="caixa">Caixa</option>
             <?php foreach ($banksForLaunch as $bank): ?>
@@ -2386,7 +2394,8 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('fluxo_movement_type').value = item.movement_type || 'entrada';
             document.getElementById('fluxo_amount').value = item.amount || '';
             document.getElementById('fluxo_category').value = item.category || '';
-            document.getElementById('fluxo_payment_method').value = item.subcategory || '';
+            document.getElementById('fluxo_subcategory').value = item.subcategory || '';
+            document.getElementById('fluxo_payment_method').value = '';
             document.getElementById('fluxo_bank_account').value = item.origin_account || 'caixa';
             document.getElementById('fluxo_description').value = item.description || '';
             document.getElementById('fluxo_occurred_on').value = item.occurred_on || '';
