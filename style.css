@@ -27,7 +27,7 @@ th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; font-siz
 .atrasado { background: #ffd6d6; }
 .parcial { background: #d6e6ff; }
 .card-overdue td { background: #ffd6d6; }
-.card-today td { background: #fff5d6; }
+.card-today td { background: #d6e6ff; }
 .card-paid td { background: #d6ffe1; }
 canvas { background: #fff; padding: 8px; border-radius: 10px; }
 .small { color: #666; font-size: 13px; }

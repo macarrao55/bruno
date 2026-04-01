@@ -1504,7 +1504,63 @@ if ($overdueConditions !== []) {
 }
 $overdueSql .= $overdueSort === 'amount_desc' ? ' ORDER BY amount DESC, collection_entry_date DESC' : ' ORDER BY collection_entry_date DESC, id DESC';
 $overdueCustomers = fetchAll($pdo, $overdueSql, $overdueParams);
-$cards = fetchAll($pdo, 'SELECT * FROM card_receivables ORDER BY sale_date DESC');
+$cardFilters = [
+    'date_from' => trim((string) ($_GET['card_date_from'] ?? '')),
+    'date_to' => trim((string) ($_GET['card_date_to'] ?? '')),
+    'bank' => trim((string) ($_GET['card_bank'] ?? '')),
+    'machine' => trim((string) ($_GET['card_machine'] ?? '')),
+    'brand' => trim((string) ($_GET['card_brand'] ?? '')),
+    'card_type' => trim((string) ($_GET['card_type'] ?? '')),
+    'sale_location' => trim((string) ($_GET['card_sale_location'] ?? '')),
+    'status' => trim((string) ($_GET['card_status'] ?? '')),
+];
+$cardsSql = 'SELECT c.* FROM card_receivables c';
+$cardsWhere = [];
+$cardsParams = [];
+if ($cardFilters['date_from'] !== '') {
+    $cardsWhere[] = 'c.expected_release_date >= :card_date_from';
+    $cardsParams[':card_date_from'] = $cardFilters['date_from'];
+}
+if ($cardFilters['date_to'] !== '') {
+    $cardsWhere[] = 'c.expected_release_date <= :card_date_to';
+    $cardsParams[':card_date_to'] = $cardFilters['date_to'];
+}
+if ($cardFilters['machine'] !== '') {
+    $cardsWhere[] = 'c.machine = :card_machine';
+    $cardsParams[':card_machine'] = $cardFilters['machine'];
+}
+if ($cardFilters['brand'] !== '') {
+    $cardsWhere[] = 'c.brand = :card_brand';
+    $cardsParams[':card_brand'] = $cardFilters['brand'];
+}
+if ($cardFilters['card_type'] !== '') {
+    $cardsWhere[] = 'c.card_type = :card_type';
+    $cardsParams[':card_type'] = normalizeCardType($cardFilters['card_type']);
+}
+if ($cardFilters['sale_location'] !== '') {
+    $cardsWhere[] = 'c.sale_location = :card_sale_location';
+    $cardsParams[':card_sale_location'] = $cardFilters['sale_location'];
+}
+if ($cardFilters['status'] === 'paid') {
+    $cardsWhere[] = 'c.received = 1';
+}
+if ($cardFilters['status'] === 'overdue') {
+    $cardsWhere[] = 'c.received = 0 AND c.canceled = 0 AND c.expected_release_date < :today';
+    $cardsParams[':today'] = $today;
+}
+if ($cardFilters['status'] === 'today') {
+    $cardsWhere[] = 'c.received = 0 AND c.canceled = 0 AND c.expected_release_date = :today';
+    $cardsParams[':today'] = $today;
+}
+if ($cardFilters['bank'] !== '') {
+    $cardsWhere[] = "EXISTS (SELECT 1 FROM transactions t WHERE t.description LIKE ('Recebimento cartão #' || c.id || ' -%') AND (t.origin_account = :card_bank OR t.destination_account = :card_bank))";
+    $cardsParams[':card_bank'] = $cardFilters['bank'];
+}
+if ($cardsWhere !== []) {
+    $cardsSql .= ' WHERE ' . implode(' AND ', $cardsWhere);
+}
+$cardsSql .= ' ORDER BY c.expected_release_date DESC, c.id DESC';
+$cards = fetchAll($pdo, $cardsSql, $cardsParams);
 $weekStart = date('Y-m-d', strtotime('monday this week'));
 $monthStart = date('Y-m-01');
 $salesToday = fetchAll($pdo, 'SELECT * FROM card_receivables WHERE sale_date=:today ORDER BY id DESC', [':today' => $today]);
@@ -3276,6 +3332,66 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </table>
 <?php elseif ($module === 'cartoes'): ?>
     <h3>Controle de Cartões</h3>
+    <button type="button" onclick="document.getElementById('cardFilterModal').showModal()">Filtrar</button>
+    <dialog id="cardFilterModal">
+        <h4>Filtros de cartões</h4>
+        <form method="get">
+            <input type="hidden" name="module" value="cartoes">
+            <label>Data inicial <input type="date" name="card_date_from" value="<?= htmlspecialchars($cardFilters['date_from']) ?>"></label>
+            <label>Data final <input type="date" name="card_date_to" value="<?= htmlspecialchars($cardFilters['date_to']) ?>"></label>
+            <label>Banco
+                <select name="card_bank">
+                    <option value="">Todos</option>
+                    <?php foreach ($banks as $bank): ?>
+                        <option value="<?= htmlspecialchars((string) $bank['name']) ?>" <?= $cardFilters['bank'] === (string) $bank['name'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $bank['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Máquina
+                <select name="card_machine">
+                    <option value="">Todas</option>
+                    <?php foreach ($cardMachines as $machine): ?>
+                        <option value="<?= htmlspecialchars((string) $machine['name']) ?>" <?= $cardFilters['machine'] === (string) $machine['name'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $machine['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Bandeira
+                <select name="card_brand">
+                    <option value="">Todas</option>
+                    <?php foreach ($cardBrands as $brand): ?>
+                        <option value="<?= htmlspecialchars((string) $brand['name']) ?>" <?= $cardFilters['brand'] === (string) $brand['name'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $brand['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Forma de pagamento
+                <select name="card_type">
+                    <option value="">Todas</option>
+                    <option value="debito" <?= $cardFilters['card_type'] === 'debito' ? 'selected' : '' ?>>Débito</option>
+                    <option value="credito_avista" <?= $cardFilters['card_type'] === 'credito_avista' ? 'selected' : '' ?>>Crédito à vista</option>
+                    <option value="credito_parcelado" <?= $cardFilters['card_type'] === 'credito_parcelado' ? 'selected' : '' ?>>Crédito parcelado</option>
+                </select>
+            </label>
+            <label>Local de venda
+                <select name="card_sale_location">
+                    <option value="">Todos</option>
+                    <?php foreach ($saleLocations as $location): ?>
+                        <option value="<?= htmlspecialchars((string) $location['name']) ?>" <?= $cardFilters['sale_location'] === (string) $location['name'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $location['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Status
+                <select name="card_status">
+                    <option value="">Todos</option>
+                    <option value="paid" <?= $cardFilters['status'] === 'paid' ? 'selected' : '' ?>>Pagos</option>
+                    <option value="overdue" <?= $cardFilters['status'] === 'overdue' ? 'selected' : '' ?>>Atrasados/Vencidos</option>
+                    <option value="today" <?= $cardFilters['status'] === 'today' ? 'selected' : '' ?>>Do dia a receber</option>
+                </select>
+            </label>
+            <button type="submit">Aplicar filtro</button>
+            <a href="?module=cartoes">Limpar</a>
+            <button type="button" onclick="document.getElementById('cardFilterModal').close()">Fechar</button>
+        </form>
+    </dialog>
     <form method="post" id="cardForm">
         <input type="hidden" name="action" value="create">
         <select name="machine" id="card_machine_select" required>
