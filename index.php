@@ -807,6 +807,43 @@ function handlePost(PDO $pdo, string $module): void
                         ':total_monthly_cost' => $totalMonthlyCost,
                     ]);
             }
+            if ($action === 'employee_cost_edit') {
+                $baseSalary = moneyInput($_POST['base_salary'] ?? 0);
+                $inssRate = (float) ($_POST['inss_rate'] ?? 11);
+                $fgtsRate = (float) ($_POST['fgts_rate'] ?? 8);
+                $vacationRate = (float) ($_POST['vacation_rate'] ?? 11.11);
+                $inssCommon = $baseSalary * ($inssRate / 100);
+                $fgts = $baseSalary * ($fgtsRate / 100);
+                $thirteenthProvision = $baseSalary / 12;
+                $vacationProvision = $baseSalary * ($vacationRate / 100);
+                $extraExpense1 = moneyInput($_POST['extra_expense_1'] ?? 0);
+                $extraExpense2 = moneyInput($_POST['extra_expense_2'] ?? 0);
+                $salesCommission = moneyInput($_POST['sales_commission'] ?? 0);
+                $gasCommission = moneyInput($_POST['gas_commission'] ?? 0);
+                $totalMonthlyCost = $baseSalary + $inssCommon + $fgts + $thirteenthProvision + $vacationProvision + $extraExpense1 + $extraExpense2 + $salesCommission + $gasCommission;
+                $pdo->prepare('UPDATE employee_monthly_costs
+                    SET employee_id=:employee_id, reference_month=:reference_month, base_salary=:base_salary, inss_common=:inss_common, fgts=:fgts, thirteenth_provision=:thirteenth_provision, vacation_provision=:vacation_provision, extra_expense_1=:extra_expense_1, extra_expense_2=:extra_expense_2, sales_commission=:sales_commission, gas_commission=:gas_commission, total_monthly_cost=:total_monthly_cost
+                    WHERE id=:id')
+                    ->execute([
+                        ':id' => (int) ($_POST['id'] ?? 0),
+                        ':employee_id' => (int) ($_POST['employee_id'] ?? 0),
+                        ':reference_month' => (string) ($_POST['reference_month'] ?? date('Y-m')),
+                        ':base_salary' => $baseSalary,
+                        ':inss_common' => $inssCommon,
+                        ':fgts' => $fgts,
+                        ':thirteenth_provision' => $thirteenthProvision,
+                        ':vacation_provision' => $vacationProvision,
+                        ':extra_expense_1' => $extraExpense1,
+                        ':extra_expense_2' => $extraExpense2,
+                        ':sales_commission' => $salesCommission,
+                        ':gas_commission' => $gasCommission,
+                        ':total_monthly_cost' => $totalMonthlyCost,
+                    ]);
+            }
+            if ($action === 'employee_cost_delete') {
+                $pdo->prepare('DELETE FROM employee_monthly_costs WHERE id=:id')
+                    ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
+            }
             break;
 
         case 'veiculos':
@@ -1732,7 +1769,35 @@ $employeeDebts = fetchAll($pdo, 'SELECT d.*, e.name AS employee_name, e.role AS 
 $employeeAttendanceLogs = fetchAll($pdo, 'SELECT a.*, e.name AS employee_name, e.role AS employee_role FROM employee_attendance_logs a JOIN employees e ON e.id=a.employee_id ORDER BY a.work_date DESC, a.id DESC');
 $employeePerformanceReviews = fetchAll($pdo, 'SELECT r.*, e.name AS employee_name, e.role AS employee_role FROM employee_performance_reviews r JOIN employees e ON e.id=r.employee_id ORDER BY r.review_date DESC, r.id DESC');
 $employeeOccurrences = fetchAll($pdo, 'SELECT o.*, e.name AS employee_name, e.role AS employee_role FROM employee_occurrences o JOIN employees e ON e.id=o.employee_id ORDER BY o.occurrence_date DESC, o.id DESC');
-$employeeMonthlyCosts = fetchAll($pdo, 'SELECT c.*, e.name AS employee_name, e.role AS employee_role FROM employee_monthly_costs c JOIN employees e ON e.id=c.employee_id ORDER BY c.reference_month DESC, c.id DESC');
+$employeeMonthlyCostFilterEmployee = (int) ($_GET['employee_cost_employee_id'] ?? 0);
+$employeeMonthlyCostFilterMonth = trim((string) ($_GET['employee_cost_reference_month'] ?? ''));
+$employeeMonthlyCostSql = 'SELECT c.*, e.name AS employee_name, e.role AS employee_role FROM employee_monthly_costs c JOIN employees e ON e.id=c.employee_id';
+$employeeMonthlyCostConditions = [];
+$employeeMonthlyCostParams = [];
+if ($employeeMonthlyCostFilterEmployee > 0) {
+    $employeeMonthlyCostConditions[] = 'c.employee_id = :employee_cost_employee_id';
+    $employeeMonthlyCostParams[':employee_cost_employee_id'] = $employeeMonthlyCostFilterEmployee;
+}
+if ($employeeMonthlyCostFilterMonth !== '') {
+    $employeeMonthlyCostConditions[] = 'c.reference_month = :employee_cost_reference_month';
+    $employeeMonthlyCostParams[':employee_cost_reference_month'] = $employeeMonthlyCostFilterMonth;
+}
+if ($employeeMonthlyCostConditions !== []) {
+    $employeeMonthlyCostSql .= ' WHERE ' . implode(' AND ', $employeeMonthlyCostConditions);
+}
+$employeeMonthlyCostSql .= ' ORDER BY c.reference_month DESC, c.id DESC';
+$stmtEmployeeMonthlyCosts = $pdo->prepare($employeeMonthlyCostSql);
+$stmtEmployeeMonthlyCosts->execute($employeeMonthlyCostParams);
+$employeeMonthlyCosts = $stmtEmployeeMonthlyCosts->fetchAll();
+$employeeBaseSalaryMap = [];
+foreach ($employees as $employee) {
+    $profileData = json_decode((string) ($employee['profile_data'] ?? ''), true);
+    $baseSalary = 0.0;
+    if (is_array($profileData)) {
+        $baseSalary = moneyInput($profileData['contract_salary'] ?? ($profileData['base_salary'] ?? 0));
+    }
+    $employeeBaseSalaryMap[(int) $employee['id']] = $baseSalary;
+}
 $vehicles = fetchAll($pdo, 'SELECT * FROM vehicles ORDER BY name');
 $vehicleFilterId = (int) ($_GET['vehicle_filter_id'] ?? 0);
 $vehicleFilterType = trim((string) ($_GET['vehicle_filter_type'] ?? ''));
@@ -3243,7 +3308,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <h3>Cálculo de custo mensal de funcionário (CLT)</h3>
     <p>Este módulo calcula o custo mensal real do funcionário incluindo salário, encargos, provisões, despesas extras e comissões.</p>
     <p class="small">As comissões são registradas no custo mensal, mas não entram no bloco de Despesas com Pessoal do DRE.</p>
-    <form method="post">
+    <form method="post" id="employeeCostCreateForm">
         <input type="hidden" name="action" value="employee_cost_add">
         <select name="employee_id" required>
             <option value="">Funcionário</option>
@@ -3260,12 +3325,27 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <input type="number" step="0.01" min="0" name="extra_expense_2" placeholder="Outras despesas 2">
         <input type="number" step="0.01" min="0" name="sales_commission" placeholder="Comissão de vendas">
         <input type="number" step="0.01" min="0" name="gas_commission" placeholder="Comissão de gás">
-        <button>Calcular e salvar</button>
+        <button>Lançar</button>
+    </form>
+
+    <form method="get">
+        <input type="hidden" name="module" value="custo_funcionario_clt">
+        <select name="employee_cost_employee_id">
+            <option value="">Filtrar por funcionário</option>
+            <?php foreach ($employees as $employee): ?>
+                <option value="<?= (int) $employee['id'] ?>" <?= $employeeMonthlyCostFilterEmployee === (int) $employee['id'] ? 'selected' : '' ?>>
+                    <?= htmlspecialchars((string) ($employee['name'] . ' - ' . $employee['role'])) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <label>Mês referência: <input type="month" name="employee_cost_reference_month" value="<?= htmlspecialchars($employeeMonthlyCostFilterMonth) ?>"></label>
+        <button type="submit">Filtrar</button>
+        <a href="?module=custo_funcionario_clt">Limpar filtros</a>
     </form>
 
     <h4>Lançamentos salvos</h4>
     <table>
-        <tr><th>Mês</th><th>Funcionário</th><th>Salários</th><th>INSS comum</th><th>FGTS</th><th>Provisão 13º</th><th>Provisão Férias</th><th>Outras despesas 1</th><th>Outras despesas 2</th><th>Comissão vendas</th><th>Comissão gás</th><th>Total mensal</th></tr>
+        <tr><th>Mês</th><th>Funcionário</th><th>Salários</th><th>INSS comum</th><th>FGTS</th><th>Provisão 13º</th><th>Provisão Férias</th><th>Outras despesas 1</th><th>Outras despesas 2</th><th>Comissão vendas</th><th>Comissão gás</th><th>Total mensal</th><th>Ações</th></tr>
         <?php foreach ($employeeMonthlyCosts as $cost): ?>
             <tr>
                 <td><?= htmlspecialchars((string) $cost['reference_month']) ?></td>
@@ -3280,9 +3360,66 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <td><?= money((float) ($cost['sales_commission'] ?? 0)) ?></td>
                 <td><?= money((float) ($cost['gas_commission'] ?? 0)) ?></td>
                 <td><strong><?= money((float) $cost['total_monthly_cost']) ?></strong></td>
+                <td>
+                    <button type="button" onclick='openEmployeeCostEditModal(<?= json_encode($cost, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir lançamento de custo mensal?')">
+                        <input type="hidden" name="action" value="employee_cost_delete">
+                        <input type="hidden" name="id" value="<?= (int) $cost['id'] ?>">
+                        <button class="btn-danger">Excluir</button>
+                    </form>
+                </td>
             </tr>
         <?php endforeach; ?>
     </table>
+
+    <dialog id="employeeCostEditModal">
+        <form method="post">
+            <input type="hidden" name="action" value="employee_cost_edit">
+            <input type="hidden" name="id" id="employee_cost_edit_id">
+            <select name="employee_id" id="employee_cost_edit_employee_id" required>
+                <?php foreach ($employees as $employee): ?>
+                    <option value="<?= (int) $employee['id'] ?>"><?= htmlspecialchars((string) ($employee['name'] . ' - ' . $employee['role'])) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <label>Mês referência: <input type="month" name="reference_month" id="employee_cost_edit_reference_month" required></label>
+            <input type="number" step="0.01" min="0" name="base_salary" id="employee_cost_edit_base_salary" placeholder="Salário base" required>
+            <input type="number" step="0.01" min="0" name="inss_rate" id="employee_cost_edit_inss_rate" value="11" placeholder="% INSS comum">
+            <input type="number" step="0.01" min="0" name="fgts_rate" id="employee_cost_edit_fgts_rate" value="8" placeholder="% FGTS">
+            <input type="number" step="0.01" min="0" name="vacation_rate" id="employee_cost_edit_vacation_rate" value="11.11" placeholder="% Provisão Férias">
+            <input type="number" step="0.01" min="0" name="extra_expense_1" id="employee_cost_edit_extra_1" placeholder="Outras despesas 1">
+            <input type="number" step="0.01" min="0" name="extra_expense_2" id="employee_cost_edit_extra_2" placeholder="Outras despesas 2">
+            <input type="number" step="0.01" min="0" name="sales_commission" id="employee_cost_edit_sales_commission" placeholder="Comissão de vendas">
+            <input type="number" step="0.01" min="0" name="gas_commission" id="employee_cost_edit_gas_commission" placeholder="Comissão de gás">
+            <button>Salvar edição</button>
+            <button type="button" onclick="document.getElementById('employeeCostEditModal').close()">Fechar</button>
+        </form>
+    </dialog>
+    <script>
+        const employeeBaseSalaryMap = <?= json_encode($employeeBaseSalaryMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+
+        const employeeSelect = document.querySelector('#employeeCostCreateForm select[name="employee_id"]');
+        const baseSalaryInput = document.querySelector('#employeeCostCreateForm input[name="base_salary"]');
+        if (employeeSelect && baseSalaryInput) {
+            employeeSelect.addEventListener('change', function () {
+                const selected = this.value || '';
+                if (selected !== '' && Object.prototype.hasOwnProperty.call(employeeBaseSalaryMap, selected)) {
+                    baseSalaryInput.value = employeeBaseSalaryMap[selected] || 0;
+                }
+            });
+        }
+
+        function openEmployeeCostEditModal(cost) {
+            document.getElementById('employee_cost_edit_id').value = cost.id || '';
+            document.getElementById('employee_cost_edit_employee_id').value = cost.employee_id || '';
+            document.getElementById('employee_cost_edit_reference_month').value = cost.reference_month || '';
+            document.getElementById('employee_cost_edit_base_salary').value = cost.base_salary || 0;
+            document.getElementById('employee_cost_edit_extra_1').value = cost.extra_expense_1 || 0;
+            document.getElementById('employee_cost_edit_extra_2').value = cost.extra_expense_2 || 0;
+            document.getElementById('employee_cost_edit_sales_commission').value = cost.sales_commission || 0;
+            document.getElementById('employee_cost_edit_gas_commission').value = cost.gas_commission || 0;
+            document.getElementById('employeeCostEditModal').showModal();
+        }
+    </script>
 <?php elseif ($module === 'veiculos'): ?>
     <h3>Controle de Veículos</h3>
     <button type="button" onclick="document.getElementById('vehicleModal').showModal()">Cadastrar veículo</button>
