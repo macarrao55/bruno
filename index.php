@@ -790,12 +790,13 @@ function handlePost(PDO $pdo, string $module): void
                 $salesCommission = moneyInput($_POST['sales_commission'] ?? 0);
                 $gasCommission = moneyInput($_POST['gas_commission'] ?? 0);
                 $totalMonthlyCost = $baseSalary + $inssCommon + $fgts + $thirteenthProvision + $vacationProvision + $extraExpense1 + $extraExpense2 + $salesCommission + $gasCommission;
-                $pdo->prepare('INSERT INTO employee_monthly_costs (employee_id, reference_month, base_salary, inss_common, fgts, thirteenth_provision, vacation_provision, extra_expense_1, extra_expense_2, sales_commission, gas_commission, total_monthly_cost)
-                    VALUES (:employee_id, :reference_month, :base_salary, :inss_common, :fgts, :thirteenth_provision, :vacation_provision, :extra_expense_1, :extra_expense_2, :sales_commission, :gas_commission, :total_monthly_cost)')
+                $pdo->prepare('INSERT INTO employee_monthly_costs (employee_id, reference_month, base_salary, inss_patronal, inss_common, fgts, thirteenth_provision, vacation_provision, extra_expense_1, extra_expense_2, sales_commission, gas_commission, total_monthly_cost)
+                    VALUES (:employee_id, :reference_month, :base_salary, :inss_patronal, :inss_common, :fgts, :thirteenth_provision, :vacation_provision, :extra_expense_1, :extra_expense_2, :sales_commission, :gas_commission, :total_monthly_cost)')
                     ->execute([
                         ':employee_id' => (int) ($_POST['employee_id'] ?? 0),
                         ':reference_month' => (string) ($_POST['reference_month'] ?? date('Y-m')),
                         ':base_salary' => $baseSalary,
+                        ':inss_patronal' => $inssCommon,
                         ':inss_common' => $inssCommon,
                         ':fgts' => $fgts,
                         ':thirteenth_provision' => $thirteenthProvision,
@@ -822,13 +823,14 @@ function handlePost(PDO $pdo, string $module): void
                 $gasCommission = moneyInput($_POST['gas_commission'] ?? 0);
                 $totalMonthlyCost = $baseSalary + $inssCommon + $fgts + $thirteenthProvision + $vacationProvision + $extraExpense1 + $extraExpense2 + $salesCommission + $gasCommission;
                 $pdo->prepare('UPDATE employee_monthly_costs
-                    SET employee_id=:employee_id, reference_month=:reference_month, base_salary=:base_salary, inss_common=:inss_common, fgts=:fgts, thirteenth_provision=:thirteenth_provision, vacation_provision=:vacation_provision, extra_expense_1=:extra_expense_1, extra_expense_2=:extra_expense_2, sales_commission=:sales_commission, gas_commission=:gas_commission, total_monthly_cost=:total_monthly_cost
+                    SET employee_id=:employee_id, reference_month=:reference_month, base_salary=:base_salary, inss_patronal=:inss_patronal, inss_common=:inss_common, fgts=:fgts, thirteenth_provision=:thirteenth_provision, vacation_provision=:vacation_provision, extra_expense_1=:extra_expense_1, extra_expense_2=:extra_expense_2, sales_commission=:sales_commission, gas_commission=:gas_commission, total_monthly_cost=:total_monthly_cost
                     WHERE id=:id')
                     ->execute([
                         ':id' => (int) ($_POST['id'] ?? 0),
                         ':employee_id' => (int) ($_POST['employee_id'] ?? 0),
                         ':reference_month' => (string) ($_POST['reference_month'] ?? date('Y-m')),
                         ':base_salary' => $baseSalary,
+                        ':inss_patronal' => $inssCommon,
                         ':inss_common' => $inssCommon,
                         ':fgts' => $fgts,
                         ':thirteenth_provision' => $thirteenthProvision,

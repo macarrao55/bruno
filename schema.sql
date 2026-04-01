@@ -163,6 +163,7 @@ CREATE TABLE employee_monthly_costs (
     employee_id INTEGER NOT NULL,
     reference_month TEXT NOT NULL,
     base_salary REAL NOT NULL,
+    inss_patronal REAL NOT NULL DEFAULT 0,
     inss_common REAL NOT NULL,
     fgts REAL NOT NULL,
     thirteenth_provision REAL NOT NULL,

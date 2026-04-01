@@ -518,6 +518,7 @@ function runMigrations(PDO $pdo): void
             employee_id INTEGER NOT NULL,
             reference_month TEXT NOT NULL,
             base_salary REAL NOT NULL,
+            inss_patronal REAL NOT NULL DEFAULT 0,
             inss_common REAL NOT NULL,
             fgts REAL NOT NULL,
             thirteenth_provision REAL NOT NULL,
@@ -536,6 +537,10 @@ function runMigrations(PDO $pdo): void
         if (!in_array('inss_common', $employeeMonthlyCostsColumnNames, true)) {
             $pdo->exec('ALTER TABLE employee_monthly_costs ADD COLUMN inss_common REAL NOT NULL DEFAULT 0');
             $pdo->exec('UPDATE employee_monthly_costs SET inss_common = COALESCE(inss_patronal, 0)');
+        }
+        if (!in_array('inss_patronal', $employeeMonthlyCostsColumnNames, true)) {
+            $pdo->exec('ALTER TABLE employee_monthly_costs ADD COLUMN inss_patronal REAL NOT NULL DEFAULT 0');
+            $pdo->exec('UPDATE employee_monthly_costs SET inss_patronal = COALESCE(inss_common, 0)');
         }
         if (!in_array('extra_expense_1', $employeeMonthlyCostsColumnNames, true)) {
             $pdo->exec('ALTER TABLE employee_monthly_costs ADD COLUMN extra_expense_1 REAL NOT NULL DEFAULT 0');
