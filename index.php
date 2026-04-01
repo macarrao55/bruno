@@ -3085,7 +3085,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                     <td><?= htmlspecialchars((string) $debt['status']) ?></td>
                     <td>
                         <?php if ((string) $debt['status'] === 'aberto'): ?>
-                            <form method="post" style="display:inline;">
+                            <form method="post" style="display:inline;" onsubmit="return confirm('Confirma dar baixa neste lançamento?')">
                                 <input type="hidden" name="action" value="debt_settle">
                                 <input type="hidden" name="id" value="<?= (int) $debt['id'] ?>">
                                 <input type="hidden" name="paid_on" value="<?= $today ?>">
