@@ -518,14 +518,37 @@ function runMigrations(PDO $pdo): void
             employee_id INTEGER NOT NULL,
             reference_month TEXT NOT NULL,
             base_salary REAL NOT NULL,
-            inss_patronal REAL NOT NULL,
+            inss_common REAL NOT NULL,
             fgts REAL NOT NULL,
             thirteenth_provision REAL NOT NULL,
             vacation_provision REAL NOT NULL,
+            extra_expense_1 REAL NOT NULL DEFAULT 0,
+            extra_expense_2 REAL NOT NULL DEFAULT 0,
+            sales_commission REAL NOT NULL DEFAULT 0,
+            gas_commission REAL NOT NULL DEFAULT 0,
             total_monthly_cost REAL NOT NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
         )');
+    } else {
+        $employeeMonthlyCostsColumns = $pdo->query("PRAGMA table_info(employee_monthly_costs)")->fetchAll();
+        $employeeMonthlyCostsColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $employeeMonthlyCostsColumns);
+        if (!in_array('inss_common', $employeeMonthlyCostsColumnNames, true)) {
+            $pdo->exec('ALTER TABLE employee_monthly_costs ADD COLUMN inss_common REAL NOT NULL DEFAULT 0');
+            $pdo->exec('UPDATE employee_monthly_costs SET inss_common = COALESCE(inss_patronal, 0)');
+        }
+        if (!in_array('extra_expense_1', $employeeMonthlyCostsColumnNames, true)) {
+            $pdo->exec('ALTER TABLE employee_monthly_costs ADD COLUMN extra_expense_1 REAL NOT NULL DEFAULT 0');
+        }
+        if (!in_array('extra_expense_2', $employeeMonthlyCostsColumnNames, true)) {
+            $pdo->exec('ALTER TABLE employee_monthly_costs ADD COLUMN extra_expense_2 REAL NOT NULL DEFAULT 0');
+        }
+        if (!in_array('sales_commission', $employeeMonthlyCostsColumnNames, true)) {
+            $pdo->exec('ALTER TABLE employee_monthly_costs ADD COLUMN sales_commission REAL NOT NULL DEFAULT 0');
+        }
+        if (!in_array('gas_commission', $employeeMonthlyCostsColumnNames, true)) {
+            $pdo->exec('ALTER TABLE employee_monthly_costs ADD COLUMN gas_commission REAL NOT NULL DEFAULT 0');
+        }
     }
 
     $vehiclesTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='vehicles'")->fetch();
