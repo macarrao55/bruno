@@ -107,6 +107,17 @@ function runMigrations(PDO $pdo): void
     $addCardColumn($pdo, 'canceled', 'INTEGER NOT NULL DEFAULT 0');
     $addCardColumn($pdo, 'sale_location', 'TEXT');
 
+    $checkColumns = $pdo->query("PRAGMA table_info(checks_control)")->fetchAll();
+    $checkColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $checkColumns);
+    $addCheckColumn = static function (PDO $conn, string $name, string $type) use ($checkColumnNames): void {
+        if (!in_array($name, $checkColumnNames, true)) {
+            $conn->exec("ALTER TABLE checks_control ADD COLUMN $name $type");
+        }
+    };
+    $addCheckColumn($pdo, 'check_date', 'TEXT');
+    $addCheckColumn($pdo, 'notes', 'TEXT');
+    $pdo->exec("UPDATE checks_control SET check_date = COALESCE(check_date, due_date)");
+
     $categoryTable = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='cashflow_categories'")->fetch();
     if (!$categoryTable) {
         $pdo->exec('CREATE TABLE cashflow_categories (

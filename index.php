@@ -866,19 +866,53 @@ function handlePost(PDO $pdo, string $module): void
             break;
 
         case 'cheques':
-            $stmt = $pdo->prepare('INSERT INTO checks_control (check_type, customer, bank, check_number, due_date, amount, cleared, compensated, returned)
-                VALUES (:check_type,:customer,:bank,:check_number,:due_date,:amount,:cleared,:compensated,:returned)');
-            $stmt->execute([
-                ':check_type' => $_POST['check_type'],
-                ':customer' => trim($_POST['customer']),
-                ':bank' => trim($_POST['bank']),
-                ':check_number' => trim($_POST['check_number']),
-                ':due_date' => $_POST['due_date'],
-                ':amount' => (float) $_POST['amount'],
-                ':cleared' => isset($_POST['cleared']) ? 1 : 0,
-                ':compensated' => isset($_POST['compensated']) ? 1 : 0,
-                ':returned' => isset($_POST['returned']) ? 1 : 0,
-            ]);
+            $action = (string) ($_POST['action'] ?? 'create');
+            if ($action === 'create') {
+                $stmt = $pdo->prepare('INSERT INTO checks_control (check_type, customer, bank, check_number, check_date, due_date, amount, notes, cleared, compensated, returned)
+                    VALUES (:check_type,:customer,:bank,:check_number,:check_date,:due_date,:amount,:notes,:cleared,:compensated,:returned)');
+                $stmt->execute([
+                    ':check_type' => $_POST['check_type'],
+                    ':customer' => trim($_POST['customer']),
+                    ':bank' => trim($_POST['bank']),
+                    ':check_number' => trim($_POST['check_number']),
+                    ':check_date' => (string) ($_POST['check_date'] ?? $_POST['due_date']),
+                    ':due_date' => $_POST['due_date'],
+                    ':amount' => (float) $_POST['amount'],
+                    ':notes' => trim((string) ($_POST['notes'] ?? '')),
+                    ':cleared' => isset($_POST['cleared']) ? 1 : 0,
+                    ':compensated' => isset($_POST['compensated']) ? 1 : 0,
+                    ':returned' => isset($_POST['returned']) ? 1 : 0,
+                ]);
+            }
+            if ($action === 'edit') {
+                $pdo->prepare('UPDATE checks_control
+                    SET check_type=:check_type, customer=:customer, bank=:bank, check_number=:check_number, check_date=:check_date, due_date=:due_date, amount=:amount, notes=:notes
+                    WHERE id=:id')
+                    ->execute([
+                        ':id' => (int) ($_POST['id'] ?? 0),
+                        ':check_type' => $_POST['check_type'],
+                        ':customer' => trim($_POST['customer']),
+                        ':bank' => trim($_POST['bank']),
+                        ':check_number' => trim($_POST['check_number']),
+                        ':check_date' => (string) ($_POST['check_date'] ?? $_POST['due_date']),
+                        ':due_date' => $_POST['due_date'],
+                        ':amount' => (float) $_POST['amount'],
+                        ':notes' => trim((string) ($_POST['notes'] ?? '')),
+                    ]);
+            }
+            if ($action === 'delete') {
+                $pdo->prepare('DELETE FROM checks_control WHERE id=:id')
+                    ->execute([':id' => (int) ($_POST['id'] ?? 0)]);
+            }
+            if ($action === 'settle') {
+                $pdo->prepare('UPDATE checks_control SET cleared=:cleared, compensated=:compensated, returned=:returned WHERE id=:id')
+                    ->execute([
+                        ':id' => (int) ($_POST['id'] ?? 0),
+                        ':cleared' => isset($_POST['cleared']) ? 1 : 0,
+                        ':compensated' => isset($_POST['compensated']) ? 1 : 0,
+                        ':returned' => isset($_POST['returned']) ? 1 : 0,
+                    ]);
+            }
             break;
 
         case 'conciliacao':
@@ -1586,7 +1620,56 @@ $salesByLocationToday = fetchAll($pdo, 'SELECT COALESCE(NULLIF(sale_location, \'
     WHERE sale_date=:today AND canceled=0
     GROUP BY sale_location
     ORDER BY gross_total DESC', [':today' => $today]);
-$checks = fetchAll($pdo, 'SELECT * FROM checks_control ORDER BY due_date ASC');
+$checkFilters = [
+    'check_date_from' => trim((string) ($_GET['check_date_from'] ?? '')),
+    'check_date_to' => trim((string) ($_GET['check_date_to'] ?? '')),
+    'due_date_from' => trim((string) ($_GET['check_due_date_from'] ?? '')),
+    'due_date_to' => trim((string) ($_GET['check_due_date_to'] ?? '')),
+    'bank' => trim((string) ($_GET['check_bank'] ?? '')),
+    'customer' => trim((string) ($_GET['check_customer'] ?? '')),
+    'status' => trim((string) ($_GET['check_status'] ?? '')),
+];
+$checksSql = 'SELECT * FROM checks_control';
+$checksWhere = [];
+$checksParams = [];
+if ($checkFilters['check_date_from'] !== '') {
+    $checksWhere[] = 'check_date >= :check_date_from';
+    $checksParams[':check_date_from'] = $checkFilters['check_date_from'];
+}
+if ($checkFilters['check_date_to'] !== '') {
+    $checksWhere[] = 'check_date <= :check_date_to';
+    $checksParams[':check_date_to'] = $checkFilters['check_date_to'];
+}
+if ($checkFilters['due_date_from'] !== '') {
+    $checksWhere[] = 'due_date >= :check_due_date_from';
+    $checksParams[':check_due_date_from'] = $checkFilters['due_date_from'];
+}
+if ($checkFilters['due_date_to'] !== '') {
+    $checksWhere[] = 'due_date <= :check_due_date_to';
+    $checksParams[':check_due_date_to'] = $checkFilters['due_date_to'];
+}
+if ($checkFilters['bank'] !== '') {
+    $checksWhere[] = 'bank = :check_bank';
+    $checksParams[':check_bank'] = $checkFilters['bank'];
+}
+if ($checkFilters['customer'] !== '') {
+    $checksWhere[] = 'customer LIKE :check_customer';
+    $checksParams[':check_customer'] = '%' . $checkFilters['customer'] . '%';
+}
+if ($checkFilters['status'] === 'cleared') {
+    $checksWhere[] = 'cleared = 1';
+}
+if ($checkFilters['status'] === 'compensated') {
+    $checksWhere[] = 'compensated = 1';
+}
+if ($checkFilters['status'] === 'returned') {
+    $checksWhere[] = 'returned = 1';
+}
+if ($checksWhere !== []) {
+    $checksSql .= ' WHERE ' . implode(' AND ', $checksWhere);
+}
+$checksSql .= ' ORDER BY due_date ASC, id DESC';
+$checks = fetchAll($pdo, $checksSql, $checksParams);
 $banks = fetchAll($pdo, 'SELECT * FROM bank_accounts ORDER BY name');
 $banksForLaunch = array_values(array_filter($banks, static fn(array $bank): bool => (int) ($bank['launch_enabled'] ?? 1) === 1));
 if ($banksForLaunch === []) {
@@ -3682,17 +3765,134 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         }
     </script>
 <?php elseif ($module === 'cheques'): ?>
-    <h3>Controle de Cheques</h3>
+    <h3>Cheques a Receber</h3>
+    <button type="button" onclick="document.getElementById('checkFilterModal').showModal()">Filtrar</button>
     <form method="post">
-        <select name="check_type"><option value="avista">À vista</option><option value="parcelado">Parcelado</option></select>
-        <input name="customer" placeholder="Cliente" required><input name="bank" placeholder="Banco" required><input name="check_number" placeholder="Número" required>
-        <input name="due_date" type="date" required><input name="amount" type="number" step="0.01" placeholder="Valor" required>
-        <label><input type="checkbox" name="cleared"> Baixa</label><label><input type="checkbox" name="compensated"> Compensado</label><label><input type="checkbox" name="returned"> Devolvido</label>
+        <input type="hidden" name="action" value="create">
+        <select name="check_type" required><option value="avista">À vista</option><option value="parcelado">Pré-datado</option></select>
+        <input name="customer" placeholder="Cliente" required>
+        <select name="bank" required>
+            <option value="">Banco</option>
+            <?php foreach ($banks as $bank): ?>
+                <option value="<?= htmlspecialchars((string) $bank['name']) ?>"><?= htmlspecialchars((string) $bank['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <input name="check_number" placeholder="Número do cheque" required>
+        <label>Data do cheque <input name="check_date" type="date" value="<?= $today ?>" required></label>
+        <label>Data para compensar <input name="due_date" type="date" required></label>
+        <input name="amount" type="number" step="0.01" placeholder="Valor" required>
+        <input name="notes" placeholder="Observação">
         <button>Salvar</button>
     </form>
-    <table><tr><th>Tipo</th><th>Cliente</th><th>Banco</th><th>Número</th><th>Vencimento</th><th>Valor</th><th>Baixa</th><th>Compensado</th><th>Devolvido</th></tr>
-        <?php foreach ($checks as $c): ?><tr><td><?= $c['check_type'] ?></td><td><?= htmlspecialchars($c['customer']) ?></td><td><?= htmlspecialchars($c['bank']) ?></td><td><?= htmlspecialchars($c['check_number']) ?></td><td><?= dateBr((string) $c['due_date']) ?></td><td><?= money((float) $c['amount']) ?></td><td><?= $c['cleared'] ? 'Sim' : 'Não' ?></td><td><?= $c['compensated'] ? 'Sim' : 'Não' ?></td><td><?= $c['returned'] ? 'Sim' : 'Não' ?></td></tr><?php endforeach; ?>
+
+    <dialog id="checkFilterModal">
+        <h4>Filtrar cheques</h4>
+        <form method="get">
+            <input type="hidden" name="module" value="cheques">
+            <label>Data do cheque (de) <input type="date" name="check_date_from" value="<?= htmlspecialchars($checkFilters['check_date_from']) ?>"></label>
+            <label>Data do cheque (até) <input type="date" name="check_date_to" value="<?= htmlspecialchars($checkFilters['check_date_to']) ?>"></label>
+            <label>Data de compensação (de) <input type="date" name="check_due_date_from" value="<?= htmlspecialchars($checkFilters['due_date_from']) ?>"></label>
+            <label>Data de compensação (até) <input type="date" name="check_due_date_to" value="<?= htmlspecialchars($checkFilters['due_date_to']) ?>"></label>
+            <label>Banco
+                <select name="check_bank">
+                    <option value="">Todos</option>
+                    <?php foreach ($banks as $bank): ?>
+                        <option value="<?= htmlspecialchars((string) $bank['name']) ?>" <?= $checkFilters['bank'] === (string) $bank['name'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $bank['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <input name="check_customer" value="<?= htmlspecialchars($checkFilters['customer']) ?>" placeholder="Cliente">
+            <label>Situação
+                <select name="check_status">
+                    <option value="">Todas</option>
+                    <option value="cleared" <?= $checkFilters['status'] === 'cleared' ? 'selected' : '' ?>>Baixa</option>
+                    <option value="compensated" <?= $checkFilters['status'] === 'compensated' ? 'selected' : '' ?>>Compensado</option>
+                    <option value="returned" <?= $checkFilters['status'] === 'returned' ? 'selected' : '' ?>>Devolvido</option>
+                </select>
+            </label>
+            <button type="submit">Aplicar filtro</button>
+            <a href="?module=cheques">Limpar</a>
+            <button type="button" onclick="document.getElementById('checkFilterModal').close()">Fechar</button>
+        </form>
+    </dialog>
+
+    <table><tr><th>Tipo</th><th>Cliente</th><th>Banco</th><th>Número</th><th>Data cheque</th><th>Data compensação</th><th>Valor</th><th>Obs.</th><th>Baixa</th><th>Compensado</th><th>Devolvido</th><th>Ações</th></tr>
+        <?php foreach ($checks as $c): ?>
+            <?php $checkClass = (int) $c['returned'] === 1 ? 'check-returned' : ((int) $c['compensated'] === 1 ? 'check-compensated' : ''); ?>
+            <tr class="<?= $checkClass ?>">
+                <td><?= $c['check_type'] === 'parcelado' ? 'Pré-datado' : 'À vista' ?></td>
+                <td><?= htmlspecialchars($c['customer']) ?></td>
+                <td><?= htmlspecialchars($c['bank']) ?></td>
+                <td><?= htmlspecialchars($c['check_number']) ?></td>
+                <td><?= dateBr((string) ($c['check_date'] ?? $c['due_date'])) ?></td>
+                <td><?= dateBr((string) $c['due_date']) ?></td>
+                <td><?= money((float) $c['amount']) ?></td>
+                <td><?= htmlspecialchars((string) ($c['notes'] ?? '')) ?></td>
+                <td><?= $c['cleared'] ? 'Sim' : 'Não' ?></td>
+                <td><?= $c['compensated'] ? 'Sim' : 'Não' ?></td>
+                <td><?= $c['returned'] ? 'Sim' : 'Não' ?></td>
+                <td>
+                    <button type="button" onclick='openCheckEditModal(<?= json_encode($c, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir cheque?')">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
+                        <button class="btn-danger">Excluir</button>
+                    </form>
+                    <button type="button" class="btn-success" onclick='openCheckSettleModal(<?= json_encode($c, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Dar baixa</button>
+                </td>
+            </tr>
+        <?php endforeach; ?>
     </table>
+    <dialog id="checkEditModal">
+        <form method="post">
+            <input type="hidden" name="action" value="edit">
+            <input type="hidden" name="id" id="check_edit_id">
+            <select name="check_type" id="check_edit_type" required><option value="avista">À vista</option><option value="parcelado">Pré-datado</option></select>
+            <input name="customer" id="check_edit_customer" required>
+            <select name="bank" id="check_edit_bank" required>
+                <?php foreach ($banks as $bank): ?><option value="<?= htmlspecialchars((string) $bank['name']) ?>"><?= htmlspecialchars((string) $bank['name']) ?></option><?php endforeach; ?>
+            </select>
+            <input name="check_number" id="check_edit_number" required>
+            <input name="check_date" id="check_edit_date" type="date" required>
+            <input name="due_date" id="check_edit_due_date" type="date" required>
+            <input name="amount" id="check_edit_amount" type="number" step="0.01" required>
+            <input name="notes" id="check_edit_notes" placeholder="Observação">
+            <button>Salvar edição</button>
+            <button type="button" onclick="document.getElementById('checkEditModal').close()">Fechar</button>
+        </form>
+    </dialog>
+    <dialog id="checkSettleModal">
+        <form method="post">
+            <input type="hidden" name="action" value="settle">
+            <input type="hidden" name="id" id="check_settle_id">
+            <label><input type="checkbox" name="cleared" id="check_settle_cleared"> Baixa</label>
+            <label><input type="checkbox" name="compensated" id="check_settle_compensated"> Compensado</label>
+            <label><input type="checkbox" name="returned" id="check_settle_returned"> Devolvido</label>
+            <button>Salvar status</button>
+            <button type="button" onclick="document.getElementById('checkSettleModal').close()">Fechar</button>
+        </form>
+    </dialog>
+    <script>
+        function openCheckEditModal(check) {
+            document.getElementById('check_edit_id').value = check.id || '';
+            document.getElementById('check_edit_type').value = check.check_type || 'avista';
+            document.getElementById('check_edit_customer').value = check.customer || '';
+            document.getElementById('check_edit_bank').value = check.bank || '';
+            document.getElementById('check_edit_number').value = check.check_number || '';
+            document.getElementById('check_edit_date').value = check.check_date || check.due_date || '';
+            document.getElementById('check_edit_due_date').value = check.due_date || '';
+            document.getElementById('check_edit_amount').value = check.amount || 0;
+            document.getElementById('check_edit_notes').value = check.notes || '';
+            document.getElementById('checkEditModal').showModal();
+        }
+        function openCheckSettleModal(check) {
+            document.getElementById('check_settle_id').value = check.id || '';
+            document.getElementById('check_settle_cleared').checked = Number(check.cleared) === 1;
+            document.getElementById('check_settle_compensated').checked = Number(check.compensated) === 1;
+            document.getElementById('check_settle_returned').checked = Number(check.returned) === 1;
+            document.getElementById('checkSettleModal').showModal();
+        }
+    </script>
 <?php elseif ($module === 'conciliacao'): ?>
     <h3>Conciliação Bancária</h3>
     <p class="small">Conciliação totalmente automática com base no Fluxo de Caixa. Ao editar/excluir lançamentos no fluxo, esta tela já reflete os novos valores.</p>
