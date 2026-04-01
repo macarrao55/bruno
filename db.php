@@ -457,18 +457,34 @@ function runMigrations(PDO $pdo): void
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             employee_id INTEGER NOT NULL,
             debt_date TEXT NOT NULL,
+            due_date TEXT,
+            installment_label TEXT NOT NULL DEFAULT \'1/1\',
+            installment_group TEXT,
             debt_type TEXT NOT NULL DEFAULT \'outras_despesas\' CHECK (debt_type IN (\'vale\', \'debito\', \'compra_loja\', \'emprestimo\', \'outras_despesas\')),
             description TEXT,
             amount REAL NOT NULL,
             status TEXT NOT NULL DEFAULT \'aberto\' CHECK (status IN (\'aberto\', \'quitado\')),
+            paid_on TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
         )');
     } else {
         $employeeDebtsColumns = $pdo->query("PRAGMA table_info(employee_debts)")->fetchAll();
         $employeeDebtsColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $employeeDebtsColumns);
+        if (!in_array('due_date', $employeeDebtsColumnNames, true)) {
+            $pdo->exec('ALTER TABLE employee_debts ADD COLUMN due_date TEXT');
+        }
+        if (!in_array('installment_label', $employeeDebtsColumnNames, true)) {
+            $pdo->exec("ALTER TABLE employee_debts ADD COLUMN installment_label TEXT NOT NULL DEFAULT '1/1'");
+        }
+        if (!in_array('installment_group', $employeeDebtsColumnNames, true)) {
+            $pdo->exec('ALTER TABLE employee_debts ADD COLUMN installment_group TEXT');
+        }
         if (!in_array('debt_type', $employeeDebtsColumnNames, true)) {
             $pdo->exec("ALTER TABLE employee_debts ADD COLUMN debt_type TEXT NOT NULL DEFAULT 'outras_despesas'");
+        }
+        if (!in_array('paid_on', $employeeDebtsColumnNames, true)) {
+            $pdo->exec('ALTER TABLE employee_debts ADD COLUMN paid_on TEXT');
         }
     }
 

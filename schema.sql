@@ -114,10 +114,14 @@ CREATE TABLE employee_debts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     employee_id INTEGER NOT NULL,
     debt_date TEXT NOT NULL,
+    due_date TEXT,
+    installment_label TEXT NOT NULL DEFAULT '1/1',
+    installment_group TEXT,
     debt_type TEXT NOT NULL DEFAULT 'outras_despesas' CHECK (debt_type IN ('vale', 'debito', 'compra_loja', 'emprestimo', 'outras_despesas')),
     description TEXT,
     amount REAL NOT NULL,
     status TEXT NOT NULL DEFAULT 'aberto' CHECK (status IN ('aberto', 'quitado')),
+    paid_on TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
 );

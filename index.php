@@ -717,15 +717,44 @@ function handlePost(PDO $pdo, string $module): void
                 if (!in_array($debtType, ['vale', 'debito', 'compra_loja', 'emprestimo', 'outras_despesas'], true)) {
                     $debtType = 'outras_despesas';
                 }
-                $pdo->prepare('INSERT INTO employee_debts (employee_id, debt_date, debt_type, description, amount, status)
-                    VALUES (:employee_id, :debt_date, :debt_type, :description, :amount, :status)')
-                    ->execute([
-                        ':employee_id' => (int) $_POST['employee_id'],
-                        ':debt_date' => $_POST['debt_date'],
+                $employeeId = (int) ($_POST['employee_id'] ?? 0);
+                $debtDate = (string) ($_POST['debt_date'] ?? date('Y-m-d'));
+                $firstDueDate = (string) ($_POST['due_date'] ?? $debtDate);
+                $description = trim((string) ($_POST['description'] ?? ''));
+                $status = in_array((string) ($_POST['status'] ?? ''), ['aberto', 'quitado'], true) ? $_POST['status'] : 'aberto';
+                $totalAmount = moneyInput($_POST['amount'] ?? 0);
+                $installmentsCount = max(1, (int) ($_POST['installments_count'] ?? 1));
+                $installmentGroup = uniqid('emp_debt_', true);
+                $baseInstallmentAmount = round($totalAmount / $installmentsCount, 2);
+                $stmtDebtAdd = $pdo->prepare('INSERT INTO employee_debts (employee_id, debt_date, due_date, installment_label, installment_group, debt_type, description, amount, status, paid_on)
+                    VALUES (:employee_id, :debt_date, :due_date, :installment_label, :installment_group, :debt_type, :description, :amount, :status, :paid_on)');
+                for ($installment = 1; $installment <= $installmentsCount; $installment++) {
+                    $dueDate = new DateTime($firstDueDate === '' ? $debtDate : $firstDueDate);
+                    if ($installment > 1) {
+                        $dueDate->modify('+' . ($installment - 1) . ' month');
+                    }
+                    $installmentAmount = $installment === $installmentsCount
+                        ? round($totalAmount - ($baseInstallmentAmount * ($installmentsCount - 1)), 2)
+                        : $baseInstallmentAmount;
+                    $stmtDebtAdd->execute([
+                        ':employee_id' => $employeeId,
+                        ':debt_date' => $debtDate,
+                        ':due_date' => $dueDate->format('Y-m-d'),
+                        ':installment_label' => $installment . '/' . $installmentsCount,
+                        ':installment_group' => $installmentGroup,
                         ':debt_type' => $debtType,
-                        ':description' => trim((string) ($_POST['description'] ?? '')),
-                        ':amount' => moneyInput($_POST['amount'] ?? 0),
-                        ':status' => in_array((string) $_POST['status'], ['aberto', 'quitado'], true) ? $_POST['status'] : 'aberto',
+                        ':description' => $description,
+                        ':amount' => $installmentAmount,
+                        ':status' => $status,
+                        ':paid_on' => $status === 'quitado' ? date('Y-m-d') : null,
+                    ]);
+                }
+            }
+            if ($action === 'debt_settle') {
+                $pdo->prepare('UPDATE employee_debts SET status=\'quitado\', paid_on=:paid_on WHERE id=:id')
+                    ->execute([
+                        ':id' => (int) ($_POST['id'] ?? 0),
+                        ':paid_on' => (string) ($_POST['paid_on'] ?? date('Y-m-d')),
                     ]);
             }
             break;
@@ -1771,6 +1800,10 @@ $creditSalesTotals = fetchAll($pdo, 'SELECT * FROM credit_sales_totals ORDER BY 
 $financeExpenses = fetchAll($pdo, 'SELECT * FROM finance_expenses ORDER BY expense_date DESC, id DESC');
 $employees = fetchAll($pdo, 'SELECT * FROM employees ORDER BY role, name');
 $employeeDebts = fetchAll($pdo, 'SELECT d.*, e.name AS employee_name, e.role AS employee_role FROM employee_debts d JOIN employees e ON e.id=d.employee_id ORDER BY d.debt_date DESC, d.id DESC');
+$employeeInfoId = (int) ($_GET['employee_info_id'] ?? 0);
+$employeeInfoDebts = $employeeInfoId > 0
+    ? fetchAll($pdo, 'SELECT d.*, e.name AS employee_name, e.role AS employee_role FROM employee_debts d JOIN employees e ON e.id=d.employee_id WHERE d.employee_id=:employee_id ORDER BY d.due_date ASC, d.id ASC', [':employee_id' => $employeeInfoId])
+    : [];
 $employeeAttendanceLogs = fetchAll($pdo, 'SELECT a.*, e.name AS employee_name, e.role AS employee_role FROM employee_attendance_logs a JOIN employees e ON e.id=a.employee_id ORDER BY a.work_date DESC, a.id DESC');
 $employeePerformanceReviews = fetchAll($pdo, 'SELECT r.*, e.name AS employee_name, e.role AS employee_role FROM employee_performance_reviews r JOIN employees e ON e.id=r.employee_id ORDER BY r.review_date DESC, r.id DESC');
 $employeeOccurrences = fetchAll($pdo, 'SELECT o.*, e.name AS employee_name, e.role AS employee_role FROM employee_occurrences o JOIN employees e ON e.id=o.employee_id ORDER BY o.occurrence_date DESC, o.id DESC');
@@ -3008,6 +3041,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                             ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
                             Editar
                         </button>
+                        <a href="?module=funcionarios&employee_info_id=<?= (int) $employee['id'] ?>"><button type="button">Informações</button></a>
                         <form method="post" style="display:inline;" onsubmit="return confirm('Excluir funcionário?')">
                             <input type="hidden" name="action" value="employee_delete">
                             <input type="hidden" name="id" value="<?= (int) $employee['id'] ?>">
@@ -3021,10 +3055,12 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 
     <h4>Histórico de lançamentos (o que funcionário deve)</h4>
     <table>
-        <tr><th>Data</th><th>Funcionário</th><th>Cargo</th><th>Tipo</th><th>Descrição</th><th>Valor</th><th>Situação</th></tr>
+        <tr><th>Data</th><th>Vencimento</th><th>Parcela</th><th>Funcionário</th><th>Cargo</th><th>Tipo</th><th>Descrição</th><th>Valor</th><th>Situação</th></tr>
         <?php foreach ($employeeDebts as $debt): ?>
             <tr>
                 <td><?= dateBr((string) $debt['debt_date']) ?></td>
+                <td><?= dateBr((string) ($debt['due_date'] ?? '')) ?></td>
+                <td><?= htmlspecialchars((string) ($debt['installment_label'] ?? '1/1')) ?></td>
                 <td><?= htmlspecialchars((string) $debt['employee_name']) ?></td>
                 <td><?= htmlspecialchars((string) $debt['employee_role']) ?></td>
                 <td><?= htmlspecialchars((string) ($debt['debt_type'] ?? 'outras_despesas')) ?></td>
@@ -3034,6 +3070,35 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             </tr>
         <?php endforeach; ?>
     </table>
+    <?php if ($employeeInfoId > 0): ?>
+        <h4>Informações detalhadas do funcionário</h4>
+        <table>
+            <tr><th>Data</th><th>Vencimento</th><th>Parcela</th><th>Tipo</th><th>Descrição</th><th>Valor</th><th>Situação</th><th>Baixar</th></tr>
+            <?php foreach ($employeeInfoDebts as $debt): ?>
+                <tr>
+                    <td><?= dateBr((string) $debt['debt_date']) ?></td>
+                    <td><?= dateBr((string) ($debt['due_date'] ?? '')) ?></td>
+                    <td><?= htmlspecialchars((string) ($debt['installment_label'] ?? '1/1')) ?></td>
+                    <td><?= htmlspecialchars((string) ($debt['debt_type'] ?? 'outras_despesas')) ?></td>
+                    <td><?= htmlspecialchars((string) $debt['description']) ?></td>
+                    <td><?= money((float) $debt['amount']) ?></td>
+                    <td><?= htmlspecialchars((string) $debt['status']) ?></td>
+                    <td>
+                        <?php if ((string) $debt['status'] === 'aberto'): ?>
+                            <form method="post" style="display:inline;">
+                                <input type="hidden" name="action" value="debt_settle">
+                                <input type="hidden" name="id" value="<?= (int) $debt['id'] ?>">
+                                <input type="hidden" name="paid_on" value="<?= $today ?>">
+                                <button>Dar baixa</button>
+                            </form>
+                        <?php else: ?>
+                            Baixado em <?= dateBr((string) ($debt['paid_on'] ?? '')) ?>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        </table>
+    <?php endif; ?>
 
     <dialog id="employeeModal">
         <form method="post">
@@ -3159,6 +3224,8 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <?php endforeach; ?>
             </select>
             <label>Data: <input type="date" name="debt_date" value="<?= $today ?>" required></label>
+            <label>Vencimento 1ª parcela: <input type="date" name="due_date" value="<?= $today ?>" required></label>
+            <input type="number" min="1" step="1" name="installments_count" value="1" placeholder="Qtd parcelas">
             <select name="debt_type" required>
                 <option value="vale">Vale</option>
                 <option value="debito">Débitos dos funcionários</option>
@@ -3172,6 +3239,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <option value="aberto">aberto</option>
                 <option value="quitado">quitado</option>
             </select>
+            <div id="employeeDebtPreview" class="small"></div>
             <button>Salvar lançamento</button>
             <button type="button" onclick="document.getElementById('employeeDebtModal').close()">Fechar</button>
         </form>
@@ -3193,6 +3261,42 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('employee_edit_role').value = employee.role ?? '';
             document.getElementById('employeeEditModal').showModal();
         }
+
+        (function setupEmployeeDebtPreview() {
+            const form = document.querySelector('#employeeDebtModal form');
+            if (!form) return;
+            const amountInput = form.querySelector('input[name="amount"]');
+            const installmentsInput = form.querySelector('input[name="installments_count"]');
+            const dueDateInput = form.querySelector('input[name="due_date"]');
+            const preview = document.getElementById('employeeDebtPreview');
+            if (!amountInput || !installmentsInput || !dueDateInput || !preview) return;
+
+            const updatePreview = () => {
+                const amount = parseFloat(amountInput.value || '0');
+                const installments = Math.max(1, parseInt(installmentsInput.value || '1', 10));
+                const dueDateRaw = dueDateInput.value;
+                if (!dueDateRaw || amount <= 0 || installments <= 0) {
+                    preview.innerHTML = '';
+                    return;
+                }
+                const baseAmount = Math.round((amount / installments) * 100) / 100;
+                const rows = [];
+                for (let i = 1; i <= installments; i++) {
+                    const date = new Date(dueDateRaw + 'T00:00:00');
+                    date.setMonth(date.getMonth() + (i - 1));
+                    const installmentAmount = i === installments
+                        ? Math.round((amount - (baseAmount * (installments - 1))) * 100) / 100
+                        : baseAmount;
+                    rows.push(`${i}/${installments} - venc.: ${date.toLocaleDateString('pt-BR')} - valor: ${installmentAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`);
+                }
+                preview.innerHTML = '<strong>Prévia das parcelas:</strong><br>' + rows.join('<br>');
+            };
+
+            amountInput.addEventListener('input', updatePreview);
+            installmentsInput.addEventListener('input', updatePreview);
+            dueDateInput.addEventListener('change', updatePreview);
+            updatePreview();
+        })();
     </script>
 <?php elseif ($module === 'desempenho_funcionarios'): ?>
     <h3>Desempenho de Funcionários</h3>
