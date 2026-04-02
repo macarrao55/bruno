@@ -215,6 +215,7 @@ CREATE TABLE card_receivables (
     machine TEXT NOT NULL,
     brand TEXT NOT NULL,
     card_type TEXT NOT NULL CHECK (card_type IN ('debito', 'credito_avista', 'credito_parcelado')),
+    card_type_original TEXT,
     sale_location TEXT,
     fee_percent REAL NOT NULL,
     gross_value REAL NOT NULL,

@@ -106,6 +106,7 @@ function runMigrations(PDO $pdo): void
     $addCardColumn($pdo, 'anticipation_discount', 'REAL NOT NULL DEFAULT 0');
     $addCardColumn($pdo, 'canceled', 'INTEGER NOT NULL DEFAULT 0');
     $addCardColumn($pdo, 'sale_location', 'TEXT');
+    $addCardColumn($pdo, 'card_type_original', 'TEXT');
 
     $checkColumns = $pdo->query("PRAGMA table_info(checks_control)")->fetchAll();
     $checkColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $checkColumns);

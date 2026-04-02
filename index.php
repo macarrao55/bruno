@@ -1008,9 +1008,10 @@ function handlePost(PDO $pdo, string $module): void
             if ($action === 'create') {
                 $gross = (float) $_POST['gross_value'];
                 $fee = (float) $_POST['fee_percent'];
-                $cardType = normalizeCardType((string) $_POST['card_type']);
+                $cardTypeInput = trim((string) $_POST['card_type']);
+                $cardType = normalizeCardType($cardTypeInput);
                 $saleLocation = trim((string) ($_POST['sale_location'] ?? ''));
-                $batchCount = max(1, (int) ($_POST['launch_batch_count'] ?? 1));
+                $batchCount = 1;
                 $installmentsCount = max(1, (int) ($_POST['installments_count'] ?? 1));
                 if (preg_match('/parcelad[oa]?\s*(\d+)/i', (string) $_POST['card_type'], $matches)) {
                     $installmentsCount = max($installmentsCount, (int) $matches[1]);
@@ -1019,8 +1020,8 @@ function handlePost(PDO $pdo, string $module): void
                     $installmentsCount = 1;
                 }
 
-                $stmt = $pdo->prepare('INSERT INTO card_receivables (machine, brand, card_type, fee_percent, gross_value, net_value, sale_date, expected_release_date, received, sale_location)
-                    VALUES (:machine,:brand,:card_type,:fee_percent,:gross_value,:net_value,:sale_date,:expected_release_date,:received,:sale_location)');
+                $stmt = $pdo->prepare('INSERT INTO card_receivables (machine, brand, card_type, card_type_original, fee_percent, gross_value, net_value, sale_date, expected_release_date, received, sale_location)
+                    VALUES (:machine,:brand,:card_type,:card_type_original,:fee_percent,:gross_value,:net_value,:sale_date,:expected_release_date,:received,:sale_location)');
                 for ($launch = 1; $launch <= $batchCount; $launch++) {
                     $sumGross = 0.0;
                     for ($i = 1; $i <= $installmentsCount; $i++) {
@@ -1038,6 +1039,7 @@ function handlePost(PDO $pdo, string $module): void
                             ':machine' => trim($_POST['machine']),
                             ':brand' => trim($_POST['brand']),
                             ':card_type' => $cardType,
+                            ':card_type_original' => $cardTypeInput,
                             ':fee_percent' => $fee,
                             ':gross_value' => $installmentGross,
                             ':net_value' => $installmentNet,
@@ -1054,15 +1056,17 @@ function handlePost(PDO $pdo, string $module): void
                 $gross = (float) $_POST['gross_value'];
                 $fee = (float) $_POST['fee_percent'];
                 $net = $gross - ($gross * $fee / 100);
-                $cardType = normalizeCardType((string) $_POST['card_type']);
+                $cardTypeInput = trim((string) $_POST['card_type']);
+                $cardType = normalizeCardType($cardTypeInput);
                 $stmt = $pdo->prepare('UPDATE card_receivables
-                    SET machine=:machine, brand=:brand, card_type=:card_type, fee_percent=:fee_percent, gross_value=:gross_value, net_value=:net_value, sale_date=:sale_date, expected_release_date=:expected_release_date, received=:received, sale_location=:sale_location
+                    SET machine=:machine, brand=:brand, card_type=:card_type, card_type_original=:card_type_original, fee_percent=:fee_percent, gross_value=:gross_value, net_value=:net_value, sale_date=:sale_date, expected_release_date=:expected_release_date, received=:received, sale_location=:sale_location
                     WHERE id=:id');
                 $stmt->execute([
                     ':id' => (int) $_POST['id'],
                     ':machine' => trim($_POST['machine']),
                     ':brand' => trim($_POST['brand']),
                     ':card_type' => $cardType,
+                    ':card_type_original' => $cardTypeInput,
                     ':fee_percent' => $fee,
                     ':gross_value' => $gross,
                     ':net_value' => $net,
@@ -4459,7 +4463,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <td><?= htmlspecialchars((string) ($sale['sale_location'] ?: 'Sem local')) ?></td>
                 <td><?= htmlspecialchars((string) $sale['machine']) ?></td>
                 <td><?= htmlspecialchars((string) $sale['brand']) ?></td>
-                <td><?= htmlspecialchars((string) $sale['card_type']) ?></td>
+                <td><?= htmlspecialchars((string) (($sale['card_type_original'] ?? '') !== '' ? $sale['card_type_original'] : $sale['card_type'])) ?></td>
                 <td><?= money((float) $sale['gross_value']) ?></td>
                 <td><?= money((float) $sale['net_value']) ?></td>
                 <td><?= (int) $sale['canceled'] ? 'Cancelada' : ((int) $sale['received'] ? 'Recebida' : 'A receber') ?></td>
@@ -4575,7 +4579,6 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <?php endforeach; ?>
         </select>
         <input name="gross_value" type="number" step="0.01" placeholder="Valor bruto" required>
-        <input name="launch_batch_count" type="number" min="1" value="1" placeholder="Qtd lançamentos">
         <input name="installments_count" id="card_installments_count" type="number" min="1" value="1" placeholder="Qtd parcelas">
         <input name="sale_date" id="card_sale_date" type="date" value="<?= $today ?>" required><input name="expected_release_date" id="card_expected_release_date" type="date" value="<?= $today ?>" required>
         <label><input type="checkbox" name="received"> Baixa quando receber</label>
@@ -4623,7 +4626,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 </td>
                 <td><?= htmlspecialchars($c['machine']) ?></td>
                 <td><?= htmlspecialchars($c['brand']) ?></td>
-                <td><?= $c['card_type'] ?></td>
+                <td><?= htmlspecialchars((string) (($c['card_type_original'] ?? '') !== '' ? $c['card_type_original'] : $c['card_type'])) ?></td>
                 <td><?= htmlspecialchars((string) $c['sale_location']) ?></td>
                 <td><?= $c['fee_percent'] ?>%</td>
                 <td><?= money((float) $c['gross_value']) ?></td>
