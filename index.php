@@ -1010,6 +1010,7 @@ function handlePost(PDO $pdo, string $module): void
                 $fee = (float) $_POST['fee_percent'];
                 $cardType = normalizeCardType((string) $_POST['card_type']);
                 $saleLocation = trim((string) ($_POST['sale_location'] ?? ''));
+                $batchCount = max(1, (int) ($_POST['launch_batch_count'] ?? 1));
                 $installmentsCount = max(1, (int) ($_POST['installments_count'] ?? 1));
                 if (preg_match('/parcelad[oa]?\s*(\d+)/i', (string) $_POST['card_type'], $matches)) {
                     $installmentsCount = max($installmentsCount, (int) $matches[1]);
@@ -1020,30 +1021,32 @@ function handlePost(PDO $pdo, string $module): void
 
                 $stmt = $pdo->prepare('INSERT INTO card_receivables (machine, brand, card_type, fee_percent, gross_value, net_value, sale_date, expected_release_date, received, sale_location)
                     VALUES (:machine,:brand,:card_type,:fee_percent,:gross_value,:net_value,:sale_date,:expected_release_date,:received,:sale_location)');
-                $sumGross = 0.0;
-                for ($i = 1; $i <= $installmentsCount; $i++) {
-                    $installmentGross = $i === $installmentsCount
-                        ? round($gross - $sumGross, 2)
-                        : round($gross / $installmentsCount, 2);
-                    $sumGross += $installmentGross;
-                    $installmentNet = $installmentGross - ($installmentGross * $fee / 100);
-                    $releaseDate = new DateTime((string) $_POST['expected_release_date']);
-                    if ($i > 1) {
-                        $releaseDate->modify('+' . ($i - 1) . ' month');
-                    }
+                for ($launch = 1; $launch <= $batchCount; $launch++) {
+                    $sumGross = 0.0;
+                    for ($i = 1; $i <= $installmentsCount; $i++) {
+                        $installmentGross = $i === $installmentsCount
+                            ? round($gross - $sumGross, 2)
+                            : round($gross / $installmentsCount, 2);
+                        $sumGross += $installmentGross;
+                        $installmentNet = $installmentGross - ($installmentGross * $fee / 100);
+                        $releaseDate = new DateTime((string) $_POST['expected_release_date']);
+                        if ($i > 1) {
+                            $releaseDate->modify('+' . ($i - 1) . ' month');
+                        }
 
-                    $stmt->execute([
-                        ':machine' => trim($_POST['machine']),
-                        ':brand' => trim($_POST['brand']),
-                        ':card_type' => $cardType,
-                        ':fee_percent' => $fee,
-                        ':gross_value' => $installmentGross,
-                        ':net_value' => $installmentNet,
-                        ':sale_date' => $_POST['sale_date'],
-                        ':expected_release_date' => $releaseDate->format('Y-m-d'),
-                        ':received' => isset($_POST['received']) ? 1 : 0,
-                        ':sale_location' => $saleLocation,
-                    ]);
+                        $stmt->execute([
+                            ':machine' => trim($_POST['machine']),
+                            ':brand' => trim($_POST['brand']),
+                            ':card_type' => $cardType,
+                            ':fee_percent' => $fee,
+                            ':gross_value' => $installmentGross,
+                            ':net_value' => $installmentNet,
+                            ':sale_date' => $_POST['sale_date'],
+                            ':expected_release_date' => $releaseDate->format('Y-m-d'),
+                            ':received' => isset($_POST['received']) ? 1 : 0,
+                            ':sale_location' => $saleLocation,
+                        ]);
+                    }
                 }
             }
 
@@ -4572,8 +4575,9 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <?php endforeach; ?>
         </select>
         <input name="gross_value" type="number" step="0.01" placeholder="Valor bruto" required>
+        <input name="launch_batch_count" type="number" min="1" value="1" placeholder="Qtd lançamentos">
         <input name="installments_count" id="card_installments_count" type="number" min="1" value="1" placeholder="Qtd parcelas">
-        <input name="sale_date" id="card_sale_date" type="date" required><input name="expected_release_date" id="card_expected_release_date" type="date" required>
+        <input name="sale_date" id="card_sale_date" type="date" value="<?= $today ?>" required><input name="expected_release_date" id="card_expected_release_date" type="date" value="<?= $today ?>" required>
         <label><input type="checkbox" name="received"> Baixa quando receber</label>
         <button>Salvar</button>
     </form>
