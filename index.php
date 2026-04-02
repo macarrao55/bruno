@@ -2070,6 +2070,32 @@ $salesByLocationToday = fetchAll($pdo, 'SELECT COALESCE(NULLIF(sale_location, \'
     WHERE sale_date BETWEEN :start AND :end AND canceled=0
     GROUP BY sale_location
     ORDER BY gross_total DESC', [':start' => $salesDateFrom, ':end' => $salesDateTo]);
+$salesByMachine = fetchAll($pdo, 'SELECT COALESCE(NULLIF(machine, \'\'), \'Sem máquina\') AS machine_name, COUNT(*) AS total_sales, COALESCE(SUM(gross_value),0) AS gross_total, COALESCE(SUM(net_value),0) AS net_total
+    FROM card_receivables
+    WHERE sale_date BETWEEN :start AND :end AND canceled=0
+    GROUP BY machine_name
+    ORDER BY gross_total DESC', [':start' => $salesDateFrom, ':end' => $salesDateTo]);
+$salesByType = fetchAll($pdo, 'SELECT COALESCE(NULLIF(card_type_original, \'\'), card_type) AS display_type, COUNT(*) AS total_sales, COALESCE(SUM(gross_value),0) AS gross_total, COALESCE(SUM(net_value),0) AS net_total
+    FROM card_receivables
+    WHERE sale_date BETWEEN :start AND :end AND canceled=0
+    GROUP BY display_type
+    ORDER BY gross_total DESC', [':start' => $salesDateFrom, ':end' => $salesDateTo]);
+$salesReceivableSummary = [
+    'a_receber' => sumValue($pdo, 'SELECT COALESCE(SUM(net_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0 AND received=0 AND expected_release_date >= :today', [
+        ':start' => $salesDateFrom,
+        ':end' => $salesDateTo,
+        ':today' => $today,
+    ]),
+    'recebido' => sumValue($pdo, 'SELECT COALESCE(SUM(net_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0 AND received=1', [
+        ':start' => $salesDateFrom,
+        ':end' => $salesDateTo,
+    ]),
+    'atrasado' => sumValue($pdo, 'SELECT COALESCE(SUM(net_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0 AND received=0 AND expected_release_date < :today', [
+        ':start' => $salesDateFrom,
+        ':end' => $salesDateTo,
+        ':today' => $today,
+    ]),
+];
 $checkFilters = [
     'check_date_from' => trim((string) ($_GET['check_date_from'] ?? '')),
     'check_date_to' => trim((string) ($_GET['check_date_to'] ?? '')),
@@ -4452,6 +4478,9 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <div class="card"><h4>Resumo Semanal</h4><p><?= money($salesWeeklyTotal) ?></p></div>
         <div class="card"><h4>Resumo Mensal</h4><p><?= money($salesMonthlyTotal) ?></p></div>
         <div class="card"><h4>Resumo do Filtro</h4><p><?= money($salesFilteredTotal) ?></p></div>
+        <div class="card"><h4>A receber</h4><p><?= money($salesReceivableSummary['a_receber']) ?></p></div>
+        <div class="card"><h4>Recebido</h4><p><?= money($salesReceivableSummary['recebido']) ?></p></div>
+        <div class="card"><h4>Atrasado</h4><p><?= money($salesReceivableSummary['atrasado']) ?></p></div>
     </div>
 
     <h4>Vendas do período (<?= dateBr($salesDateFrom) ?> até <?= dateBr($salesDateTo) ?>)</h4>
@@ -4477,6 +4506,32 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <?php foreach ($salesByLocationToday as $row): ?>
             <tr>
                 <td><?= htmlspecialchars((string) $row['sale_location']) ?></td>
+                <td><?= (int) $row['total_sales'] ?></td>
+                <td><?= money((float) $row['gross_total']) ?></td>
+                <td><?= money((float) $row['net_total']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Resumo por maquininha no período</h4>
+    <table>
+        <tr><th>Maquininha</th><th>Qtd vendas</th><th>Total bruto</th><th>Total líquido</th></tr>
+        <?php foreach ($salesByMachine as $row): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $row['machine_name']) ?></td>
+                <td><?= (int) $row['total_sales'] ?></td>
+                <td><?= money((float) $row['gross_total']) ?></td>
+                <td><?= money((float) $row['net_total']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Resumo por tipo no período</h4>
+    <table>
+        <tr><th>Tipo</th><th>Qtd vendas</th><th>Total bruto</th><th>Total líquido</th></tr>
+        <?php foreach ($salesByType as $row): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $row['display_type']) ?></td>
                 <td><?= (int) $row['total_sales'] ?></td>
                 <td><?= money((float) $row['gross_total']) ?></td>
                 <td><?= money((float) $row['net_total']) ?></td>
