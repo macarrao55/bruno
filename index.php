@@ -1591,9 +1591,36 @@ function fetchAll(PDO $pdo, string $sql, array $params = []): array
 
 $today = date('Y-m-d');
 $monthStart = date('Y-m-01');
-$period = $_GET['period'] ?? '30';
-$days = in_array($period, ['7', '30', '90'], true) ? (int) $period : 30;
-$periodStart = date('Y-m-d', strtotime("-$days days"));
+$dashboardView = (string) ($_GET['dashboard_view'] ?? 'mensal');
+if (!in_array($dashboardView, ['mensal', 'trimestral', 'anual'], true)) {
+    $dashboardView = 'mensal';
+}
+$dashboardRef = trim((string) ($_GET['dashboard_ref'] ?? date('Y-m')));
+if (!preg_match('/^\d{4}-\d{2}$/', $dashboardRef)) {
+    $dashboardRef = date('Y-m');
+}
+$dashboardRefStart = $dashboardRef . '-01';
+$dashboardStart = $dashboardRefStart;
+$dashboardEnd = date('Y-m-t', strtotime($dashboardRefStart));
+$dashboardPrevStart = date('Y-m-01', strtotime('-1 month', strtotime($dashboardRefStart)));
+$dashboardPrevEnd = date('Y-m-t', strtotime($dashboardPrevStart));
+if ($dashboardView === 'trimestral') {
+    $dashboardEnd = date('Y-m-t', strtotime('+2 month', strtotime($dashboardRefStart)));
+    $dashboardPrevStart = date('Y-m-01', strtotime('-3 month', strtotime($dashboardRefStart)));
+    $dashboardPrevEnd = date('Y-m-t', strtotime('+2 month', strtotime($dashboardPrevStart)));
+}
+if ($dashboardView === 'anual') {
+    $year = (int) date('Y', strtotime($dashboardRefStart));
+    $dashboardStart = sprintf('%04d-01-01', $year);
+    $dashboardEnd = sprintf('%04d-12-31', $year);
+    $dashboardPrevStart = sprintf('%04d-01-01', $year - 1);
+    $dashboardPrevEnd = sprintf('%04d-12-31', $year - 1);
+}
+$dashboardLabel = match ($dashboardView) {
+    'trimestral' => 'Trimestre',
+    'anual' => 'Ano',
+    default => 'Mês',
+};
 
 $cashBalance = sumValue($pdo, "SELECT COALESCE(SUM(CASE WHEN movement_type='entrada' THEN amount ELSE -amount END),0) FROM transactions WHERE COALESCE(category, '') <> 'Transferência'");
 $bankBalance = sumValue($pdo, 'SELECT COALESCE(SUM(current_balance),0) FROM bank_accounts');
@@ -1601,14 +1628,30 @@ $payToday = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM accounts_payable
 $receiveToday = sumValue($pdo, "SELECT COALESCE(SUM(amount-amount_received),0) FROM accounts_receivable WHERE due_date=:d AND status IN ('aberto','parcial')", [':d' => $today]);
 $cardsReceive = sumValue($pdo, 'SELECT COALESCE(SUM(net_value),0) FROM card_receivables WHERE received=0');
 $checksToCompensate = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM checks_control WHERE compensated=0 AND returned=0');
-$monthEntries = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='entrada' AND occurred_on>=:m AND COALESCE(category, '') <> 'Transferência'", [':m' => $monthStart]);
-$monthExits = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='saida' AND occurred_on>=:m AND COALESCE(category, '') <> 'Transferência'", [':m' => $monthStart]);
+$monthEntries = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='entrada' AND occurred_on BETWEEN :start AND :end AND COALESCE(category, '') <> 'Transferência'", [':start' => $dashboardStart, ':end' => $dashboardEnd]);
+$monthExits = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='saida' AND occurred_on BETWEEN :start AND :end AND COALESCE(category, '') <> 'Transferência'", [':start' => $dashboardStart, ':end' => $dashboardEnd]);
 $estimatedProfit = $monthEntries - $monthExits;
+$prevEntries = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='entrada' AND occurred_on BETWEEN :start AND :end AND COALESCE(category, '') <> 'Transferência'", [':start' => $dashboardPrevStart, ':end' => $dashboardPrevEnd]);
+$prevExits = sumValue($pdo, "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type='saida' AND occurred_on BETWEEN :start AND :end AND COALESCE(category, '') <> 'Transferência'", [':start' => $dashboardPrevStart, ':end' => $dashboardPrevEnd]);
+$prevProfit = $prevEntries - $prevExits;
+$dashboardDelta = $prevProfit !== 0.0 ? (($estimatedProfit - $prevProfit) / abs($prevProfit)) * 100.0 : 0.0;
 
-$chartRows = fetchAll($pdo, "SELECT occurred_on,
+$chartDateSelect = $dashboardView === 'anual' ? "strftime('%Y-%m', occurred_on)" : 'occurred_on';
+$chartRows = fetchAll($pdo, "SELECT $chartDateSelect AS period_label,
     SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) entradas,
     SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) saidas
-    FROM transactions WHERE occurred_on>=:start AND COALESCE(category, '') <> 'Transferência' GROUP BY occurred_on ORDER BY occurred_on", [':start' => $periodStart]);
+    FROM transactions WHERE occurred_on BETWEEN :start AND :end AND COALESCE(category, '') <> 'Transferência' GROUP BY period_label ORDER BY period_label", [':start' => $dashboardStart, ':end' => $dashboardEnd]);
+$dashboardExpensesByCategory = fetchAll($pdo, "SELECT COALESCE(NULLIF(category,''), 'Sem categoria') AS category_label, COALESCE(SUM(amount),0) AS total
+    FROM transactions
+    WHERE movement_type='saida' AND occurred_on BETWEEN :start AND :end AND COALESCE(category, '') <> 'Transferência'
+    GROUP BY category_label
+    ORDER BY total DESC
+    LIMIT 6", [':start' => $dashboardStart, ':end' => $dashboardEnd]);
+$dashboardReceivables = [
+    'cartoes' => $cardsReceive,
+    'cheques' => $checksToCompensate,
+    'clientes' => sumValue($pdo, "SELECT COALESCE(SUM(amount-amount_received),0) FROM accounts_receivable WHERE status IN ('aberto','parcial')"),
+];
 
 $transactionFilter = $_GET['filtro'] ?? 'mes';
 $filterStart = match ($transactionFilter) {
@@ -2279,25 +2322,35 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <div class="card"><h4>Contas a Receber Hoje</h4><p><?= money($receiveToday) ?></p></div>
         <div class="card"><h4>Cartões a Receber</h4><p><?= money($cardsReceive) ?></p></div>
         <div class="card"><h4>Cheques a Compensar</h4><p><?= money($checksToCompensate) ?></p></div>
-        <div class="card"><h4>Lucro Estimado do Mês</h4><p><?= money($estimatedProfit) ?></p></div>
+        <div class="card"><h4>Lucro Estimado do <?= htmlspecialchars($dashboardLabel) ?></h4><p><?= money($estimatedProfit) ?></p></div>
+        <div class="card"><h4>Comparativo com período anterior</h4><p><?= number_format($dashboardDelta, 1, ',', '.') ?>%</p></div>
     </div>
 
     <form method="get">
         <input type="hidden" name="module" value="dashboard">
-        <label>Gráfico por período:</label>
-        <select name="period">
-            <option value="7" <?= $period === '7' ? 'selected' : '' ?>>7 dias</option>
-            <option value="30" <?= $period === '30' ? 'selected' : '' ?>>30 dias</option>
-            <option value="90" <?= $period === '90' ? 'selected' : '' ?>>90 dias</option>
+        <label>Análise:</label>
+        <select name="dashboard_view">
+            <option value="mensal" <?= $dashboardView === 'mensal' ? 'selected' : '' ?>>Mensal</option>
+            <option value="trimestral" <?= $dashboardView === 'trimestral' ? 'selected' : '' ?>>Trimestral</option>
+            <option value="anual" <?= $dashboardView === 'anual' ? 'selected' : '' ?>>Anual</option>
         </select>
+        <label>Referência:</label>
+        <input type="month" name="dashboard_ref" value="<?= htmlspecialchars($dashboardRef) ?>">
         <button>Filtrar</button>
     </form>
-    <canvas id="chart" height="100"></canvas>
+    <p class="small">
+        Período atual: <?= dateBr($dashboardStart) ?> até <?= dateBr($dashboardEnd) ?> |
+        Comparação: <?= dateBr($dashboardPrevStart) ?> até <?= dateBr($dashboardPrevEnd) ?>
+    </p>
+    <canvas id="chartEntriesExits" height="90"></canvas>
+    <canvas id="chartComparePeriod" height="85"></canvas>
+    <canvas id="chartExpenseCategory" height="85"></canvas>
+    <canvas id="chartReceivables" height="85"></canvas>
     <script>
-        const labels = <?= json_encode(array_column($chartRows, 'occurred_on')) ?>;
+        const labels = <?= json_encode(array_column($chartRows, 'period_label')) ?>;
         const entradas = <?= json_encode(array_map('floatval', array_column($chartRows, 'entradas'))) ?>;
         const saidas = <?= json_encode(array_map('floatval', array_column($chartRows, 'saidas'))) ?>;
-        new Chart(document.getElementById('chart'), {
+        new Chart(document.getElementById('chartEntriesExits'), {
             type: 'line',
             data: {
                 labels,
@@ -2305,6 +2358,40 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                     { label: 'Entradas', data: entradas, borderColor: '#2f9e44' },
                     { label: 'Saídas', data: saidas, borderColor: '#d9480f' }
                 ]
+            }
+        });
+
+        new Chart(document.getElementById('chartComparePeriod'), {
+            type: 'bar',
+            data: {
+                labels: ['Entradas', 'Saídas', 'Lucro'],
+                datasets: [
+                    { label: 'Atual', data: [<?= $monthEntries ?>, <?= $monthExits ?>, <?= $estimatedProfit ?>], backgroundColor: '#2563eb' },
+                    { label: 'Anterior', data: [<?= $prevEntries ?>, <?= $prevExits ?>, <?= $prevProfit ?>], backgroundColor: '#94a3b8' }
+                ]
+            }
+        });
+
+        new Chart(document.getElementById('chartExpenseCategory'), {
+            type: 'doughnut',
+            data: {
+                labels: <?= json_encode(array_column($dashboardExpensesByCategory, 'category_label')) ?>,
+                datasets: [{
+                    data: <?= json_encode(array_map('floatval', array_column($dashboardExpensesByCategory, 'total'))) ?>,
+                    backgroundColor: ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6']
+                }]
+            }
+        });
+
+        new Chart(document.getElementById('chartReceivables'), {
+            type: 'bar',
+            data: {
+                labels: ['Cartões', 'Cheques', 'Clientes (em aberto)'],
+                datasets: [{
+                    label: 'A receber',
+                    data: [<?= $dashboardReceivables['cartoes'] ?>, <?= $dashboardReceivables['cheques'] ?>, <?= $dashboardReceivables['clientes'] ?>],
+                    backgroundColor: ['#2563eb', '#0ea5e9', '#14b8a6']
+                }]
             }
         });
     </script>
