@@ -961,6 +961,50 @@ function handlePost(PDO $pdo, string $module): void
 
         case 'cartoes':
             $action = $_POST['action'] ?? 'create';
+            $settleCard = static function (PDO $conn, int $id, array $post): void {
+                $cardStmt = $conn->prepare('SELECT * FROM card_receivables WHERE id=:id');
+                $cardStmt->execute([':id' => $id]);
+                $card = $cardStmt->fetch();
+                if (!$card) {
+                    return;
+                }
+                $anticipationFeePercent = max(0, (float) ($post['anticipation_fee_percent'] ?? 0));
+                $discount = ((float) $card['net_value'] * $anticipationFeePercent) / 100;
+                $isCanceled = isset($post['canceled']) ? 1 : 0;
+                $receivedAmount = max(0, (float) $card['net_value'] - $discount);
+                $wasReceived = (int) ($card['received'] ?? 0) === 1;
+                $conn->prepare('UPDATE card_receivables SET received=:received, canceled=:canceled, anticipation_discount=:anticipation_discount WHERE id=:id')
+                    ->execute([
+                        ':id' => $id,
+                        ':received' => $isCanceled ? 0 : 1,
+                        ':canceled' => $isCanceled,
+                        ':anticipation_discount' => $discount,
+                    ]);
+
+                if (!$isCanceled && !$wasReceived && $receivedAmount > 0) {
+                    $destinationAccount = trim((string) ($post['destination_account'] ?? ''));
+                    $defaultBankName = $destinationAccount !== '' ? $destinationAccount : 'caixa';
+                    $receivedOn = trim((string) ($post['received_on'] ?? ''));
+                    if ($receivedOn === '') {
+                        $receivedOn = date('Y-m-d');
+                    }
+                    $settleCategory = trim((string) ($post['settle_category'] ?? ''));
+                    $settleSubcategory = trim((string) ($post['settle_subcategory'] ?? ''));
+                    $description = 'Recebimento cartão #' . $id . ' - ' . (string) ($card['machine'] ?? '');
+                    $conn->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                        VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)')
+                        ->execute([
+                            ':movement_type' => 'entrada',
+                            ':amount' => $receivedAmount,
+                            ':category' => $settleCategory !== '' ? $settleCategory : 'Recebimento de cartões',
+                            ':subcategory' => $settleSubcategory !== '' ? $settleSubcategory : (string) ($card['card_type'] ?? 'Cartão'),
+                            ':origin_account' => $defaultBankName,
+                            ':destination_account' => $defaultBankName,
+                            ':description' => $description,
+                            ':occurred_on' => $receivedOn,
+                        ]);
+                }
+            };
             if ($action === 'create') {
                 $gross = (float) $_POST['gross_value'];
                 $fee = (float) $_POST['fee_percent'];
@@ -1033,45 +1077,18 @@ function handlePost(PDO $pdo, string $module): void
 
             if ($action === 'settle') {
                 $id = (int) $_POST['id'];
-                $cardStmt = $pdo->prepare('SELECT * FROM card_receivables WHERE id=:id');
-                $cardStmt->execute([':id' => $id]);
-                $card = $cardStmt->fetch();
-                if ($card) {
-                    $anticipationFeePercent = max(0, (float) ($_POST['anticipation_fee_percent'] ?? 0));
-                    $discount = ((float) $card['net_value'] * $anticipationFeePercent) / 100;
-                    $isCanceled = isset($_POST['canceled']) ? 1 : 0;
-                    $receivedAmount = max(0, (float) $card['net_value'] - $discount);
-                    $wasReceived = (int) ($card['received'] ?? 0) === 1;
-                    $pdo->prepare('UPDATE card_receivables SET received=:received, canceled=:canceled, anticipation_discount=:anticipation_discount WHERE id=:id')
-                        ->execute([
-                            ':id' => $id,
-                            ':received' => $isCanceled ? 0 : 1,
-                            ':canceled' => $isCanceled,
-                            ':anticipation_discount' => $discount,
-                        ]);
-
-                    if (!$isCanceled && !$wasReceived && $receivedAmount > 0) {
-                        $destinationAccount = trim((string) ($_POST['destination_account'] ?? ''));
-                        $defaultBankName = $destinationAccount !== '' ? $destinationAccount : 'caixa';
-                        $receivedOn = trim((string) ($_POST['received_on'] ?? ''));
-                        if ($receivedOn === '') {
-                            $receivedOn = date('Y-m-d');
+                if ($id > 0) {
+                    $settleCard($pdo, $id, $_POST);
+                }
+            }
+            if ($action === 'settle_bulk') {
+                $ids = $_POST['selected_ids'] ?? [];
+                if (is_array($ids)) {
+                    foreach ($ids as $id) {
+                        $cardId = (int) $id;
+                        if ($cardId > 0) {
+                            $settleCard($pdo, $cardId, $_POST);
                         }
-                        $settleCategory = trim((string) ($_POST['settle_category'] ?? ''));
-                        $settleSubcategory = trim((string) ($_POST['settle_subcategory'] ?? ''));
-                        $description = 'Recebimento cartão #' . $id . ' - ' . (string) ($card['machine'] ?? '');
-                        $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                            VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)')
-                            ->execute([
-                                ':movement_type' => 'entrada',
-                                ':amount' => $receivedAmount,
-                                ':category' => $settleCategory !== '' ? $settleCategory : 'Recebimento de cartões',
-                                ':subcategory' => $settleSubcategory !== '' ? $settleSubcategory : (string) ($card['card_type'] ?? 'Cartão'),
-                                ':origin_account' => $defaultBankName,
-                                ':destination_account' => $defaultBankName,
-                                ':description' => $description,
-                                ':occurred_on' => $receivedOn,
-                            ]);
                     }
                 }
             }
@@ -2028,15 +2045,24 @@ $cardsSql .= ' ORDER BY c.expected_release_date DESC, c.id DESC';
 $cards = fetchAll($pdo, $cardsSql, $cardsParams);
 $weekStart = date('Y-m-d', strtotime('monday this week'));
 $monthStart = date('Y-m-01');
-$salesToday = fetchAll($pdo, 'SELECT * FROM card_receivables WHERE sale_date=:today ORDER BY id DESC', [':today' => $today]);
+$salesDateFrom = trim((string) ($_GET['sales_date_from'] ?? $today));
+$salesDateTo = trim((string) ($_GET['sales_date_to'] ?? $today));
+if ($salesDateFrom === '') {
+    $salesDateFrom = $today;
+}
+if ($salesDateTo === '') {
+    $salesDateTo = $today;
+}
+$salesToday = fetchAll($pdo, 'SELECT * FROM card_receivables WHERE sale_date BETWEEN :start AND :end ORDER BY sale_date DESC, id DESC', [':start' => $salesDateFrom, ':end' => $salesDateTo]);
 $salesDailyTotal = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value),0) FROM card_receivables WHERE sale_date=:today AND canceled=0', [':today' => $today]);
 $salesWeeklyTotal = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0', [':start' => $weekStart, ':end' => $today]);
 $salesMonthlyTotal = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0', [':start' => $monthStart, ':end' => $today]);
+$salesFilteredTotal = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0', [':start' => $salesDateFrom, ':end' => $salesDateTo]);
 $salesByLocationToday = fetchAll($pdo, 'SELECT COALESCE(NULLIF(sale_location, \'\'), \'Sem local\') AS sale_location, COUNT(*) AS total_sales, COALESCE(SUM(gross_value),0) AS gross_total, COALESCE(SUM(net_value),0) AS net_total
     FROM card_receivables
-    WHERE sale_date=:today AND canceled=0
+    WHERE sale_date BETWEEN :start AND :end AND canceled=0
     GROUP BY sale_location
-    ORDER BY gross_total DESC', [':today' => $today]);
+    ORDER BY gross_total DESC', [':start' => $salesDateFrom, ':end' => $salesDateTo]);
 $checkFilters = [
     'check_date_from' => trim((string) ($_GET['check_date_from'] ?? '')),
     'check_date_to' => trim((string) ($_GET['check_date_to'] ?? '')),
@@ -4402,13 +4428,26 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     </script>
 <?php elseif ($module === 'vendas'): ?>
     <h3>Vendas</h3>
+    <button type="button" onclick="document.getElementById('salesFilterModal').showModal()">Filtrar</button>
+    <dialog id="salesFilterModal">
+        <h4>Filtro de vendas</h4>
+        <form method="get">
+            <input type="hidden" name="module" value="vendas">
+            <label>Data inicial: <input type="date" name="sales_date_from" value="<?= htmlspecialchars($salesDateFrom) ?>" required></label>
+            <label>Data final: <input type="date" name="sales_date_to" value="<?= htmlspecialchars($salesDateTo) ?>" required></label>
+            <button type="submit">Aplicar filtro</button>
+            <a href="?module=vendas">Limpar</a>
+            <button type="button" onclick="document.getElementById('salesFilterModal').close()">Fechar</button>
+        </form>
+    </dialog>
     <div class="cards">
         <div class="card"><h4>Resumo Diário</h4><p><?= money($salesDailyTotal) ?></p></div>
         <div class="card"><h4>Resumo Semanal</h4><p><?= money($salesWeeklyTotal) ?></p></div>
         <div class="card"><h4>Resumo Mensal</h4><p><?= money($salesMonthlyTotal) ?></p></div>
+        <div class="card"><h4>Resumo do Filtro</h4><p><?= money($salesFilteredTotal) ?></p></div>
     </div>
 
-    <h4>Vendas do dia (<?= dateBr($today) ?>)</h4>
+    <h4>Vendas do período (<?= dateBr($salesDateFrom) ?> até <?= dateBr($salesDateTo) ?>)</h4>
     <table>
         <tr><th>Data</th><th>Local</th><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Bruto</th><th>Líquido</th><th>Status</th></tr>
         <?php foreach ($salesToday as $sale): ?>
@@ -4425,7 +4464,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <?php endforeach; ?>
     </table>
 
-    <h4>Resumo diário por local</h4>
+    <h4>Resumo por local no período</h4>
     <table>
         <tr><th>Local</th><th>Qtd vendas</th><th>Total bruto</th><th>Total líquido</th></tr>
         <?php foreach ($salesByLocationToday as $row): ?>
@@ -4548,7 +4587,19 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <button type="button" id="cardInstallmentsConfirmBtn" class="btn-success">Confirmar lançamento</button>
         <button type="button" onclick="document.getElementById('cardInstallmentsPreviewModal').close()">Cancelar</button>
     </dialog>
-    <table><tr><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Local</th><th>Taxa</th><th>Bruto</th><th>Líquido</th><th>Venda</th><th>Liberação</th><th>Recebido</th><th>Ações</th></tr>
+    <form method="post" id="cardBulkSettleForm">
+        <input type="hidden" name="action" value="settle_bulk">
+        <label>Data recebimento: <input name="received_on" type="date" value="<?= $today ?>" required></label>
+        <label>Conta destino:
+            <select name="destination_account">
+                <option value="caixa">Caixa</option>
+                <?php foreach ($banksForLaunch as $bank): ?><option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option><?php endforeach; ?>
+            </select>
+        </label>
+        <button type="submit" class="btn-success" onclick="return confirm('Dar baixa nos cartões selecionados?')">Dar baixa selecionados</button>
+    </form>
+
+    <table><tr><th><input type="checkbox" id="card_select_all"></th><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Local</th><th>Taxa</th><th>Bruto</th><th>Líquido</th><th>Venda</th><th>Liberação</th><th>Recebido</th><th>Ações</th></tr>
         <?php foreach ($cards as $c): ?>
             <?php
                 $cardRowClass = '';
@@ -4561,6 +4612,11 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 }
             ?>
             <tr class="<?= $cardRowClass ?>">
+                <td>
+                    <?php if (!(int) $c['received'] && !(int) $c['canceled']): ?>
+                        <input type="checkbox" name="selected_ids[]" value="<?= (int) $c['id'] ?>" form="cardBulkSettleForm" class="card_row_select">
+                    <?php endif; ?>
+                </td>
                 <td><?= htmlspecialchars($c['machine']) ?></td>
                 <td><?= htmlspecialchars($c['brand']) ?></td>
                 <td><?= $c['card_type'] ?></td>
@@ -4762,6 +4818,14 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         function openCardSettleModal(id) {
             document.getElementById('card_settle_id').value = id;
             document.getElementById('cardSettleModal').showModal();
+        }
+        const cardSelectAll = document.getElementById('card_select_all');
+        if (cardSelectAll) {
+            cardSelectAll.addEventListener('change', function () {
+                document.querySelectorAll('.card_row_select').forEach((checkbox) => {
+                    checkbox.checked = this.checked;
+                });
+            });
         }
     </script>
 <?php elseif ($module === 'cheques'): ?>
