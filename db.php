@@ -74,6 +74,12 @@ function runMigrations(PDO $pdo): void
         $pdo->exec('UPDATE bank_accounts SET transfer_enabled = 1 WHERE transfer_enabled IS NULL');
     }
 
+    $transactionColumns = $pdo->query("PRAGMA table_info(transactions)")->fetchAll();
+    $transactionColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $transactionColumns);
+    if (!in_array('payment_method', $transactionColumnNames, true)) {
+        $pdo->exec('ALTER TABLE transactions ADD COLUMN payment_method TEXT');
+    }
+
     $payableColumns = $pdo->query("PRAGMA table_info(accounts_payable)")->fetchAll();
     $payableColumnNames = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $payableColumns);
     $addPayableColumn = static function (PDO $conn, string $name, string $type) use ($payableColumnNames): void {

@@ -13,6 +13,7 @@ CREATE TABLE transactions (
     movement_type TEXT NOT NULL CHECK (movement_type IN ('entrada', 'saida')),
     amount REAL NOT NULL,
     category TEXT NOT NULL,
+    payment_method TEXT,
     subcategory TEXT,
     origin_account TEXT,
     destination_account TEXT,

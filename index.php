@@ -21,12 +21,13 @@ function handlePost(PDO $pdo, string $module): void
             if ($action === 'create') {
                 $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
                 $subcategory = trim((string) ($_POST['subcategory'] ?? ''));
-                $stmt = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
-                    VALUES (:movement_type,:amount,:category,:subcategory,:origin_account,:destination_account,:description,:occurred_on)');
+                $stmt = $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, payment_method, subcategory, origin_account, destination_account, description, occurred_on)
+                    VALUES (:movement_type,:amount,:category,:payment_method,:subcategory,:origin_account,:destination_account,:description,:occurred_on)');
                 $stmt->execute([
                     ':movement_type' => $_POST['movement_type'],
                     ':amount' => (float) $_POST['amount'],
                     ':category' => trim($_POST['category']),
+                    ':payment_method' => $paymentMethod,
                     ':subcategory' => $subcategory !== '' ? $subcategory : $paymentMethod,
                     ':origin_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
                     ':destination_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
@@ -38,13 +39,14 @@ function handlePost(PDO $pdo, string $module): void
                 $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
                 $subcategory = trim((string) ($_POST['subcategory'] ?? ''));
                 $pdo->prepare('UPDATE transactions
-                    SET movement_type=:movement_type, amount=:amount, category=:category, subcategory=:subcategory, origin_account=:origin_account, destination_account=:destination_account, description=:description, occurred_on=:occurred_on
+                    SET movement_type=:movement_type, amount=:amount, category=:category, payment_method=:payment_method, subcategory=:subcategory, origin_account=:origin_account, destination_account=:destination_account, description=:description, occurred_on=:occurred_on
                     WHERE id=:id')
                     ->execute([
                         ':id' => (int) ($_POST['id'] ?? 0),
                         ':movement_type' => $_POST['movement_type'],
                         ':amount' => (float) $_POST['amount'],
                         ':category' => trim($_POST['category']),
+                        ':payment_method' => $paymentMethod,
                         ':subcategory' => $subcategory !== '' ? $subcategory : $paymentMethod,
                         ':origin_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
                         ':destination_account' => trim((string) ($_POST['bank_account'] ?? 'caixa')),
@@ -1766,7 +1768,11 @@ $filterStart = match ($transactionFilter) {
     default => date('Y-m-01')
 };
 $filterEnd = $transactionFilter === 'periodo' ? ($_GET['fim'] ?? date('Y-m-d')) : date('Y-m-d');
-$transactions = fetchAll($pdo, "SELECT * FROM transactions WHERE occurred_on BETWEEN :s AND :e AND COALESCE(category, '') <> 'Transferência' ORDER BY occurred_on DESC, id DESC", [':s' => $filterStart, ':e' => $filterEnd]);
+$transactions = fetchAll($pdo, "SELECT *,
+    COALESCE(NULLIF(payment_method, ''), NULLIF(subcategory, ''), 'Sem forma') AS payment_method_display
+    FROM transactions
+    WHERE occurred_on BETWEEN :s AND :e AND COALESCE(category, '') <> 'Transferência'
+    ORDER BY occurred_on DESC, id DESC", [':s' => $filterStart, ':e' => $filterEnd]);
 $dailyFlowRows = fetchAll($pdo, "SELECT occurred_on,
     SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) AS entradas,
     SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) AS saidas
@@ -1782,7 +1788,7 @@ foreach ($dailyFlowRows as &$dailyFlowRow) {
 }
 unset($dailyFlowRow);
 $cashflowByPayment = fetchAll($pdo, "SELECT
-    COALESCE(NULLIF(subcategory, ''), 'Sem forma') AS payment_method,
+    COALESCE(NULLIF(payment_method, ''), NULLIF(subcategory, ''), 'Sem forma') AS payment_method,
     SUM(CASE WHEN movement_type='entrada' THEN amount ELSE 0 END) AS entradas,
     SUM(CASE WHEN movement_type='saida' THEN amount ELSE 0 END) AS saidas
     FROM transactions
@@ -2752,13 +2758,14 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <?php endforeach; ?>
     </table>
     <table>
-        <tr><th>Data</th><th>Tipo</th><th>Valor</th><th>Categoria</th><th>Subcategoria</th><th>Origem</th><th>Destino</th><th>Histórico</th><th>Ações</th></tr>
+        <tr><th>Data</th><th>Tipo</th><th>Valor</th><th>Categoria</th><th>Forma de pagamento</th><th>Subcategoria</th><th>Origem</th><th>Destino</th><th>Histórico</th><th>Ações</th></tr>
         <?php foreach ($transactions as $t): ?>
             <tr>
                 <td><?= dateBr((string) $t['occurred_on']) ?></td>
                 <td><?= $t['movement_type'] ?></td>
                 <td><?= money((float) $t['amount']) ?></td>
                 <td><?= htmlspecialchars($t['category']) ?></td>
+                <td><?= htmlspecialchars((string) $t['payment_method_display']) ?></td>
                 <td><?= htmlspecialchars((string) $t['subcategory']) ?></td>
                 <td><?= htmlspecialchars((string) $t['origin_account']) ?></td>
                 <td><?= htmlspecialchars((string) $t['destination_account']) ?></td>
@@ -2782,7 +2789,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             document.getElementById('fluxo_amount').value = item.amount || '';
             document.getElementById('fluxo_category').value = item.category || '';
             document.getElementById('fluxo_subcategory').value = item.subcategory || '';
-            document.getElementById('fluxo_payment_method').value = '';
+            document.getElementById('fluxo_payment_method').value = item.payment_method || '';
             document.getElementById('fluxo_bank_account').value = item.origin_account || 'caixa';
             document.getElementById('fluxo_description').value = item.description || '';
             document.getElementById('fluxo_occurred_on').value = item.occurred_on || '';
