@@ -1103,22 +1103,82 @@ function handlePost(PDO $pdo, string $module): void
 
         case 'cheques':
             $action = (string) ($_POST['action'] ?? 'create');
+            $registerCheckEntry = static function (PDO $conn, int $checkId, array $checkData, string $entryDate, string $category, string $subcategory, string $destinationAccount): void {
+                if ($checkId <= 0 || $destinationAccount === '') {
+                    return;
+                }
+                $amount = (float) ($checkData['amount'] ?? 0);
+                if ($amount <= 0) {
+                    return;
+                }
+                $customer = trim((string) ($checkData['customer'] ?? ''));
+                $description = 'Baixa cheque #' . $checkId . ' - ' . $customer;
+                $existingTransactionStmt = $conn->prepare('SELECT id FROM transactions WHERE movement_type="entrada" AND description=:description LIMIT 1');
+                $existingTransactionStmt->execute([':description' => $description]);
+                $existingTransactionId = (int) ($existingTransactionStmt->fetchColumn() ?: 0);
+                if ($existingTransactionId === 0) {
+                    $conn->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                        VALUES ("entrada", :amount, :category, :subcategory, "", :destination_account, :description, :occurred_on)')
+                        ->execute([
+                            ':amount' => $amount,
+                            ':category' => $category !== '' ? $category : 'Receitas',
+                            ':subcategory' => $subcategory !== '' ? $subcategory : 'Cheque',
+                            ':destination_account' => $destinationAccount,
+                            ':description' => $description,
+                            ':occurred_on' => $entryDate,
+                        ]);
+                }
+            };
             if ($action === 'create') {
+                $checkType = (string) ($_POST['check_type'] ?? 'avista');
+                $checkDate = (string) ($_POST['check_date'] ?? $_POST['due_date']);
+                $dueDate = (string) ($_POST['due_date'] ?? $checkDate);
+                $amount = (float) ($_POST['amount'] ?? 0);
+                $customer = trim((string) ($_POST['customer'] ?? ''));
+                $bank = trim((string) ($_POST['bank'] ?? ''));
+                $checkNumber = trim((string) ($_POST['check_number'] ?? ''));
+                $notes = trim((string) ($_POST['notes'] ?? ''));
+                $cashCategory = trim((string) ($_POST['cash_category'] ?? ''));
+                $cashSubcategory = trim((string) ($_POST['cash_subcategory'] ?? ''));
+                $cashBankAccount = trim((string) ($_POST['cash_bank_account'] ?? ''));
+                $isImmediateCheck = $checkType === 'avista';
+                $cleared = $isImmediateCheck ? 1 : (isset($_POST['cleared']) ? 1 : 0);
+                $compensated = $isImmediateCheck ? 1 : (isset($_POST['compensated']) ? 1 : 0);
+                $returned = $isImmediateCheck ? 0 : (isset($_POST['returned']) ? 1 : 0);
                 $stmt = $pdo->prepare('INSERT INTO checks_control (check_type, customer, bank, check_number, check_date, due_date, amount, notes, cleared, compensated, returned)
                     VALUES (:check_type,:customer,:bank,:check_number,:check_date,:due_date,:amount,:notes,:cleared,:compensated,:returned)');
                 $stmt->execute([
-                    ':check_type' => $_POST['check_type'],
-                    ':customer' => trim($_POST['customer']),
-                    ':bank' => trim($_POST['bank']),
-                    ':check_number' => trim($_POST['check_number']),
-                    ':check_date' => (string) ($_POST['check_date'] ?? $_POST['due_date']),
-                    ':due_date' => $_POST['due_date'],
-                    ':amount' => (float) $_POST['amount'],
-                    ':notes' => trim((string) ($_POST['notes'] ?? '')),
-                    ':cleared' => isset($_POST['cleared']) ? 1 : 0,
-                    ':compensated' => isset($_POST['compensated']) ? 1 : 0,
-                    ':returned' => isset($_POST['returned']) ? 1 : 0,
+                    ':check_type' => $checkType,
+                    ':customer' => $customer,
+                    ':bank' => $bank,
+                    ':check_number' => $checkNumber,
+                    ':check_date' => $checkDate,
+                    ':due_date' => $dueDate,
+                    ':amount' => $amount,
+                    ':notes' => $notes,
+                    ':cleared' => $cleared,
+                    ':compensated' => $compensated,
+                    ':returned' => $returned,
                 ]);
+                $checkId = (int) $pdo->lastInsertId();
+                if ($isImmediateCheck && $checkId > 0 && $cashBankAccount !== '') {
+                    $description = 'Recebimento cheque à vista #' . $checkId . ' - ' . $customer;
+                    $existsTransactionStmt = $pdo->prepare('SELECT id FROM transactions WHERE movement_type="entrada" AND description=:description LIMIT 1');
+                    $existsTransactionStmt->execute([':description' => $description]);
+                    $existingTransactionId = (int) ($existsTransactionStmt->fetchColumn() ?: 0);
+                    if ($existingTransactionId === 0) {
+                        $pdo->prepare('INSERT INTO transactions (movement_type, amount, category, subcategory, origin_account, destination_account, description, occurred_on)
+                            VALUES ("entrada", :amount, :category, :subcategory, "", :destination_account, :description, :occurred_on)')
+                            ->execute([
+                                ':amount' => $amount,
+                                ':category' => $cashCategory !== '' ? $cashCategory : 'Receitas',
+                                ':subcategory' => $cashSubcategory !== '' ? $cashSubcategory : 'Cheque à vista',
+                                ':destination_account' => $cashBankAccount,
+                                ':description' => $description,
+                                ':occurred_on' => $checkDate,
+                            ]);
+                    }
+                }
             }
             if ($action === 'edit') {
                 $pdo->prepare('UPDATE checks_control
@@ -1151,6 +1211,15 @@ function handlePost(PDO $pdo, string $module): void
                 if ($check && $destinationAccount !== '') {
                     $pdo->prepare('UPDATE checks_control SET cleared=1, compensated=1, returned=0 WHERE id=:id')
                         ->execute([':id' => $id]);
+                    $registerCheckEntry(
+                        $pdo,
+                        $id,
+                        (array) $check,
+                        $settleDate,
+                        trim((string) ($check['check_type'] ?? '')) === 'parcelado' ? 'Receitas' : 'Receitas',
+                        trim((string) ($check['check_type'] ?? '')) === 'parcelado' ? 'Cheque pré-datado' : 'Cheque',
+                        $destinationAccount
+                    );
 
                     $bankIdStmt = $pdo->prepare('SELECT id FROM bank_accounts WHERE name=:name LIMIT 1');
                     $bankIdStmt->execute([':name' => $destinationAccount]);
@@ -1194,6 +1263,18 @@ function handlePost(PDO $pdo, string $module): void
                     $checkStmt->execute([':id' => $id]);
                     $check = $checkStmt->fetch();
                     if ($check) {
+                        $bankNameStmt = $pdo->prepare('SELECT name FROM bank_accounts WHERE id=:id LIMIT 1');
+                        $bankNameStmt->execute([':id' => $bankAccountId]);
+                        $bankName = trim((string) ($bankNameStmt->fetchColumn() ?: ''));
+                        $registerCheckEntry(
+                            $pdo,
+                            $id,
+                            (array) $check,
+                            $settleDate,
+                            'Receitas',
+                            trim((string) ($check['check_type'] ?? '')) === 'parcelado' ? 'Cheque pré-datado' : 'Cheque',
+                            $bankName
+                        );
                         $description = 'Baixa cheque #' . $id . ' - ' . (string) ($check['customer'] ?? '');
                         $existsStmt = $pdo->prepare('SELECT id FROM bank_reconciliation WHERE bank_account_id=:bank_account_id AND movement_date=:movement_date AND description=:description LIMIT 1');
                         $existsStmt->execute([
@@ -2249,6 +2330,10 @@ $dreSalesCash = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM front_cash_s
 $dreSalesCard = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
 $dreSalesCredit = sumValue($pdo, 'SELECT COALESCE(SUM(total_amount),0) FROM credit_sales_totals WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
 $dreSalesPix = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM front_cash_sales WHERE sale_date BETWEEN :start AND :end AND LOWER(payment_method) LIKE :pix', [':start' => $dreMonthStart, ':end' => $dreMonthEnd, ':pix' => '%pix%']);
+$dreSalesChecks = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM transactions
+    WHERE movement_type="entrada"
+      AND occurred_on BETWEEN :start AND :end
+      AND (description LIKE "Baixa cheque #%" OR description LIKE "Recebimento cheque à vista #%")', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
 $dreCardFees = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value - net_value + anticipation_discount),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
 $dreReturns = sumValue($pdo, 'SELECT COALESCE(SUM(return_on_credit + return_exchange_credit),0) FROM credit_sales_totals WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
 $dreDiscounts = sumValue($pdo, 'SELECT COALESCE(SUM(discount),0) FROM customer_receipts WHERE receipt_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
@@ -2266,7 +2351,8 @@ $dre['vendas_vista'] = $dreSalesCash;
 $dre['vendas_prazo'] = $dreSalesCredit;
 $dre['vendas_cartao'] = $dreSalesCard;
 $dre['vendas_pix'] = $dreSalesPix;
-$dre['receita_bruta'] = $dre['vendas_vista'] + $dre['vendas_prazo'] + $dre['vendas_cartao'] + $dre['vendas_pix'];
+$dre['vendas_cheque'] = $dreSalesChecks;
+$dre['receita_bruta'] = $dre['vendas_vista'] + $dre['vendas_prazo'] + $dre['vendas_cartao'] + $dre['vendas_pix'] + $dre['vendas_cheque'];
 
 $dre['impostos_vendas'] = $dreConfig['sales_taxes'];
 $dre['taxas_cartao'] = $dreCardFees;
@@ -4897,7 +4983,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
     <dialog id="checkCreateModal">
         <form method="post">
             <input type="hidden" name="action" value="create">
-            <select name="check_type" required><option value="avista">À vista</option><option value="parcelado">Pré-datado</option></select>
+            <select name="check_type" id="check_create_type" required><option value="avista">À vista</option><option value="parcelado">Pré-datado</option></select>
             <input name="customer" placeholder="Cliente" required>
             <input name="bank" placeholder="Banco (digitado)" required>
             <input name="check_number" placeholder="Número do cheque" required>
@@ -4905,6 +4991,33 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <label>Data para compensar <input name="due_date" type="date" required></label>
             <input name="amount" type="number" step="0.01" placeholder="Valor" required>
             <input name="notes" placeholder="Observação">
+            <fieldset id="checkCashflowFields">
+                <legend>Dados para lançar no fluxo (cheque à vista)</legend>
+                <label>Categoria
+                    <select name="cash_category">
+                        <option value="">Receitas</option>
+                        <?php foreach ($categories as $category): ?>
+                            <option value="<?= htmlspecialchars((string) $category['name']) ?>"><?= htmlspecialchars((string) $category['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>Subcategoria
+                    <select name="cash_subcategory">
+                        <option value="">Cheque à vista</option>
+                        <?php foreach ($subcategories as $subcategory): ?>
+                            <option value="<?= htmlspecialchars((string) $subcategory['name']) ?>"><?= htmlspecialchars((string) ($subcategory['parent_name'] . ' > ' . $subcategory['name'])) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>Banco da entrada
+                    <select name="cash_bank_account" id="check_cash_bank_account">
+                        <option value="">Selecione</option>
+                        <?php foreach ($banks as $bank): ?>
+                            <option value="<?= htmlspecialchars((string) $bank['name']) ?>"><?= htmlspecialchars((string) $bank['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+            </fieldset>
             <button>Salvar lançamento</button>
             <button type="button" onclick="document.getElementById('checkCreateModal').close()">Fechar</button>
         </form>
@@ -5004,6 +5117,25 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         </form>
     </dialog>
     <script>
+        (function () {
+            const typeField = document.getElementById('check_create_type');
+            const cashflowFields = document.getElementById('checkCashflowFields');
+            const bankField = document.getElementById('check_cash_bank_account');
+            if (!typeField || !cashflowFields || !bankField) return;
+            const toggleCheckCashflowFields = () => {
+                const isImmediate = typeField.value === 'avista';
+                cashflowFields.style.display = isImmediate ? 'block' : 'none';
+                if (isImmediate) {
+                    bankField.setAttribute('required', 'required');
+                } else {
+                    bankField.removeAttribute('required');
+                    bankField.value = '';
+                }
+            };
+            typeField.addEventListener('change', toggleCheckCashflowFields);
+            toggleCheckCashflowFields();
+        })();
+
         function openCheckEditModal(check) {
             document.getElementById('check_edit_id').value = check.id || '';
             document.getElementById('check_edit_type').value = check.check_type || 'avista';
@@ -5163,6 +5295,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <tr><td>Vendas a prazo</td><td><?= money($dre['vendas_prazo']) ?></td></tr>
         <tr><td>Vendas por cartão</td><td><?= money($dre['vendas_cartao']) ?></td></tr>
         <tr><td>Vendas por PIX</td><td><?= money($dre['vendas_pix']) ?></td></tr>
+        <tr><td>Cheques recebidos</td><td><?= money($dre['vendas_cheque']) ?></td></tr>
         <tr><td><strong>Total Receita Bruta</strong></td><td><strong><?= money($dre['receita_bruta']) ?></strong></td></tr>
 
         <tr><td><strong>2. (-) Deduções da Receita</strong></td><td></td></tr>
