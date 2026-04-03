@@ -2332,7 +2332,9 @@ $dreConfig = [
     'card_anticipation' => (float) ($dreConfigRow['card_anticipation'] ?? 0),
 ];
 
-$dreSalesCash = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM front_cash_sales WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
+$dreSalesCash = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM front_cash_sales
+    WHERE sale_date BETWEEN :start AND :end
+      AND LOWER(COALESCE(payment_method, \'\')) NOT LIKE :pix', [':start' => $dreMonthStart, ':end' => $dreMonthEnd, ':pix' => '%pix%']);
 $dreSalesCard = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
 $dreSalesCredit = sumValue($pdo, 'SELECT COALESCE(SUM(total_amount),0) FROM credit_sales_totals WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
 $dreSalesPix = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM front_cash_sales WHERE sale_date BETWEEN :start AND :end AND LOWER(payment_method) LIKE :pix', [':start' => $dreMonthStart, ':end' => $dreMonthEnd, ':pix' => '%pix%']);
