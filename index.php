@@ -5268,6 +5268,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <input type="hidden" name="module" value="dre">
         <label>Mês referência: <input type="month" name="dre_month" value="<?= htmlspecialchars($dreMonth) ?>"></label>
         <button>Carregar</button>
+        <button type="button" onclick="exportDrePdf()">Exportar PDF</button>
     </form>
 
     <h4>Configurações manuais do período</h4>
@@ -5295,7 +5296,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <button>Salvar parâmetros do DRE</button>
     </form>
 
-    <table>
+    <table id="dreReportTable">
         <tr><th>Linha</th><th>Valor</th></tr>
         <tr><td><strong>1. Receita Bruta de Vendas</strong></td><td></td></tr>
         <tr><td>Vendas à vista</td><td><?= money($dre['vendas_vista']) ?></td></tr>
@@ -5337,6 +5338,40 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 
         <tr><td><strong>6. Resultado Final (Lucro ou Prejuízo)</strong></td><td><strong><?= money($dre['resultado_final']) ?></strong></td></tr>
     </table>
+    <script>
+        function exportDrePdf() {
+            const table = document.getElementById('dreReportTable');
+            if (!table) return;
+            const monthRef = <?= json_encode($dreMonth) ?>;
+            const win = window.open('', '_blank');
+            if (!win) return;
+            win.document.write(`
+                <!doctype html>
+                <html lang="pt-BR">
+                <head>
+                    <meta charset="utf-8">
+                    <title>DRE ${monthRef}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
+                        h1 { font-size: 20px; margin-bottom: 4px; }
+                        p { margin-top: 0; margin-bottom: 16px; color: #444; }
+                        table { width: 100%; border-collapse: collapse; }
+                        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+                        th { background: #f2f2f2; }
+                    </style>
+                </head>
+                <body>
+                    <h1>DRE Gerencial</h1>
+                    <p>Mês de referência: ${monthRef}</p>
+                    ${table.outerHTML}
+                </body>
+                </html>
+            `);
+            win.document.close();
+            win.focus();
+            win.print();
+        }
+    </script>
 <?php elseif ($module === 'fornecedores'): ?>
     <h3>Fornecedores</h3>
     <div class="cards">
