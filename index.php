@@ -1101,6 +1101,47 @@ function handlePost(PDO $pdo, string $module): void
                     }
                 }
             }
+            if ($action === 'bulk_edit') {
+                $ids = $_POST['edit_selected_ids'] ?? [];
+                $receivedOn = trim((string) ($_POST['bulk_received_on'] ?? ''));
+                $originAccount = trim((string) ($_POST['bulk_origin_account'] ?? ''));
+                $destinationAccount = trim((string) ($_POST['bulk_destination_account'] ?? ''));
+                $releaseDate = trim((string) ($_POST['bulk_expected_release_date'] ?? ''));
+                if (is_array($ids)) {
+                    foreach ($ids as $id) {
+                        $cardId = (int) $id;
+                        if ($cardId <= 0) {
+                            continue;
+                        }
+                        if ($releaseDate !== '') {
+                            $pdo->prepare('UPDATE card_receivables SET expected_release_date=:expected_release_date WHERE id=:id')
+                                ->execute([
+                                    ':id' => $cardId,
+                                    ':expected_release_date' => $releaseDate,
+                                ]);
+                        }
+
+                        $descriptionLike = 'Recebimento cartão #' . $cardId . ' -%';
+                        $trxStmt = $pdo->prepare('SELECT id, origin_account, destination_account, occurred_on
+                            FROM transactions
+                            WHERE movement_type="entrada" AND description LIKE :description
+                            ORDER BY id DESC LIMIT 1');
+                        $trxStmt->execute([':description' => $descriptionLike]);
+                        $trx = $trxStmt->fetch();
+                        if ($trx) {
+                            $pdo->prepare('UPDATE transactions
+                                SET origin_account=:origin_account, destination_account=:destination_account, occurred_on=:occurred_on
+                                WHERE id=:id')
+                                ->execute([
+                                    ':id' => (int) $trx['id'],
+                                    ':origin_account' => $originAccount !== '' ? $originAccount : (string) ($trx['origin_account'] ?? ''),
+                                    ':destination_account' => $destinationAccount !== '' ? $destinationAccount : (string) ($trx['destination_account'] ?? ''),
+                                    ':occurred_on' => $receivedOn !== '' ? $receivedOn : (string) ($trx['occurred_on'] ?? date('Y-m-d')),
+                                ]);
+                        }
+                    }
+                }
+            }
             break;
 
         case 'cheques':
@@ -4686,8 +4727,32 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         </label>
         <button type="submit" class="btn-success" onclick="return confirm('Dar baixa nos cartões selecionados?')">Dar baixa selecionados</button>
     </form>
+    <form method="post" id="cardBulkEditForm">
+        <input type="hidden" name="action" value="bulk_edit">
+        <label>Nova data de recebimento:
+            <input name="bulk_received_on" type="date" value="<?= $today ?>">
+        </label>
+        <label>Nova conta origem:
+            <select name="bulk_origin_account">
+                <option value="">Manter atual</option>
+                <option value="caixa">Caixa</option>
+                <?php foreach ($banksForLaunch as $bank): ?><option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option><?php endforeach; ?>
+            </select>
+        </label>
+        <label>Nova conta destino:
+            <select name="bulk_destination_account">
+                <option value="">Manter atual</option>
+                <option value="caixa">Caixa</option>
+                <?php foreach ($banksForLaunch as $bank): ?><option value="<?= htmlspecialchars($bank['name']) ?>"><?= htmlspecialchars($bank['name']) ?></option><?php endforeach; ?>
+            </select>
+        </label>
+        <label>Nova data de liberação:
+            <input name="bulk_expected_release_date" type="date" value="">
+        </label>
+        <button type="submit" onclick="return confirm('Editar cartões selecionados?')">Editar selecionados</button>
+    </form>
 
-    <table><tr><th><input type="checkbox" id="card_select_all"></th><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Local</th><th>Taxa</th><th>Bruto</th><th>Líquido</th><th>Venda</th><th>Liberação</th><th>Recebido</th><th>Ações</th></tr>
+    <table><tr><th>Baixa<br><input type="checkbox" id="card_select_all"></th><th>Editar<br><input type="checkbox" id="card_edit_select_all"></th><th>Máquina</th><th>Bandeira</th><th>Tipo</th><th>Local</th><th>Taxa</th><th>Bruto</th><th>Líquido</th><th>Venda</th><th>Liberação</th><th>Recebido</th><th>Ações</th></tr>
         <?php foreach ($cards as $c): ?>
             <?php
                 $cardRowClass = '';
@@ -4703,6 +4768,11 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <td>
                     <?php if (!(int) $c['received'] && !(int) $c['canceled']): ?>
                         <input type="checkbox" name="selected_ids[]" value="<?= (int) $c['id'] ?>" form="cardBulkSettleForm" class="card_row_select">
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php if (!(int) $c['canceled']): ?>
+                        <input type="checkbox" name="edit_selected_ids[]" value="<?= (int) $c['id'] ?>" form="cardBulkEditForm" class="card_edit_row_select">
                     <?php endif; ?>
                 </td>
                 <td><?= htmlspecialchars($c['machine']) ?></td>
@@ -4911,6 +4981,14 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         if (cardSelectAll) {
             cardSelectAll.addEventListener('change', function () {
                 document.querySelectorAll('.card_row_select').forEach((checkbox) => {
+                    checkbox.checked = this.checked;
+                });
+            });
+        }
+        const cardEditSelectAll = document.getElementById('card_edit_select_all');
+        if (cardEditSelectAll) {
+            cardEditSelectAll.addEventListener('change', function () {
+                document.querySelectorAll('.card_edit_row_select').forEach((checkbox) => {
                     checkbox.checked = this.checked;
                 });
             });
