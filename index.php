@@ -343,6 +343,44 @@ function handlePost(PDO $pdo, string $module): void
                     ':late_interest' => $lateInterest,
                     ':paid_amount' => $paidAmount > 0 ? $paidAmount : null,
                 ]);
+
+                if (($_POST['status'] ?? '') === 'pago') {
+                    $payableId = (int) ($_POST['id'] ?? 0);
+                    $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
+                    $paidOn = trim((string) ($_POST['paid_on'] ?? ''));
+                    $flowAmount = $paidAmount > 0 ? $paidAmount : ($amount - $discount + $addition + $lateInterest);
+                    $flowDate = $paidOn !== '' ? $paidOn : date('Y-m-d');
+                    $bankAccountId = (int) ($_POST['bank_account_id'] ?? 0);
+                    $bankName = 'caixa';
+                    if ($bankAccountId > 0) {
+                        $bankStmt = $pdo->prepare('SELECT name FROM bank_accounts WHERE id=:id LIMIT 1');
+                        $bankStmt->execute([':id' => $bankAccountId]);
+                        $bankName = (string) ($bankStmt->fetchColumn() ?: 'caixa');
+                    }
+                    $description = 'Baixa conta a pagar #' . $payableId . ': ' . $supplierName;
+                    $trxStmt = $pdo->prepare('SELECT id FROM transactions
+                        WHERE movement_type="saida" AND description LIKE :description
+                        ORDER BY id DESC LIMIT 1');
+                    $trxStmt->execute([':description' => 'Baixa conta a pagar #' . $payableId . ':%']);
+                    $trxId = (int) ($trxStmt->fetchColumn() ?: 0);
+                    if ($trxId > 0) {
+                        $pdo->prepare('UPDATE transactions
+                            SET amount=:amount, category=:category, payment_method=:payment_method, subcategory=:subcategory,
+                                origin_account=:origin_account, destination_account=:destination_account, description=:description, occurred_on=:occurred_on
+                            WHERE id=:id')
+                            ->execute([
+                                ':id' => $trxId,
+                                ':amount' => $flowAmount,
+                                ':category' => 'Contas a pagar',
+                                ':payment_method' => $paymentMethod !== '' ? $paymentMethod : null,
+                                ':subcategory' => $paymentMethod !== '' ? $paymentMethod : 'Baixa',
+                                ':origin_account' => $bankName,
+                                ':destination_account' => $bankName,
+                                ':description' => $description,
+                                ':occurred_on' => $flowDate,
+                            ]);
+                    }
+                }
             }
 
             if ($action === 'delete') {
@@ -2109,6 +2147,16 @@ if ($cardsWhere !== []) {
 }
 $cardsSql .= ' ORDER BY c.expected_release_date DESC, c.id DESC';
 $cards = fetchAll($pdo, $cardsSql, $cardsParams);
+$cardsDailyByMachine = fetchAll($pdo, 'SELECT
+    COALESCE(NULLIF(machine, \'\'), \'Sem máquina\') AS machine_name,
+    COUNT(*) AS total_launches,
+    COALESCE(SUM(gross_value),0) AS gross_total,
+    COALESCE(SUM(net_value),0) AS net_total,
+    COALESCE(SUM(gross_value - net_value + COALESCE(anticipation_discount,0)),0) AS fee_total
+    FROM card_receivables
+    WHERE sale_date = :today AND canceled=0
+    GROUP BY machine_name
+    ORDER BY gross_total DESC', [':today' => $today]);
 $weekStart = date('Y-m-d', strtotime('monday this week'));
 $monthStart = date('Y-m-01');
 $salesDateFrom = trim((string) ($_GET['sales_date_from'] ?? $today));
@@ -4667,6 +4715,19 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             <button type="button" onclick="document.getElementById('cardFilterModal').close()">Fechar</button>
         </form>
     </dialog>
+    <h4>Análise dos lançamentos do dia por maquininha (<?= dateBr($today) ?>)</h4>
+    <table>
+        <tr><th>Maquininha</th><th>Quantidade</th><th>Valor bruto</th><th>Valor líquido</th><th>Taxas</th></tr>
+        <?php foreach ($cardsDailyByMachine as $row): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $row['machine_name']) ?></td>
+                <td><?= (int) $row['total_launches'] ?></td>
+                <td><?= money((float) $row['gross_total']) ?></td>
+                <td><?= money((float) $row['net_total']) ?></td>
+                <td><?= money((float) $row['fee_total']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
     <form method="post" id="cardForm">
         <input type="hidden" name="action" value="create">
         <select name="machine" id="card_machine_select" required>
