@@ -168,6 +168,7 @@ canvas {
     border-radius: 12px;
     box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
 }
+.chart-compact { max-height: 230px; }
 
 .small { color: var(--muted); font-size: 13px; }
 

@@ -5202,8 +5202,8 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <div class="card"><h4>Taxas</h4><p><?= money((float) $cardReportSummary['fee_total']) ?></p></div>
     </div>
 
-    <canvas id="cardReportDayChart" height="90"></canvas>
-    <canvas id="cardReportMachineChart" height="90"></canvas>
+    <canvas id="cardReportDayChart" class="chart-compact" height="68"></canvas>
+    <canvas id="cardReportMachineChart" class="chart-compact" height="68"></canvas>
 
     <h4>Resumo por maquininha</h4>
     <table>
@@ -5514,8 +5514,8 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <div class="card"><h4>Saldo do período</h4><p><?= money($reconTotals['saldo']) ?></p></div>
     </div>
 
-    <canvas id="reconDailyChart" height="90"></canvas>
-    <canvas id="reconMonthlyChart" height="90"></canvas>
+    <canvas id="reconDailyChart" class="chart-compact" height="68"></canvas>
+    <canvas id="reconMonthlyChart" class="chart-compact" height="68"></canvas>
 
     <h4>Resumo diário</h4>
     <table>
