@@ -2351,6 +2351,50 @@ if ($reconConditions !== []) {
 }
 $reconFlowSql .= ' ORDER BY t.occurred_on DESC, t.id DESC';
 $reconciliationFlow = fetchAll($pdo, $reconFlowSql, $reconParams);
+$reconReportDateFrom = trim((string) ($_GET['recon_report_date_from'] ?? date('Y-m-01')));
+$reconReportDateTo = trim((string) ($_GET['recon_report_date_to'] ?? $today));
+$reconReportBankAccountId = (int) ($_GET['recon_report_bank_account_id'] ?? 0);
+$reconReportBankName = $reconReportBankAccountId > 0 ? ($bankNamesById[$reconReportBankAccountId] ?? '') : '';
+$reconReportWhere = [];
+$reconReportParams = [];
+if ($reconReportDateFrom !== '') {
+    $reconReportWhere[] = 't.occurred_on >= :report_date_from';
+    $reconReportParams[':report_date_from'] = $reconReportDateFrom;
+}
+if ($reconReportDateTo !== '') {
+    $reconReportWhere[] = 't.occurred_on <= :report_date_to';
+    $reconReportParams[':report_date_to'] = $reconReportDateTo;
+}
+if ($reconReportBankName !== '') {
+    $reconReportWhere[] = '((t.movement_type = "saida" AND t.origin_account = :report_bank) OR (t.movement_type = "entrada" AND t.destination_account = :report_bank))';
+    $reconReportParams[':report_bank'] = $reconReportBankName;
+}
+$reconReportWhereSql = $reconReportWhere !== [] ? ' WHERE ' . implode(' AND ', $reconReportWhere) : '';
+$reconDailySummary = fetchAll($pdo, 'SELECT t.occurred_on,
+    SUM(CASE WHEN t.movement_type = "entrada" THEN t.amount ELSE 0 END) AS entradas,
+    SUM(CASE WHEN t.movement_type = "saida" THEN t.amount ELSE 0 END) AS saidas
+    FROM transactions t' . $reconReportWhereSql . '
+    GROUP BY t.occurred_on
+    ORDER BY t.occurred_on ASC', $reconReportParams);
+$reconMonthlySummary = fetchAll($pdo, 'SELECT substr(t.occurred_on, 1, 7) AS month_ref,
+    SUM(CASE WHEN t.movement_type = "entrada" THEN t.amount ELSE 0 END) AS entradas,
+    SUM(CASE WHEN t.movement_type = "saida" THEN t.amount ELSE 0 END) AS saidas
+    FROM transactions t' . $reconReportWhereSql . '
+    GROUP BY month_ref
+    ORDER BY month_ref ASC', $reconReportParams);
+$reconAccountSummary = fetchAll($pdo, 'SELECT
+    CASE WHEN t.movement_type = "entrada" THEN COALESCE(NULLIF(t.destination_account, ""), "caixa")
+         ELSE COALESCE(NULLIF(t.origin_account, ""), "caixa") END AS account_name,
+    SUM(CASE WHEN t.movement_type = "entrada" THEN t.amount ELSE 0 END) AS entradas,
+    SUM(CASE WHEN t.movement_type = "saida" THEN t.amount ELSE 0 END) AS saidas
+    FROM transactions t' . $reconReportWhereSql . '
+    GROUP BY account_name
+    ORDER BY account_name ASC', $reconReportParams);
+$reconTotals = [
+    'entradas' => array_reduce($reconDailySummary, static fn(float $sum, array $row): float => $sum + (float) ($row['entradas'] ?? 0), 0.0),
+    'saidas' => array_reduce($reconDailySummary, static fn(float $sum, array $row): float => $sum + (float) ($row['saidas'] ?? 0), 0.0),
+];
+$reconTotals['saldo'] = $reconTotals['entradas'] - $reconTotals['saidas'];
 
 $bankBalancesByName = [];
 foreach ($banks as $bankRow) {
@@ -2522,6 +2566,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             </div>
         </div>
         <a href="?module=conciliacao">Conciliação Bancária</a>
+        <a href="?module=relatorio_conciliacao">Relatório Conciliação</a>
         <a href="?module=fornecedores">Fornecedores</a>
         <a href="?module=configuracoes">Configurações</a>
     </nav>
@@ -5430,6 +5475,96 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 modal.showModal();
             }
         }
+    </script>
+<?php elseif ($module === 'relatorio_conciliacao'): ?>
+    <h3>Relatório de Conciliação Bancária</h3>
+    <form method="get">
+        <input type="hidden" name="module" value="relatorio_conciliacao">
+        <label>Data inicial <input type="date" name="recon_report_date_from" value="<?= htmlspecialchars($reconReportDateFrom) ?>"></label>
+        <label>Data final <input type="date" name="recon_report_date_to" value="<?= htmlspecialchars($reconReportDateTo) ?>"></label>
+        <label>Conta
+            <select name="recon_report_bank_account_id">
+                <option value="0">Todas</option>
+                <?php foreach ($banks as $bank): ?>
+                    <option value="<?= (int) $bank['id'] ?>" <?= $reconReportBankAccountId === (int) $bank['id'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $bank['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <button type="submit">Aplicar</button>
+        <a href="?module=relatorio_conciliacao">Limpar</a>
+    </form>
+
+    <div class="cards">
+        <div class="card"><h4>Total entradas</h4><p><?= money($reconTotals['entradas']) ?></p></div>
+        <div class="card"><h4>Total saídas</h4><p><?= money($reconTotals['saidas']) ?></p></div>
+        <div class="card"><h4>Saldo do período</h4><p><?= money($reconTotals['saldo']) ?></p></div>
+    </div>
+
+    <canvas id="reconDailyChart" height="90"></canvas>
+    <canvas id="reconMonthlyChart" height="90"></canvas>
+
+    <h4>Resumo diário</h4>
+    <table>
+        <tr><th>Dia</th><th>Entradas</th><th>Saídas</th><th>Saldo</th></tr>
+        <?php foreach ($reconDailySummary as $row): ?>
+            <?php $balance = (float) $row['entradas'] - (float) $row['saidas']; ?>
+            <tr>
+                <td><?= dateBr((string) $row['occurred_on']) ?></td>
+                <td><?= money((float) $row['entradas']) ?></td>
+                <td><?= money((float) $row['saidas']) ?></td>
+                <td><?= money($balance) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Resumo mensal</h4>
+    <table>
+        <tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Saldo</th></tr>
+        <?php foreach ($reconMonthlySummary as $row): ?>
+            <?php $balance = (float) $row['entradas'] - (float) $row['saidas']; ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $row['month_ref']) ?></td>
+                <td><?= money((float) $row['entradas']) ?></td>
+                <td><?= money((float) $row['saidas']) ?></td>
+                <td><?= money($balance) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Resumo por conta</h4>
+    <table>
+        <tr><th>Conta</th><th>Entradas</th><th>Saídas</th><th>Saldo</th></tr>
+        <?php foreach ($reconAccountSummary as $row): ?>
+            <?php $balance = (float) $row['entradas'] - (float) $row['saidas']; ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $row['account_name']) ?></td>
+                <td><?= money((float) $row['entradas']) ?></td>
+                <td><?= money((float) $row['saidas']) ?></td>
+                <td><?= money($balance) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+    <script>
+        new Chart(document.getElementById('reconDailyChart'), {
+            type: 'line',
+            data: {
+                labels: <?= json_encode(array_map(static fn(array $row): string => dateBr((string) $row['occurred_on']), $reconDailySummary)) ?>,
+                datasets: [
+                    { label: 'Entradas', data: <?= json_encode(array_map(static fn(array $row): float => (float) $row['entradas'], $reconDailySummary)) ?>, borderColor: '#16a34a' },
+                    { label: 'Saídas', data: <?= json_encode(array_map(static fn(array $row): float => (float) $row['saidas'], $reconDailySummary)) ?>, borderColor: '#dc2626' }
+                ]
+            }
+        });
+        new Chart(document.getElementById('reconMonthlyChart'), {
+            type: 'bar',
+            data: {
+                labels: <?= json_encode(array_map(static fn(array $row): string => (string) $row['month_ref'], $reconMonthlySummary)) ?>,
+                datasets: [
+                    { label: 'Entradas', data: <?= json_encode(array_map(static fn(array $row): float => (float) $row['entradas'], $reconMonthlySummary)) ?>, backgroundColor: '#2563eb' },
+                    { label: 'Saídas', data: <?= json_encode(array_map(static fn(array $row): float => (float) $row['saidas'], $reconMonthlySummary)) ?>, backgroundColor: '#f97316' }
+                ]
+            }
+        });
     </script>
 <?php elseif ($module === 'dre'): ?>
     <h3>DRE Gerencial</h3>
