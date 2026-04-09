@@ -2395,6 +2395,20 @@ $reconTotals = [
     'saidas' => array_reduce($reconDailySummary, static fn(float $sum, array $row): float => $sum + (float) ($row['saidas'] ?? 0), 0.0),
 ];
 $reconTotals['saldo'] = $reconTotals['entradas'] - $reconTotals['saidas'];
+$reconReportDayDetailDate = trim((string) ($_GET['recon_report_day_details'] ?? ''));
+$reconReportDayDetails = [];
+if ($reconReportDayDetailDate !== '') {
+    $detailSql = 'SELECT t.*
+        FROM transactions t
+        WHERE t.occurred_on = :detail_date';
+    $detailParams = [':detail_date' => $reconReportDayDetailDate];
+    if ($reconReportBankName !== '') {
+        $detailSql .= ' AND ((t.movement_type = "saida" AND t.origin_account = :detail_bank) OR (t.movement_type = "entrada" AND t.destination_account = :detail_bank))';
+        $detailParams[':detail_bank'] = $reconReportBankName;
+    }
+    $detailSql .= ' ORDER BY t.id DESC';
+    $reconReportDayDetails = fetchAll($pdo, $detailSql, $detailParams);
+}
 
 $bankBalancesByName = [];
 foreach ($banks as $bankRow) {
@@ -5509,13 +5523,34 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <?php foreach ($reconDailySummary as $row): ?>
             <?php $balance = (float) $row['entradas'] - (float) $row['saidas']; ?>
             <tr>
-                <td><?= dateBr((string) $row['occurred_on']) ?></td>
+                <td>
+                    <a href="?module=relatorio_conciliacao&recon_report_date_from=<?= urlencode($reconReportDateFrom) ?>&recon_report_date_to=<?= urlencode($reconReportDateTo) ?>&recon_report_bank_account_id=<?= (int) $reconReportBankAccountId ?>&recon_report_day_details=<?= urlencode((string) $row['occurred_on']) ?>">
+                        <?= dateBr((string) $row['occurred_on']) ?>
+                    </a>
+                </td>
                 <td><?= money((float) $row['entradas']) ?></td>
                 <td><?= money((float) $row['saidas']) ?></td>
                 <td><?= money($balance) ?></td>
             </tr>
         <?php endforeach; ?>
     </table>
+    <?php if ($reconReportDayDetailDate !== ''): ?>
+        <h4>Lançamentos do dia <?= dateBr($reconReportDayDetailDate) ?></h4>
+        <table>
+            <tr><th>Tipo</th><th>Conta origem</th><th>Conta destino</th><th>Categoria</th><th>Subcategoria</th><th>Histórico</th><th>Valor</th></tr>
+            <?php foreach ($reconReportDayDetails as $row): ?>
+                <tr>
+                    <td><?= htmlspecialchars((string) $row['movement_type']) ?></td>
+                    <td><?= htmlspecialchars((string) $row['origin_account']) ?></td>
+                    <td><?= htmlspecialchars((string) $row['destination_account']) ?></td>
+                    <td><?= htmlspecialchars((string) $row['category']) ?></td>
+                    <td><?= htmlspecialchars((string) ($row['subcategory'] ?? '')) ?></td>
+                    <td><?= htmlspecialchars((string) ($row['description'] ?? '')) ?></td>
+                    <td><?= money((float) $row['amount']) ?></td>
+                </tr>
+            <?php endforeach; ?>
+        </table>
+    <?php endif; ?>
 
     <h4>Resumo mensal</h4>
     <table>
