@@ -155,6 +155,56 @@ function handlePost(PDO $pdo, string $module): void
             }
             break;
 
+        case 'relatorio_transferencias':
+            $action = (string) ($_POST['action'] ?? '');
+            if ($action === 'edit_transfer') {
+                $outId = (int) ($_POST['out_id'] ?? 0);
+                $inId = (int) ($_POST['in_id'] ?? 0);
+                $originAccount = trim((string) ($_POST['origin_account'] ?? ''));
+                $destinationAccount = trim((string) ($_POST['destination_account'] ?? ''));
+                $amount = moneyInput($_POST['amount'] ?? 0);
+                $occurredOn = trim((string) ($_POST['occurred_on'] ?? date('Y-m-d')));
+                $notes = trim((string) ($_POST['notes'] ?? ''));
+                if ($outId > 0 && $inId > 0 && $originAccount !== '' && $destinationAccount !== '' && $originAccount !== $destinationAccount && $amount > 0) {
+                    $suffix = $notes !== '' ? ' - ' . $notes : '';
+                    $pdo->prepare('UPDATE transactions
+                        SET amount=:amount, origin_account=:origin_account, destination_account=:destination_account, occurred_on=:occurred_on, description=:description
+                        WHERE id=:id AND movement_type="saida" AND COALESCE(category,"")="Transferência"')
+                        ->execute([
+                            ':id' => $outId,
+                            ':amount' => $amount,
+                            ':origin_account' => $originAccount,
+                            ':destination_account' => $destinationAccount,
+                            ':occurred_on' => $occurredOn,
+                            ':description' => 'Transferência para ' . $destinationAccount . $suffix,
+                        ]);
+                    $pdo->prepare('UPDATE transactions
+                        SET amount=:amount, origin_account=:origin_account, destination_account=:destination_account, occurred_on=:occurred_on, description=:description
+                        WHERE id=:id AND movement_type="entrada" AND COALESCE(category,"")="Transferência"')
+                        ->execute([
+                            ':id' => $inId,
+                            ':amount' => $amount,
+                            ':origin_account' => $originAccount,
+                            ':destination_account' => $destinationAccount,
+                            ':occurred_on' => $occurredOn,
+                            ':description' => 'Transferência de ' . $originAccount . $suffix,
+                        ]);
+                }
+            }
+            if ($action === 'delete_transfer') {
+                $outId = (int) ($_POST['out_id'] ?? 0);
+                $inId = (int) ($_POST['in_id'] ?? 0);
+                if ($outId > 0) {
+                    $pdo->prepare('DELETE FROM transactions WHERE id=:id')
+                        ->execute([':id' => $outId]);
+                }
+                if ($inId > 0) {
+                    $pdo->prepare('DELETE FROM transactions WHERE id=:id')
+                        ->execute([':id' => $inId]);
+                }
+            }
+            break;
+
         case 'pagar':
             $action = $_POST['action'] ?? 'create';
 
@@ -2321,6 +2371,47 @@ $transferBanks = array_values(array_filter($banks, static fn(array $bank): bool 
 if ($transferBanks === []) {
     $transferBanks = $banks;
 }
+$transferReportFilters = [
+    'date_from' => trim((string) ($_GET['transfer_date_from'] ?? date('Y-m-01'))),
+    'date_to' => trim((string) ($_GET['transfer_date_to'] ?? $today)),
+    'origin' => trim((string) ($_GET['transfer_origin'] ?? '')),
+    'destination' => trim((string) ($_GET['transfer_destination'] ?? '')),
+];
+$transferReportSql = 'SELECT s.id AS out_id,
+    (SELECT i.id FROM transactions i
+        WHERE i.movement_type="entrada"
+          AND COALESCE(i.category,"")="Transferência"
+          AND i.occurred_on = s.occurred_on
+          AND i.amount = s.amount
+          AND i.origin_account = s.origin_account
+          AND i.destination_account = s.destination_account
+        ORDER BY i.id DESC LIMIT 1) AS in_id,
+    s.occurred_on, s.amount, s.origin_account, s.destination_account, s.description
+    FROM transactions s
+    WHERE s.movement_type="saida" AND COALESCE(s.category,"")="Transferência"';
+$transferReportWhere = [];
+$transferReportParams = [];
+if ($transferReportFilters['date_from'] !== '') {
+    $transferReportWhere[] = 's.occurred_on >= :transfer_date_from';
+    $transferReportParams[':transfer_date_from'] = $transferReportFilters['date_from'];
+}
+if ($transferReportFilters['date_to'] !== '') {
+    $transferReportWhere[] = 's.occurred_on <= :transfer_date_to';
+    $transferReportParams[':transfer_date_to'] = $transferReportFilters['date_to'];
+}
+if ($transferReportFilters['origin'] !== '') {
+    $transferReportWhere[] = 's.origin_account = :transfer_origin';
+    $transferReportParams[':transfer_origin'] = $transferReportFilters['origin'];
+}
+if ($transferReportFilters['destination'] !== '') {
+    $transferReportWhere[] = 's.destination_account = :transfer_destination';
+    $transferReportParams[':transfer_destination'] = $transferReportFilters['destination'];
+}
+if ($transferReportWhere !== []) {
+    $transferReportSql .= ' AND ' . implode(' AND ', $transferReportWhere);
+}
+$transferReportSql .= ' ORDER BY s.occurred_on DESC, s.id DESC';
+$transferReportRows = fetchAll($pdo, $transferReportSql, $transferReportParams);
 $bankNamesById = [];
 foreach ($banks as $bankRow) {
     $bankNamesById[(int) $bankRow['id']] = (string) $bankRow['name'];
@@ -2581,6 +2672,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         </div>
         <a href="?module=conciliacao">Conciliação Bancária</a>
         <a href="?module=relatorio_conciliacao">Relatório Conciliação</a>
+        <a href="?module=relatorio_transferencias">Relatório Transferências</a>
         <a href="?module=fornecedores">Fornecedores</a>
         <a href="?module=configuracoes">Configurações</a>
     </nav>
@@ -5488,6 +5580,95 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             if (modal) {
                 modal.showModal();
             }
+        }
+    </script>
+<?php elseif ($module === 'relatorio_transferencias'): ?>
+    <h3>Relatório de Transferências entre Contas</h3>
+    <form method="get">
+        <input type="hidden" name="module" value="relatorio_transferencias">
+        <label>Data inicial <input type="date" name="transfer_date_from" value="<?= htmlspecialchars($transferReportFilters['date_from']) ?>"></label>
+        <label>Data final <input type="date" name="transfer_date_to" value="<?= htmlspecialchars($transferReportFilters['date_to']) ?>"></label>
+        <label>Conta origem
+            <select name="transfer_origin">
+                <option value="">Todas</option>
+                <?php foreach ($transferBanks as $bank): ?>
+                    <option value="<?= htmlspecialchars((string) $bank['name']) ?>" <?= $transferReportFilters['origin'] === (string) $bank['name'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $bank['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <label>Conta destino
+            <select name="transfer_destination">
+                <option value="">Todas</option>
+                <?php foreach ($transferBanks as $bank): ?>
+                    <option value="<?= htmlspecialchars((string) $bank['name']) ?>" <?= $transferReportFilters['destination'] === (string) $bank['name'] ? 'selected' : '' ?>><?= htmlspecialchars((string) $bank['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <button type="submit">Aplicar</button>
+        <a href="?module=relatorio_transferencias">Limpar</a>
+    </form>
+
+    <table>
+        <tr><th>Data</th><th>Origem</th><th>Destino</th><th>Valor</th><th>Histórico</th><th>Ações</th></tr>
+        <?php foreach ($transferReportRows as $row): ?>
+            <tr>
+                <td><?= dateBr((string) $row['occurred_on']) ?></td>
+                <td><?= htmlspecialchars((string) $row['origin_account']) ?></td>
+                <td><?= htmlspecialchars((string) $row['destination_account']) ?></td>
+                <td><?= money((float) $row['amount']) ?></td>
+                <td><?= htmlspecialchars((string) $row['description']) ?></td>
+                <td>
+                    <button type="button" onclick='openTransferEditModal(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Editar</button>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Excluir transferência?')">
+                        <input type="hidden" name="action" value="delete_transfer">
+                        <input type="hidden" name="out_id" value="<?= (int) $row['out_id'] ?>">
+                        <input type="hidden" name="in_id" value="<?= (int) ($row['in_id'] ?? 0) ?>">
+                        <button class="btn-danger">Excluir</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+    <dialog id="transferEditModal">
+        <form method="post">
+            <input type="hidden" name="action" value="edit_transfer">
+            <input type="hidden" name="out_id" id="transfer_edit_out_id">
+            <input type="hidden" name="in_id" id="transfer_edit_in_id">
+            <label>Data <input type="date" name="occurred_on" id="transfer_edit_date" required></label>
+            <label>Origem
+                <select name="origin_account" id="transfer_edit_origin" required>
+                    <?php foreach ($transferBanks as $bank): ?>
+                        <option value="<?= htmlspecialchars((string) $bank['name']) ?>"><?= htmlspecialchars((string) $bank['name']) ?></option>
+                    <?php endforeach; ?>
+                    <option value="caixa">Caixa</option>
+                </select>
+            </label>
+            <label>Destino
+                <select name="destination_account" id="transfer_edit_destination" required>
+                    <?php foreach ($transferBanks as $bank): ?>
+                        <option value="<?= htmlspecialchars((string) $bank['name']) ?>"><?= htmlspecialchars((string) $bank['name']) ?></option>
+                    <?php endforeach; ?>
+                    <option value="caixa">Caixa</option>
+                </select>
+            </label>
+            <label>Valor <input type="number" step="0.01" min="0.01" name="amount" id="transfer_edit_amount" required></label>
+            <label>Observação <input name="notes" id="transfer_edit_notes"></label>
+            <button>Salvar alteração</button>
+            <button type="button" onclick="document.getElementById('transferEditModal').close()">Fechar</button>
+        </form>
+    </dialog>
+    <script>
+        function openTransferEditModal(transfer) {
+            document.getElementById('transfer_edit_out_id').value = transfer.out_id || '';
+            document.getElementById('transfer_edit_in_id').value = transfer.in_id || '';
+            document.getElementById('transfer_edit_date').value = transfer.occurred_on || '';
+            document.getElementById('transfer_edit_origin').value = transfer.origin_account || 'caixa';
+            document.getElementById('transfer_edit_destination').value = transfer.destination_account || 'caixa';
+            document.getElementById('transfer_edit_amount').value = transfer.amount || 0;
+            const rawDescription = String(transfer.description || '');
+            const parts = rawDescription.split(' - ');
+            document.getElementById('transfer_edit_notes').value = parts.length > 1 ? parts.slice(1).join(' - ') : '';
+            document.getElementById('transferEditModal').showModal();
         }
     </script>
 <?php elseif ($module === 'relatorio_conciliacao'): ?>
