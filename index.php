@@ -6014,6 +6014,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <label>Mês referência: <input type="month" name="dre_month" value="<?= htmlspecialchars($dreMonth) ?>"></label>
         <button>Carregar</button>
         <button type="button" onclick="exportDrePdf()">Exportar PDF</button>
+        <button type="button" onclick="exportDreFlowPdf()">Fluxograma DRE (PDF)</button>
     </form>
     <p class="small">Período analisado: <strong><?= dateBr($dreMonthStart) ?></strong> até <strong><?= dateBr($dreMonthEnd) ?></strong>. Comparativo automático com <strong><?= htmlspecialchars($drePrevMonth) ?></strong>.</p>
 
@@ -6146,6 +6147,22 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <?php endforeach; ?>
     </ul>
 
+    <h4>Mapa de origem dos dados do DRE</h4>
+    <table id="dreSourceMapTable">
+        <tr><th>Lançamento / linha</th><th>Tabela fonte</th><th>Regra de cálculo aplicada</th></tr>
+        <tr><td>Vendas à vista</td><td><code>front_cash_sales</code></td><td><code>SUM(amount)</code> por período, excluindo método com "pix".</td></tr>
+        <tr><td>Vendas por PIX</td><td><code>front_cash_sales</code></td><td><code>SUM(amount)</code> por período, filtrando método com "pix".</td></tr>
+        <tr><td>Vendas por cartão</td><td><code>card_receivables</code></td><td><code>SUM(gross_value)</code> com <code>canceled = 0</code>.</td></tr>
+        <tr><td>Vendas a prazo</td><td><code>credit_sales_totals</code></td><td><code>SUM(total_amount)</code> por período.</td></tr>
+        <tr><td>Cheques recebidos</td><td><code>checks_control</code></td><td><code>SUM(amount)</code> com cheque compensado e não devolvido.</td></tr>
+        <tr><td>Taxas de cartão</td><td><code>card_receivables</code></td><td><code>SUM(gross_value - net_value + anticipation_discount)</code>.</td></tr>
+        <tr><td>Devoluções/cancelamentos</td><td><code>credit_sales_totals</code></td><td><code>SUM(return_on_credit + return_exchange_credit)</code>.</td></tr>
+        <tr><td>Descontos concedidos</td><td><code>customer_receipts</code></td><td><code>SUM(discount)</code> por data de recebimento.</td></tr>
+        <tr><td>CMV e despesas manuais</td><td><code>dre_config</code></td><td>Parâmetros informados manualmente para o mês.</td></tr>
+        <tr><td>Despesas com pessoal</td><td><code>employee_monthly_costs</code></td><td>Soma de salários, INSS, FGTS, provisões e extras por mês.</td></tr>
+        <tr><td>Depreciação de veículos</td><td><code>vehicles</code></td><td><code>SUM((vehicle_value * depreciation_percent / 100) / 12)</code>.</td></tr>
+    </table>
+
     <table id="dreReportTable">
         <tr><th>Linha</th><th>Valor</th></tr>
         <tr><td><strong>1. Receita Bruta de Vendas</strong></td><td></td></tr>
@@ -6215,6 +6232,126 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                     <h1>DRE Gerencial</h1>
                     <p>Mês de referência: ${monthRef}</p>
                     ${table.outerHTML}
+                </body>
+                </html>
+            `);
+            win.document.close();
+            win.focus();
+            win.print();
+        }
+        function exportDreFlowPdf() {
+            const monthRef = <?= json_encode($dreMonth) ?>;
+            const flowSvg = `
+                <svg width="1200" height="760" viewBox="0 0 1200 760" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L8,3 z" fill="#475569"></path>
+                        </marker>
+                    </defs>
+                    <style>
+                        .box { fill: #f8fafc; stroke: #334155; stroke-width: 1.2; rx: 8; }
+                        .title { font: 600 13px Arial, sans-serif; fill: #0f172a; }
+                        .text { font: 12px Arial, sans-serif; fill: #1e293b; }
+                        .line { stroke: #475569; stroke-width: 1.6; marker-end: url(#arrow); fill: none; }
+                    </style>
+
+                    <rect class="box" x="20" y="30" width="230" height="90"></rect>
+                    <text class="title" x="32" y="55">front_cash_sales</text>
+                    <text class="text" x="32" y="77">- Vendas à vista</text>
+                    <text class="text" x="32" y="96">- Vendas PIX</text>
+
+                    <rect class="box" x="20" y="150" width="230" height="90"></rect>
+                    <text class="title" x="32" y="176">card_receivables</text>
+                    <text class="text" x="32" y="198">- Vendas cartão</text>
+                    <text class="text" x="32" y="217">- Taxas cartão</text>
+
+                    <rect class="box" x="20" y="270" width="230" height="90"></rect>
+                    <text class="title" x="32" y="296">credit_sales_totals</text>
+                    <text class="text" x="32" y="318">- Vendas a prazo</text>
+                    <text class="text" x="32" y="337">- Devoluções</text>
+
+                    <rect class="box" x="20" y="390" width="230" height="80"></rect>
+                    <text class="title" x="32" y="416">checks_control</text>
+                    <text class="text" x="32" y="438">- Cheques compensados</text>
+
+                    <rect class="box" x="20" y="500" width="230" height="90"></rect>
+                    <text class="title" x="32" y="526">customer_receipts</text>
+                    <text class="text" x="32" y="548">- Descontos concedidos</text>
+
+                    <rect class="box" x="20" y="620" width="230" height="90"></rect>
+                    <text class="title" x="32" y="646">dre_config / RH / vehicles</text>
+                    <text class="text" x="32" y="668">- CMV e despesas manuais</text>
+                    <text class="text" x="32" y="687">- Pessoal e depreciação</text>
+
+                    <rect class="box" x="350" y="110" width="260" height="80"></rect>
+                    <text class="title" x="365" y="138">1) Receita Bruta</text>
+                    <text class="text" x="365" y="160">Vista + PIX + Cartão + Prazo + Cheques</text>
+
+                    <rect class="box" x="350" y="235" width="260" height="80"></rect>
+                    <text class="title" x="365" y="263">2) Deduções</text>
+                    <text class="text" x="365" y="285">Impostos + Taxas + Devoluções + Descontos</text>
+
+                    <rect class="box" x="350" y="360" width="260" height="80"></rect>
+                    <text class="title" x="365" y="388">3) Receita Líquida</text>
+                    <text class="text" x="365" y="410">Receita Bruta - Deduções</text>
+
+                    <rect class="box" x="350" y="485" width="260" height="80"></rect>
+                    <text class="title" x="365" y="513">4) Lucro Bruto</text>
+                    <text class="text" x="365" y="535">Receita Líquida - CMV</text>
+
+                    <rect class="box" x="700" y="235" width="260" height="80"></rect>
+                    <text class="title" x="715" y="263">5) Resultado Operacional</text>
+                    <text class="text" x="715" y="285">Lucro Bruto - Desp. Variáveis/Fixas</text>
+
+                    <rect class="box" x="700" y="400" width="260" height="80"></rect>
+                    <text class="title" x="715" y="428">6) Resultado Final</text>
+                    <text class="text" x="715" y="450">Resultado Operacional - Desp. Financeiras</text>
+
+                    <line class="line" x1="250" y1="75" x2="350" y2="140"></line>
+                    <line class="line" x1="250" y1="195" x2="350" y2="140"></line>
+                    <line class="line" x1="250" y1="315" x2="350" y2="140"></line>
+                    <line class="line" x1="250" y1="430" x2="350" y2="140"></line>
+
+                    <line class="line" x1="250" y1="195" x2="350" y2="270"></line>
+                    <line class="line" x1="250" y1="315" x2="350" y2="270"></line>
+                    <line class="line" x1="250" y1="540" x2="350" y2="270"></line>
+                    <line class="line" x1="250" y1="665" x2="350" y2="270"></line>
+
+                    <line class="line" x1="480" y1="190" x2="480" y2="235"></line>
+                    <line class="line" x1="480" y1="315" x2="480" y2="360"></line>
+                    <line class="line" x1="250" y1="665" x2="350" y2="525"></line>
+                    <line class="line" x1="480" y1="440" x2="480" y2="485"></line>
+                    <line class="line" x1="610" y1="525" x2="700" y2="275"></line>
+                    <line class="line" x1="250" y1="665" x2="700" y2="275"></line>
+                    <line class="line" x1="830" y1="315" x2="830" y2="400"></line>
+                    <line class="line" x1="250" y1="665" x2="700" y2="440"></line>
+                </svg>
+            `;
+            const sourceTable = document.getElementById('dreSourceMapTable');
+            const win = window.open('', '_blank');
+            if (!win) return;
+            win.document.write(`
+                <!doctype html>
+                <html lang="pt-BR">
+                <head>
+                    <meta charset="utf-8">
+                    <title>Fluxograma DRE ${monthRef}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 22px; color: #0f172a; }
+                        h1 { font-size: 20px; margin-bottom: 6px; }
+                        p { margin-top: 0; margin-bottom: 14px; color: #334155; }
+                        .svg-wrap { border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 18px; }
+                        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                        th, td { border: 1px solid #cbd5e1; padding: 6px; text-align: left; vertical-align: top; }
+                        th { background: #f1f5f9; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Fluxograma do DRE Gerencial</h1>
+                    <p>Mês de referência: ${monthRef}. Este material mostra como cada linha do DRE é formada e de onde cada lançamento é extraído.</p>
+                    <div class="svg-wrap">${flowSvg}</div>
+                    <h2>Origem de dados por lançamento</h2>
+                    ${sourceTable ? sourceTable.outerHTML : ''}
                 </body>
                 </html>
             `);
