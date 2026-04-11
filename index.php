@@ -2617,6 +2617,94 @@ $dre['despesas_financeiras'] = $dreConfig['loan_interest'] + $dreConfig['late_in
 $dre['resultado_antes_impostos'] = $dre['resultado_operacional'] - $dre['despesas_financeiras'];
 $dre['resultado_final'] = $dre['resultado_antes_impostos'];
 
+$cashReportView = trim((string) ($_GET['cash_report_view'] ?? 'mensal'));
+if (!in_array($cashReportView, ['mensal', 'trimestral', 'anual'], true)) {
+    $cashReportView = 'mensal';
+}
+$cashReportRef = trim((string) ($_GET['cash_report_ref'] ?? date('Y-m')));
+if (!preg_match('/^\d{4}-\d{2}$/', $cashReportRef)) {
+    $cashReportRef = date('Y-m');
+}
+$cashRefStart = new DateTime($cashReportRef . '-01');
+$cashCurrentStart = clone $cashRefStart;
+$cashCurrentEnd = clone $cashRefStart;
+$cashLabel = 'Mensal';
+if ($cashReportView === 'mensal') {
+    $cashCurrentEnd->modify('last day of this month');
+}
+if ($cashReportView === 'trimestral') {
+    $month = (int) $cashRefStart->format('n');
+    $quarterStartMonth = (int) (floor(($month - 1) / 3) * 3 + 1);
+    $cashCurrentStart = new DateTime($cashRefStart->format('Y') . '-' . str_pad((string) $quarterStartMonth, 2, '0', STR_PAD_LEFT) . '-01');
+    $cashCurrentEnd = clone $cashCurrentStart;
+    $cashCurrentEnd->modify('+2 months')->modify('last day of this month');
+    $cashLabel = 'Trimestral';
+}
+if ($cashReportView === 'anual') {
+    $cashCurrentStart = new DateTime($cashRefStart->format('Y') . '-01-01');
+    $cashCurrentEnd = new DateTime($cashRefStart->format('Y') . '-12-31');
+    $cashLabel = 'Anual';
+}
+$cashPeriodDays = max(1, (int) $cashCurrentStart->diff($cashCurrentEnd)->days + 1);
+$cashPrevEnd = clone $cashCurrentStart;
+$cashPrevEnd->modify('-1 day');
+$cashPrevStart = clone $cashPrevEnd;
+$cashPrevStart->modify('-' . ($cashPeriodDays - 1) . ' days');
+$cashCurrentStartStr = $cashCurrentStart->format('Y-m-d');
+$cashCurrentEndStr = $cashCurrentEnd->format('Y-m-d');
+$cashPrevStartStr = $cashPrevStart->format('Y-m-d');
+$cashPrevEndStr = $cashPrevEnd->format('Y-m-d');
+$cashEntries = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type="entrada" AND occurred_on BETWEEN :start AND :end AND COALESCE(category, "") <> "Transferência"', [':start' => $cashCurrentStartStr, ':end' => $cashCurrentEndStr]);
+$cashExits = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type="saida" AND occurred_on BETWEEN :start AND :end AND COALESCE(category, "") <> "Transferência"', [':start' => $cashCurrentStartStr, ':end' => $cashCurrentEndStr]);
+$cashBalance = $cashEntries - $cashExits;
+$cashEntriesPrev = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type="entrada" AND occurred_on BETWEEN :start AND :end AND COALESCE(category, "") <> "Transferência"', [':start' => $cashPrevStartStr, ':end' => $cashPrevEndStr]);
+$cashExitsPrev = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM transactions WHERE movement_type="saida" AND occurred_on BETWEEN :start AND :end AND COALESCE(category, "") <> "Transferência"', [':start' => $cashPrevStartStr, ':end' => $cashPrevEndStr]);
+$cashBalancePrev = $cashEntriesPrev - $cashExitsPrev;
+$cashDeltaPercent = $cashBalancePrev == 0.0 ? ($cashBalance == 0.0 ? 0.0 : 100.0) : (($cashBalance - $cashBalancePrev) / abs($cashBalancePrev)) * 100.0;
+$cashByCategory = fetchAll($pdo, 'SELECT COALESCE(NULLIF(category, ""), "Sem categoria") AS category,
+    SUM(CASE WHEN movement_type="entrada" THEN amount ELSE 0 END) AS entradas,
+    SUM(CASE WHEN movement_type="saida" THEN amount ELSE 0 END) AS saidas
+    FROM transactions
+    WHERE occurred_on BETWEEN :start AND :end AND COALESCE(category, "") <> "Transferência"
+    GROUP BY category
+    ORDER BY saidas DESC, entradas DESC', [':start' => $cashCurrentStartStr, ':end' => $cashCurrentEndStr]);
+$cashByPayment = fetchAll($pdo, 'SELECT COALESCE(NULLIF(payment_method, ""), NULLIF(subcategory, ""), "Sem forma") AS payment_method,
+    SUM(CASE WHEN movement_type="entrada" THEN amount ELSE 0 END) AS entradas,
+    SUM(CASE WHEN movement_type="saida" THEN amount ELSE 0 END) AS saidas
+    FROM transactions
+    WHERE occurred_on BETWEEN :start AND :end AND COALESCE(category, "") <> "Transferência"
+    GROUP BY payment_method
+    ORDER BY entradas DESC', [':start' => $cashCurrentStartStr, ':end' => $cashCurrentEndStr]);
+$cashMonthlySeries = fetchAll($pdo, 'SELECT substr(occurred_on,1,7) AS month_ref,
+    SUM(CASE WHEN movement_type="entrada" THEN amount ELSE 0 END) AS entradas,
+    SUM(CASE WHEN movement_type="saida" THEN amount ELSE 0 END) AS saidas
+    FROM transactions
+    WHERE occurred_on BETWEEN :start AND :end AND COALESCE(category, "") <> "Transferência"
+    GROUP BY month_ref
+    ORDER BY month_ref ASC', [
+    ':start' => (new DateTime($cashCurrentEndStr))->modify('-11 months')->format('Y-m-01'),
+    ':end' => $cashCurrentEndStr,
+]);
+$cashMargin = $cashEntries > 0 ? ($cashBalance / $cashEntries) * 100 : 0;
+$cashSummaryText = $cashBalance >= 0
+    ? 'Fluxo de caixa positivo no período, com geração operacional de caixa.'
+    : 'Fluxo de caixa negativo no período, com consumo de caixa acima das entradas.';
+$cashSuggestions = [];
+if ($cashBalance < 0) {
+    $cashSuggestions[] = 'Priorize redução de despesas das categorias com maior saída e renegocie custos fixos.';
+    $cashSuggestions[] = 'Acelere recebimentos (antecipação de clientes inadimplentes e revisão de prazos).';
+}
+if ($cashMargin < 10) {
+    $cashSuggestions[] = 'Eleve a margem de caixa: revisar preços, descontos e custos variáveis.';
+}
+if ($cashExits > $cashEntries) {
+    $cashSuggestions[] = 'Controle o ritmo de pagamentos não essenciais e planeje desembolsos por prioridade.';
+}
+if ($cashSuggestions === []) {
+    $cashSuggestions[] = 'Manter disciplina de orçamento e acompanhar variações semanais por categoria.';
+    $cashSuggestions[] = 'Aproveitar resultado positivo para formar reserva de caixa.';
+}
+
 $categories = fetchAll($pdo, 'SELECT id, name FROM cashflow_categories WHERE parent_id IS NULL ORDER BY name');
 $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS parent_name FROM cashflow_categories c LEFT JOIN cashflow_categories p ON p.id=c.parent_id WHERE c.parent_id IS NOT NULL ORDER BY p.name, c.name');
 
@@ -2673,6 +2761,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <a href="?module=conciliacao">Conciliação Bancária</a>
         <a href="?module=relatorio_conciliacao">Relatório Conciliação</a>
         <a href="?module=relatorio_transferencias">Relatório Transferências</a>
+        <a href="?module=relatorio_fluxo">Relatório Fluxo de Caixa</a>
         <a href="?module=fornecedores">Fornecedores</a>
         <a href="?module=configuracoes">Configurações</a>
     </nav>
@@ -5580,6 +5669,92 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             if (modal) {
                 modal.showModal();
             }
+        }
+    </script>
+<?php elseif ($module === 'relatorio_fluxo'): ?>
+    <h3>Relatório Profissional de Fluxo de Caixa</h3>
+    <form method="get">
+        <input type="hidden" name="module" value="relatorio_fluxo">
+        <label>Análise
+            <select name="cash_report_view">
+                <option value="mensal" <?= $cashReportView === 'mensal' ? 'selected' : '' ?>>Mensal</option>
+                <option value="trimestral" <?= $cashReportView === 'trimestral' ? 'selected' : '' ?>>Trimestral</option>
+                <option value="anual" <?= $cashReportView === 'anual' ? 'selected' : '' ?>>Anual</option>
+            </select>
+        </label>
+        <label>Mês referência <input type="month" name="cash_report_ref" value="<?= htmlspecialchars($cashReportRef) ?>"></label>
+        <button type="submit">Aplicar</button>
+        <button type="button" onclick="exportCashflowPdf()">Exportar PDF</button>
+    </form>
+    <p class="small">Período atual: <?= dateBr($cashCurrentStartStr) ?> até <?= dateBr($cashCurrentEndStr) ?> | Comparação: <?= dateBr($cashPrevStartStr) ?> até <?= dateBr($cashPrevEndStr) ?></p>
+
+    <div class="cards">
+        <div class="card"><h4>Entradas (<?= $cashLabel ?>)</h4><p><?= money($cashEntries) ?></p></div>
+        <div class="card"><h4>Saídas (<?= $cashLabel ?>)</h4><p><?= money($cashExits) ?></p></div>
+        <div class="card"><h4>Saldo do período</h4><p><?= money($cashBalance) ?></p></div>
+        <div class="card"><h4>Comparativo período anterior</h4><p><?= number_format($cashDeltaPercent, 1, ',', '.') ?>%</p></div>
+    </div>
+
+    <canvas id="cashflowReportLine" class="chart-compact" height="70"></canvas>
+    <canvas id="cashflowReportCategory" class="chart-compact" height="70"></canvas>
+
+    <h4 id="cashflowReportPdf">Resumo executivo</h4>
+    <p><strong>Situação:</strong> <?= htmlspecialchars($cashSummaryText) ?> Margem de caixa estimada: <strong><?= number_format($cashMargin, 1, ',', '.') ?>%</strong>.</p>
+    <ul>
+        <?php foreach ($cashSuggestions as $tip): ?>
+            <li><?= htmlspecialchars($tip) ?></li>
+        <?php endforeach; ?>
+    </ul>
+
+    <h4>Resumo por categoria</h4>
+    <table>
+        <tr><th>Categoria</th><th>Entradas</th><th>Saídas</th><th>Saldo</th></tr>
+        <?php foreach ($cashByCategory as $row): ?>
+            <?php $balance = (float) $row['entradas'] - (float) $row['saidas']; ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $row['category']) ?></td>
+                <td><?= money((float) $row['entradas']) ?></td>
+                <td><?= money((float) $row['saidas']) ?></td>
+                <td><?= money($balance) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Entradas e saídas por forma de pagamento</h4>
+    <table>
+        <tr><th>Forma</th><th>Entradas</th><th>Saídas</th></tr>
+        <?php foreach ($cashByPayment as $row): ?>
+            <tr>
+                <td><?= htmlspecialchars((string) $row['payment_method']) ?></td>
+                <td><?= money((float) $row['entradas']) ?></td>
+                <td><?= money((float) $row['saidas']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+    <script>
+        new Chart(document.getElementById('cashflowReportLine'), {
+            type: 'line',
+            data: {
+                labels: <?= json_encode(array_map(static fn(array $row): string => (string) $row['month_ref'], $cashMonthlySeries)) ?>,
+                datasets: [
+                    { label: 'Entradas', data: <?= json_encode(array_map(static fn(array $row): float => (float) $row['entradas'], $cashMonthlySeries)) ?>, borderColor: '#16a34a' },
+                    { label: 'Saídas', data: <?= json_encode(array_map(static fn(array $row): float => (float) $row['saidas'], $cashMonthlySeries)) ?>, borderColor: '#dc2626' }
+                ]
+            }
+        });
+        new Chart(document.getElementById('cashflowReportCategory'), {
+            type: 'bar',
+            data: {
+                labels: <?= json_encode(array_map(static fn(array $row): string => (string) $row['category'], array_slice($cashByCategory, 0, 8))) ?>,
+                datasets: [
+                    { label: 'Entradas', data: <?= json_encode(array_map(static fn(array $row): float => (float) $row['entradas'], array_slice($cashByCategory, 0, 8))) ?>, backgroundColor: '#2563eb' },
+                    { label: 'Saídas', data: <?= json_encode(array_map(static fn(array $row): float => (float) $row['saidas'], array_slice($cashByCategory, 0, 8))) ?>, backgroundColor: '#f97316' }
+                ]
+            }
+        });
+
+        function exportCashflowPdf() {
+            window.print();
         }
     </script>
 <?php elseif ($module === 'relatorio_transferencias'): ?>
