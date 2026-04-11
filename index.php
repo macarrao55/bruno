@@ -2533,89 +2533,139 @@ $dreMonth = trim((string) ($_GET['dre_month'] ?? date('Y-m')));
 if (!preg_match('/^\d{4}-\d{2}$/', $dreMonth)) {
     $dreMonth = date('Y-m');
 }
-$dreMonthStart = $dreMonth . '-01';
-$dreMonthEnd = date('Y-m-t', strtotime($dreMonthStart));
-$dreConfigStmt = $pdo->prepare('SELECT * FROM dre_config WHERE month_ref=:month_ref');
-$dreConfigStmt->execute([':month_ref' => $dreMonth]);
-$dreConfigRow = $dreConfigStmt->fetch() ?: [];
+$buildDreForMonth = static function (PDO $pdo, string $monthRef): array {
+    $monthStart = $monthRef . '-01';
+    $monthEnd = date('Y-m-t', strtotime($monthStart));
+    $dreConfigStmt = $pdo->prepare('SELECT * FROM dre_config WHERE month_ref=:month_ref');
+    $dreConfigStmt->execute([':month_ref' => $monthRef]);
+    $dreConfigRow = $dreConfigStmt->fetch() ?: [];
 
-$dreConfig = [
-    'sales_taxes' => (float) ($dreConfigRow['sales_taxes'] ?? 0),
-    'inventory_initial' => (float) ($dreConfigRow['inventory_initial'] ?? 0),
-    'purchases' => (float) ($dreConfigRow['purchases'] ?? 0),
-    'purchase_freight' => (float) ($dreConfigRow['purchase_freight'] ?? 0),
-    'inventory_final' => (float) ($dreConfigRow['inventory_final'] ?? 0),
-    'sales_commission' => (float) ($dreConfigRow['sales_commission'] ?? 0),
-    'extra_card_fees' => (float) ($dreConfigRow['extra_card_fees'] ?? 0),
-    'delivery_freight' => (float) ($dreConfigRow['delivery_freight'] ?? 0),
-    'packaging' => (float) ($dreConfigRow['packaging'] ?? 0),
-    'payroll' => (float) ($dreConfigRow['payroll'] ?? 0),
-    'rent' => (float) ($dreConfigRow['rent'] ?? 0),
-    'electricity' => (float) ($dreConfigRow['electricity'] ?? 0),
-    'water_internet' => (float) ($dreConfigRow['water_internet'] ?? 0),
-    'software' => (float) ($dreConfigRow['software'] ?? 0),
-    'accounting' => (float) ($dreConfigRow['accounting'] ?? 0),
-    'loan_interest' => (float) ($dreConfigRow['loan_interest'] ?? 0),
-    'late_interest' => (float) ($dreConfigRow['late_interest'] ?? 0),
-    'card_anticipation' => (float) ($dreConfigRow['card_anticipation'] ?? 0),
+    $config = [
+        'sales_taxes' => (float) ($dreConfigRow['sales_taxes'] ?? 0),
+        'inventory_initial' => (float) ($dreConfigRow['inventory_initial'] ?? 0),
+        'purchases' => (float) ($dreConfigRow['purchases'] ?? 0),
+        'purchase_freight' => (float) ($dreConfigRow['purchase_freight'] ?? 0),
+        'inventory_final' => (float) ($dreConfigRow['inventory_final'] ?? 0),
+        'sales_commission' => (float) ($dreConfigRow['sales_commission'] ?? 0),
+        'extra_card_fees' => (float) ($dreConfigRow['extra_card_fees'] ?? 0),
+        'delivery_freight' => (float) ($dreConfigRow['delivery_freight'] ?? 0),
+        'packaging' => (float) ($dreConfigRow['packaging'] ?? 0),
+        'payroll' => (float) ($dreConfigRow['payroll'] ?? 0),
+        'rent' => (float) ($dreConfigRow['rent'] ?? 0),
+        'electricity' => (float) ($dreConfigRow['electricity'] ?? 0),
+        'water_internet' => (float) ($dreConfigRow['water_internet'] ?? 0),
+        'software' => (float) ($dreConfigRow['software'] ?? 0),
+        'accounting' => (float) ($dreConfigRow['accounting'] ?? 0),
+        'loan_interest' => (float) ($dreConfigRow['loan_interest'] ?? 0),
+        'late_interest' => (float) ($dreConfigRow['late_interest'] ?? 0),
+        'card_anticipation' => (float) ($dreConfigRow['card_anticipation'] ?? 0),
+    ];
+
+    $dreSalesCash = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM front_cash_sales
+        WHERE sale_date BETWEEN :start AND :end
+          AND LOWER(COALESCE(payment_method, \'\')) NOT LIKE :pix', [':start' => $monthStart, ':end' => $monthEnd, ':pix' => '%pix%']);
+    $dreSalesCard = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0', [':start' => $monthStart, ':end' => $monthEnd]);
+    $dreSalesCredit = sumValue($pdo, 'SELECT COALESCE(SUM(total_amount),0) FROM credit_sales_totals WHERE sale_date BETWEEN :start AND :end', [':start' => $monthStart, ':end' => $monthEnd]);
+    $dreSalesPix = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM front_cash_sales WHERE sale_date BETWEEN :start AND :end AND LOWER(payment_method) LIKE :pix', [':start' => $monthStart, ':end' => $monthEnd, ':pix' => '%pix%']);
+    $dreSalesChecks = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM checks_control
+        WHERE compensated=1
+          AND returned=0
+          AND COALESCE(check_date, due_date) BETWEEN :start AND :end', [':start' => $monthStart, ':end' => $monthEnd]);
+    $dreCardFees = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value - net_value + anticipation_discount),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end', [':start' => $monthStart, ':end' => $monthEnd]);
+    $dreReturns = sumValue($pdo, 'SELECT COALESCE(SUM(return_on_credit + return_exchange_credit),0) FROM credit_sales_totals WHERE sale_date BETWEEN :start AND :end', [':start' => $monthStart, ':end' => $monthEnd]);
+    $dreDiscounts = sumValue($pdo, 'SELECT COALESCE(SUM(discount),0) FROM customer_receipts WHERE receipt_date BETWEEN :start AND :end', [':start' => $monthStart, ':end' => $monthEnd]);
+    $dreVehicleDepreciation = sumValue($pdo, 'SELECT COALESCE(SUM((COALESCE(vehicle_value,0) * COALESCE(depreciation_percent,0) / 100.0) / 12.0),0) FROM vehicles');
+    $drePayrollSalaries = sumValue($pdo, 'SELECT COALESCE(SUM(base_salary),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $monthRef]);
+    $drePayrollInss = sumValue($pdo, 'SELECT COALESCE(SUM(inss_common),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $monthRef]);
+    $drePayrollFgts = sumValue($pdo, 'SELECT COALESCE(SUM(fgts),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $monthRef]);
+    $drePayrollThirteenth = sumValue($pdo, 'SELECT COALESCE(SUM(thirteenth_provision),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $monthRef]);
+    $drePayrollVacation = sumValue($pdo, 'SELECT COALESCE(SUM(vacation_provision),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $monthRef]);
+    $drePayrollExtra1 = sumValue($pdo, 'SELECT COALESCE(SUM(extra_expense_1),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $monthRef]);
+    $drePayrollExtra2 = sumValue($pdo, 'SELECT COALESCE(SUM(extra_expense_2),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $monthRef]);
+
+    $dre = [];
+    $dre['vendas_vista'] = $dreSalesCash;
+    $dre['vendas_prazo'] = $dreSalesCredit;
+    $dre['vendas_cartao'] = $dreSalesCard;
+    $dre['vendas_pix'] = $dreSalesPix;
+    $dre['vendas_cheque'] = $dreSalesChecks;
+    $dre['receita_bruta'] = $dre['vendas_vista'] + $dre['vendas_prazo'] + $dre['vendas_cartao'] + $dre['vendas_pix'] + $dre['vendas_cheque'];
+    $dre['impostos_vendas'] = $config['sales_taxes'];
+    $dre['taxas_cartao'] = $dreCardFees;
+    $dre['devolucoes_cancelamentos'] = $dreReturns;
+    $dre['descontos_concedidos'] = $dreDiscounts;
+    $dre['deducoes_total'] = $dre['impostos_vendas'] + $dre['taxas_cartao'] + $dre['devolucoes_cancelamentos'] + $dre['descontos_concedidos'];
+    $dre['receita_liquida'] = $dre['receita_bruta'] - $dre['deducoes_total'];
+    $dre['cmv'] = $config['inventory_initial'] + $config['purchases'] + $config['purchase_freight'] - $config['inventory_final'];
+    $dre['lucro_bruto'] = $dre['receita_liquida'] - $dre['cmv'];
+    $dre['despesas_variaveis'] = $config['sales_commission'] + $config['extra_card_fees'] + $config['delivery_freight'] + $config['packaging'];
+    $dre['depreciacao_veiculos'] = $dreVehicleDepreciation;
+    $dre['despesas_pessoal_salarios'] = $drePayrollSalaries;
+    $dre['despesas_pessoal_inss_comum'] = $drePayrollInss;
+    $dre['despesas_pessoal_fgts'] = $drePayrollFgts;
+    $dre['despesas_pessoal_provisao_13'] = $drePayrollThirteenth;
+    $dre['despesas_pessoal_provisao_ferias'] = $drePayrollVacation;
+    $dre['despesas_pessoal_extra_1'] = $drePayrollExtra1;
+    $dre['despesas_pessoal_extra_2'] = $drePayrollExtra2;
+    $dre['despesas_com_pessoal'] = $dre['despesas_pessoal_salarios'] + $dre['despesas_pessoal_inss_comum'] + $dre['despesas_pessoal_fgts'] + $dre['despesas_pessoal_provisao_13'] + $dre['despesas_pessoal_provisao_ferias'] + $dre['despesas_pessoal_extra_1'] + $dre['despesas_pessoal_extra_2'];
+    $dre['despesas_fixas'] = $config['payroll'] + $config['rent'] + $config['electricity'] + $config['water_internet'] + $config['software'] + $config['accounting'] + $dre['depreciacao_veiculos'] + $dre['despesas_com_pessoal'];
+    $dre['resultado_operacional'] = $dre['lucro_bruto'] - $dre['despesas_variaveis'] - $dre['despesas_fixas'];
+    $dre['despesas_financeiras'] = $config['loan_interest'] + $config['late_interest'] + $config['card_anticipation'];
+    $dre['resultado_antes_impostos'] = $dre['resultado_operacional'] - $dre['despesas_financeiras'];
+    $dre['resultado_final'] = $dre['resultado_antes_impostos'];
+
+    return ['config' => $config, 'dre' => $dre, 'month_start' => $monthStart, 'month_end' => $monthEnd];
+};
+
+$dreData = $buildDreForMonth($pdo, $dreMonth);
+$dreConfig = $dreData['config'];
+$dre = $dreData['dre'];
+$dreMonthStart = (string) $dreData['month_start'];
+$dreMonthEnd = (string) $dreData['month_end'];
+$drePrevMonth = date('Y-m', strtotime($dreMonth . '-01 -1 month'));
+$drePrevData = $buildDreForMonth($pdo, $drePrevMonth);
+$drePrev = $drePrevData['dre'];
+$drePercent = static function (float $numerator, float $denominator): float {
+    if ($denominator == 0.0) {
+        return 0.0;
+    }
+
+    return ($numerator / $denominator) * 100.0;
+};
+$dreVarPercent = static function (float $current, float $previous): float {
+    if ($previous == 0.0) {
+        return $current == 0.0 ? 0.0 : 100.0;
+    }
+
+    return (($current - $previous) / abs($previous)) * 100.0;
+};
+$dreIndicators = [
+    'margem_bruta' => $drePercent($dre['lucro_bruto'], $dre['receita_liquida']),
+    'margem_operacional' => $drePercent($dre['resultado_operacional'], $dre['receita_liquida']),
+    'margem_liquida' => $drePercent($dre['resultado_final'], $dre['receita_liquida']),
+    'deducoes_receita' => $drePercent($dre['deducoes_total'], $dre['receita_bruta']),
+    'cmv_receita' => $drePercent($dre['cmv'], $dre['receita_liquida']),
+    'despesas_operacionais_receita' => $drePercent($dre['despesas_variaveis'] + $dre['despesas_fixas'], $dre['receita_liquida']),
+    'despesas_financeiras_receita' => $drePercent($dre['despesas_financeiras'], $dre['receita_liquida']),
+    'variacao_receita_liquida' => $dreVarPercent($dre['receita_liquida'], $drePrev['receita_liquida']),
+    'variacao_resultado_final' => $dreVarPercent($dre['resultado_final'], $drePrev['resultado_final']),
 ];
-
-$dreSalesCash = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM front_cash_sales
-    WHERE sale_date BETWEEN :start AND :end
-      AND LOWER(COALESCE(payment_method, \'\')) NOT LIKE :pix', [':start' => $dreMonthStart, ':end' => $dreMonthEnd, ':pix' => '%pix%']);
-$dreSalesCard = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end AND canceled=0', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
-$dreSalesCredit = sumValue($pdo, 'SELECT COALESCE(SUM(total_amount),0) FROM credit_sales_totals WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
-$dreSalesPix = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM front_cash_sales WHERE sale_date BETWEEN :start AND :end AND LOWER(payment_method) LIKE :pix', [':start' => $dreMonthStart, ':end' => $dreMonthEnd, ':pix' => '%pix%']);
-$dreSalesChecks = sumValue($pdo, 'SELECT COALESCE(SUM(amount),0) FROM checks_control
-    WHERE compensated=1
-      AND returned=0
-      AND COALESCE(check_date, due_date) BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
-$dreCardFees = sumValue($pdo, 'SELECT COALESCE(SUM(gross_value - net_value + anticipation_discount),0) FROM card_receivables WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
-$dreReturns = sumValue($pdo, 'SELECT COALESCE(SUM(return_on_credit + return_exchange_credit),0) FROM credit_sales_totals WHERE sale_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
-$dreDiscounts = sumValue($pdo, 'SELECT COALESCE(SUM(discount),0) FROM customer_receipts WHERE receipt_date BETWEEN :start AND :end', [':start' => $dreMonthStart, ':end' => $dreMonthEnd]);
-$dreVehicleDepreciation = sumValue($pdo, 'SELECT COALESCE(SUM((COALESCE(vehicle_value,0) * COALESCE(depreciation_percent,0) / 100.0) / 12.0),0) FROM vehicles');
-$drePayrollSalaries = sumValue($pdo, 'SELECT COALESCE(SUM(base_salary),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $dreMonth]);
-$drePayrollInss = sumValue($pdo, 'SELECT COALESCE(SUM(inss_common),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $dreMonth]);
-$drePayrollFgts = sumValue($pdo, 'SELECT COALESCE(SUM(fgts),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $dreMonth]);
-$drePayrollThirteenth = sumValue($pdo, 'SELECT COALESCE(SUM(thirteenth_provision),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $dreMonth]);
-$drePayrollVacation = sumValue($pdo, 'SELECT COALESCE(SUM(vacation_provision),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $dreMonth]);
-$drePayrollExtra1 = sumValue($pdo, 'SELECT COALESCE(SUM(extra_expense_1),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $dreMonth]);
-$drePayrollExtra2 = sumValue($pdo, 'SELECT COALESCE(SUM(extra_expense_2),0) FROM employee_monthly_costs WHERE reference_month = :reference_month', [':reference_month' => $dreMonth]);
-
-$dre = [];
-$dre['vendas_vista'] = $dreSalesCash;
-$dre['vendas_prazo'] = $dreSalesCredit;
-$dre['vendas_cartao'] = $dreSalesCard;
-$dre['vendas_pix'] = $dreSalesPix;
-$dre['vendas_cheque'] = $dreSalesChecks;
-$dre['receita_bruta'] = $dre['vendas_vista'] + $dre['vendas_prazo'] + $dre['vendas_cartao'] + $dre['vendas_pix'] + $dre['vendas_cheque'];
-
-$dre['impostos_vendas'] = $dreConfig['sales_taxes'];
-$dre['taxas_cartao'] = $dreCardFees;
-$dre['devolucoes_cancelamentos'] = $dreReturns;
-$dre['descontos_concedidos'] = $dreDiscounts;
-$dre['deducoes_total'] = $dre['impostos_vendas'] + $dre['taxas_cartao'] + $dre['devolucoes_cancelamentos'] + $dre['descontos_concedidos'];
-$dre['receita_liquida'] = $dre['receita_bruta'] - $dre['deducoes_total'];
-
-$dre['cmv'] = $dreConfig['inventory_initial'] + $dreConfig['purchases'] + $dreConfig['purchase_freight'] - $dreConfig['inventory_final'];
-$dre['lucro_bruto'] = $dre['receita_liquida'] - $dre['cmv'];
-
-$dre['despesas_variaveis'] = $dreConfig['sales_commission'] + $dreConfig['extra_card_fees'] + $dreConfig['delivery_freight'] + $dreConfig['packaging'];
-$dre['depreciacao_veiculos'] = $dreVehicleDepreciation;
-$dre['despesas_pessoal_salarios'] = $drePayrollSalaries;
-$dre['despesas_pessoal_inss_comum'] = $drePayrollInss;
-$dre['despesas_pessoal_fgts'] = $drePayrollFgts;
-$dre['despesas_pessoal_provisao_13'] = $drePayrollThirteenth;
-$dre['despesas_pessoal_provisao_ferias'] = $drePayrollVacation;
-$dre['despesas_pessoal_extra_1'] = $drePayrollExtra1;
-$dre['despesas_pessoal_extra_2'] = $drePayrollExtra2;
-$dre['despesas_com_pessoal'] = $dre['despesas_pessoal_salarios'] + $dre['despesas_pessoal_inss_comum'] + $dre['despesas_pessoal_fgts'] + $dre['despesas_pessoal_provisao_13'] + $dre['despesas_pessoal_provisao_ferias'] + $dre['despesas_pessoal_extra_1'] + $dre['despesas_pessoal_extra_2'];
-$dre['despesas_fixas'] = $dreConfig['payroll'] + $dreConfig['rent'] + $dreConfig['electricity'] + $dreConfig['water_internet'] + $dreConfig['software'] + $dreConfig['accounting'] + $dre['depreciacao_veiculos'] + $dre['despesas_com_pessoal'];
-$dre['resultado_operacional'] = $dre['lucro_bruto'] - $dre['despesas_variaveis'] - $dre['despesas_fixas'];
-
-$dre['despesas_financeiras'] = $dreConfig['loan_interest'] + $dreConfig['late_interest'] + $dreConfig['card_anticipation'];
-$dre['resultado_antes_impostos'] = $dre['resultado_operacional'] - $dre['despesas_financeiras'];
-$dre['resultado_final'] = $dre['resultado_antes_impostos'];
+$dreInsights = [];
+$dreInsights[] = $dre['resultado_final'] >= 0
+    ? 'Resultado final positivo no período, indicando geração de lucro operacional e financeiro.'
+    : 'Resultado final negativo no período, exigindo plano de reversão de margens e despesas.';
+$dreInsights[] = $dreIndicators['margem_liquida'] >= 10
+    ? 'Margem líquida acima de 10%: estrutura de custos saudável para o cenário atual.'
+    : 'Margem líquida abaixo de 10%: há espaço para revisão de preço, mix e eficiência.';
+$dreInsights[] = $dreIndicators['cmv_receita'] <= 45
+    ? 'CMV controlado em relação à receita líquida, mantendo boa retenção de margem bruta.'
+    : 'CMV pressionando o resultado: renegociar compras, perdas e política de estoque.';
+$dreInsights[] = $dreIndicators['despesas_operacionais_receita'] <= 35
+    ? 'Despesas operacionais em faixa adequada para suportar crescimento sustentável.'
+    : 'Despesas operacionais elevadas frente à receita: revisar despesas fixas e produtividade.';
+$dreInsights[] = $dreIndicators['despesas_financeiras_receita'] <= 5
+    ? 'Exposição financeira baixa, sem impacto relevante no lucro final.'
+    : 'Despesas financeiras relevantes: reduzir antecipações e juros para proteger o caixa.';
 
 $cashReportView = trim((string) ($_GET['cash_report_view'] ?? 'mensal'));
 if (!in_array($cashReportView, ['mensal', 'trimestral', 'anual'], true)) {
@@ -2746,7 +2796,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
                 <a href="?module=cartoes">Cartões</a>
                 <a href="?module=relatorio_cartoes">Relatório de Cartões</a>
                 <a href="?module=cheques">Cheques</a>
-                <a href="?module=dre">DRE</a>
+                <a href="?module=dre">Relatório DRE</a>
             </div>
         </div>
         <div class="menu-group">
@@ -5958,13 +6008,37 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         });
     </script>
 <?php elseif ($module === 'dre'): ?>
-    <h3>DRE Gerencial</h3>
+    <h3>Relatório DRE Gerencial</h3>
     <form method="get">
         <input type="hidden" name="module" value="dre">
         <label>Mês referência: <input type="month" name="dre_month" value="<?= htmlspecialchars($dreMonth) ?>"></label>
         <button>Carregar</button>
         <button type="button" onclick="exportDrePdf()">Exportar PDF</button>
     </form>
+    <p class="small">Período analisado: <strong><?= dateBr($dreMonthStart) ?></strong> até <strong><?= dateBr($dreMonthEnd) ?></strong>. Comparativo automático com <strong><?= htmlspecialchars($drePrevMonth) ?></strong>.</p>
+
+    <div class="cards">
+        <div class="card">
+            <h4>Receita Líquida</h4>
+            <p><?= money($dre['receita_liquida']) ?></p>
+            <p class="small">Variação vs mês anterior: <?= number_format($dreIndicators['variacao_receita_liquida'], 2, ',', '.') ?>%</p>
+        </div>
+        <div class="card">
+            <h4>Lucro Bruto</h4>
+            <p><?= money($dre['lucro_bruto']) ?></p>
+            <p class="small">Margem bruta: <?= number_format($dreIndicators['margem_bruta'], 2, ',', '.') ?>%</p>
+        </div>
+        <div class="card">
+            <h4>Resultado Operacional</h4>
+            <p><?= money($dre['resultado_operacional']) ?></p>
+            <p class="small">Margem operacional: <?= number_format($dreIndicators['margem_operacional'], 2, ',', '.') ?>%</p>
+        </div>
+        <div class="card">
+            <h4>Resultado Final</h4>
+            <p><?= money($dre['resultado_final']) ?></p>
+            <p class="small">Margem líquida: <?= number_format($dreIndicators['margem_liquida'], 2, ',', '.') ?>%</p>
+        </div>
+    </div>
 
     <h4>Configurações manuais do período</h4>
     <form method="post">
@@ -5990,6 +6064,87 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
         <input type="number" step="0.01" min="0" name="card_anticipation" placeholder="Antecipação de cartão" value="<?= $dreConfig['card_anticipation'] ?>">
         <button>Salvar parâmetros do DRE</button>
     </form>
+
+    <h4>Análise gerencial profissional</h4>
+    <table>
+        <tr><th>Indicador</th><th>Valor</th><th>Leitura gerencial</th></tr>
+        <tr>
+            <td>Margem Bruta</td>
+            <td><?= number_format($dreIndicators['margem_bruta'], 2, ',', '.') ?>%</td>
+            <td>Capacidade da operação em reter valor após deduções e CMV.</td>
+        </tr>
+        <tr>
+            <td>Margem Operacional</td>
+            <td><?= number_format($dreIndicators['margem_operacional'], 2, ',', '.') ?>%</td>
+            <td>Eficiência da estrutura operacional para transformar receita em resultado.</td>
+        </tr>
+        <tr>
+            <td>Margem Líquida</td>
+            <td><?= number_format($dreIndicators['margem_liquida'], 2, ',', '.') ?>%</td>
+            <td>Indicador final de rentabilidade após impacto financeiro.</td>
+        </tr>
+        <tr>
+            <td>Deduções / Receita Bruta</td>
+            <td><?= number_format($dreIndicators['deducoes_receita'], 2, ',', '.') ?>%</td>
+            <td>Nível de perdas de faturamento por impostos, taxas, devoluções e descontos.</td>
+        </tr>
+        <tr>
+            <td>CMV / Receita Líquida</td>
+            <td><?= number_format($dreIndicators['cmv_receita'], 2, ',', '.') ?>%</td>
+            <td>Pressão do custo de mercadoria sobre a geração de margem.</td>
+        </tr>
+        <tr>
+            <td>Despesas Operacionais / Receita Líquida</td>
+            <td><?= number_format($dreIndicators['despesas_operacionais_receita'], 2, ',', '.') ?>%</td>
+            <td>Peso da estrutura de despesas variáveis e fixas no resultado.</td>
+        </tr>
+        <tr>
+            <td>Despesas Financeiras / Receita Líquida</td>
+            <td><?= number_format($dreIndicators['despesas_financeiras_receita'], 2, ',', '.') ?>%</td>
+            <td>Dependência de capital de terceiros e custos financeiros.</td>
+        </tr>
+        <tr>
+            <td>Variação Resultado Final</td>
+            <td><?= number_format($dreIndicators['variacao_resultado_final'], 2, ',', '.') ?>%</td>
+            <td>Comparação de lucro/prejuízo frente ao mês anterior.</td>
+        </tr>
+    </table>
+
+    <h4>Comparativo mensal (<?= htmlspecialchars($drePrevMonth) ?> x <?= htmlspecialchars($dreMonth) ?>)</h4>
+    <table>
+        <tr><th>Linha</th><th>Mês anterior</th><th>Mês atual</th><th>Variação</th></tr>
+        <?php
+            $dreComparativeRows = [
+                'Receita Bruta' => 'receita_bruta',
+                'Receita Líquida' => 'receita_liquida',
+                'Lucro Bruto' => 'lucro_bruto',
+                'Resultado Operacional' => 'resultado_operacional',
+                'Despesas Financeiras' => 'despesas_financeiras',
+                'Resultado Final' => 'resultado_final',
+            ];
+        ?>
+        <?php foreach ($dreComparativeRows as $label => $key): ?>
+            <?php
+                $prevValue = (float) ($drePrev[$key] ?? 0);
+                $currentValue = (float) ($dre[$key] ?? 0);
+                $delta = $currentValue - $prevValue;
+                $deltaPercent = $dreVarPercent($currentValue, $prevValue);
+            ?>
+            <tr>
+                <td><?= htmlspecialchars($label) ?></td>
+                <td><?= money($prevValue) ?></td>
+                <td><?= money($currentValue) ?></td>
+                <td><?= money($delta) ?> (<?= number_format($deltaPercent, 2, ',', '.') ?>%)</td>
+            </tr>
+        <?php endforeach; ?>
+    </table>
+
+    <h4>Parecer executivo</h4>
+    <ul>
+        <?php foreach ($dreInsights as $insight): ?>
+            <li><?= htmlspecialchars($insight) ?></li>
+        <?php endforeach; ?>
+    </ul>
 
     <table id="dreReportTable">
         <tr><th>Linha</th><th>Valor</th></tr>
@@ -6033,6 +6188,7 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
 
         <tr><td><strong>6. Resultado Final (Lucro ou Prejuízo)</strong></td><td><strong><?= money($dre['resultado_final']) ?></strong></td></tr>
     </table>
+    <canvas id="dreCompositionChart" height="110"></canvas>
     <script>
         function exportDrePdf() {
             const table = document.getElementById('dreReportTable');
@@ -6066,6 +6222,23 @@ $subcategories = fetchAll($pdo, 'SELECT c.id, c.name, c.parent_id, p.name AS par
             win.focus();
             win.print();
         }
+        new Chart(document.getElementById('dreCompositionChart'), {
+            type: 'bar',
+            data: {
+                labels: ['Receita Líquida', 'CMV', 'Despesas Operac.', 'Despesas Financ.', 'Resultado Final'],
+                datasets: [{
+                    label: 'Composição do resultado',
+                    data: <?= json_encode([
+                        (float) $dre['receita_liquida'],
+                        (float) $dre['cmv'],
+                        (float) ($dre['despesas_variaveis'] + $dre['despesas_fixas']),
+                        (float) $dre['despesas_financeiras'],
+                        (float) $dre['resultado_final'],
+                    ]) ?>,
+                    backgroundColor: ['#1d4ed8', '#f97316', '#9333ea', '#dc2626', '#16a34a']
+                }]
+            }
+        });
     </script>
 <?php elseif ($module === 'fornecedores'): ?>
     <h3>Fornecedores</h3>
